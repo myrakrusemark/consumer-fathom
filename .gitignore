@@ -3,3 +3,4 @@ __pycache__/
 .vite/
 *.pyc
 data/tokens.json
+mcp-node/node_modules/
