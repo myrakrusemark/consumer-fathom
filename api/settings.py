@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     # Paths (container defaults)
     crystal_path: str = "/data/crystal.json"
     feed_directive_path: str = "/data/feed-directive.txt"
+    tokens_path: str = "/data/tokens.json"
 
     # Server
     host: str = "0.0.0.0"

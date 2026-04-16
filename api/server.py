@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from . import db, delta_client
+from . import auth, db, delta_client
 from .prompt import (
     CRYSTAL_DIRECTIVE,
     FEED_DIRECTIVE,
@@ -88,6 +88,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(auth.TokenAuthMiddleware)
 
 
 # ── Helpers ─────────────────────────────────────
@@ -939,3 +940,98 @@ def _split_facets(text: str) -> list[dict]:
         })
 
     return facets
+
+
+# ── Token management ─────────────────────────────
+
+
+class TokenCreate(BaseModel):
+    name: str = ""
+
+
+@app.post("/v1/tokens")
+async def create_token(req: TokenCreate):
+    return auth.create_token(req.name)
+
+
+@app.get("/v1/tokens")
+async def list_tokens():
+    return auth.list_tokens()
+
+
+@app.delete("/v1/tokens/{token_id}")
+async def delete_token(token_id: str):
+    deleted = auth.delete_token(token_id)
+    if not deleted:
+        raise HTTPException(404, "Token not found")
+    return {"deleted": True}
+
+
+# ── Delta proxy (unified gateway) ────────────────
+
+
+@app.post("/v1/search")
+async def proxy_search(request: dict):
+    c = await delta_client._get()
+    r = await c.post("/search", json=request)
+    r.raise_for_status()
+    return r.json()
+
+
+@app.post("/v1/deltas")
+async def proxy_write_delta(request: dict):
+    c = await delta_client._get()
+    r = await c.post("/deltas", json=request)
+    r.raise_for_status()
+    return r.json()
+
+
+@app.get("/v1/deltas")
+async def proxy_query_deltas(
+    limit: int = 50,
+    tags_include: str | None = None,
+    source: str | None = None,
+    time_start: str | None = None,
+):
+    c = await delta_client._get()
+    params: dict = {"limit": limit}
+    if tags_include:
+        params["tags_include"] = tags_include
+    if source:
+        params["source"] = source
+    if time_start:
+        params["time_start"] = time_start
+    r = await c.get("/deltas", params=params)
+    r.raise_for_status()
+    return r.json()
+
+
+@app.get("/v1/deltas/{delta_id}")
+async def proxy_get_delta(delta_id: str):
+    c = await delta_client._get()
+    r = await c.get(f"/deltas/{delta_id}")
+    if r.status_code == 404:
+        raise HTTPException(404, "Delta not found")
+    r.raise_for_status()
+    return r.json()
+
+
+@app.post("/v1/plan")
+async def proxy_plan(request: dict):
+    c = await delta_client._get()
+    r = await c.post("/plan", json=request)
+    r.raise_for_status()
+    return r.json()
+
+
+@app.get("/v1/tags")
+async def proxy_tags():
+    c = await delta_client._get()
+    r = await c.get("/tags")
+    r.raise_for_status()
+    return r.json()
+
+
+@app.get("/v1/stats")
+async def proxy_stats():
+    return await delta_client.stats()

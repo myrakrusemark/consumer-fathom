@@ -1536,6 +1536,28 @@
         </div>
       </section>
 
+      <!-- API Keys -->
+      <section class="section">
+        <div class="section-head">
+          <h2>API Keys</h2>
+          <span class="meta">for CLI, MCP, browser, and API access</span>
+        </div>
+        <p style="font-size: 14px; color: var(--ink-soft); line-height: 1.55; margin: 0 0 14px;">
+          Tokens authenticate external tools against your lake. Each token works independently. Revoke one without affecting others.
+        </p>
+        <div id="tokenList" class="danger-list" style="margin-bottom: 14px;">
+          <!-- Populated by loadTokens() -->
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <input type="text" id="tokenNameInput" placeholder="Token name (e.g. my laptop)" style="flex: 1; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; color: var(--ink); font-size: 14px; font-family: var(--sans); outline: none;" />
+          <button class="btn" id="createTokenBtn">Create token</button>
+        </div>
+        <div id="tokenReveal" hidden style="margin-top: 14px; background: var(--bg-deep); border: 1px solid var(--accent); border-radius: 8px; padding: 14px;">
+          <div style="font-size: 12px; color: var(--accent); font-family: var(--mono); letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 6px;">Copy this token now — it won't be shown again</div>
+          <code id="tokenValue" style="display: block; background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; font-family: var(--mono); font-size: 13px; color: var(--ink); word-break: break-all; cursor: pointer;" title="Click to copy"></code>
+        </div>
+      </section>
+
       <!-- Account actions -->
       <section class="section">
         <div class="section-head">
@@ -2149,6 +2171,7 @@
       viewSettings.hidden = false;
       scrollViewToTop(viewSettings);
       syncComposer();
+      loadTokens();
     }
     function closeSettings() {
       viewSettings.hidden = true;
@@ -2156,6 +2179,80 @@
       syncComposer();
     }
     settingsBackBtn.addEventListener('click', closeSettings);
+
+    // ── API Tokens ──────────────────────────────
+    const tokenList = document.getElementById('tokenList');
+    const tokenNameInput = document.getElementById('tokenNameInput');
+    const createTokenBtn = document.getElementById('createTokenBtn');
+    const tokenReveal = document.getElementById('tokenReveal');
+    const tokenValue = document.getElementById('tokenValue');
+
+    // Store the current token for authenticated requests after first token is created
+    let _authToken = '';
+    function authHeaders() {
+      const h = { 'Content-Type': 'application/json' };
+      if (_authToken) h['Authorization'] = 'Bearer ' + _authToken;
+      return h;
+    }
+
+    async function loadTokens() {
+      try {
+        const r = await fetch(API_BASE + '/v1/tokens', { headers: authHeaders() });
+        if (!r.ok) { tokenList.innerHTML = ''; return; }
+        const tokens = await r.json();
+        if (!tokens.length) {
+          tokenList.innerHTML = '<div style="color: var(--ink-faint); font-size: 14px; padding: 8px 0;">No tokens yet. Create one to secure your API.</div>';
+          return;
+        }
+        tokenList.innerHTML = tokens.map(t => {
+          const used = t.last_used_at ? _relativeTime(t.last_used_at) : 'never used';
+          return `<div class="danger-item" style="border: 1px solid var(--rule); border-radius: 10px; padding: 12px 14px; background: var(--surface);">
+            <div>
+              <div class="dz-label">${t.name}</div>
+              <div class="dz-sub" style="font-family: var(--mono); font-size: 12px;">${t.prefix} · created ${_relativeTime(t.created_at)} · ${used}</div>
+            </div>
+            <button class="btn ghost danger" onclick="revokeToken('${t.id}')">Revoke</button>
+          </div>`;
+        }).join('');
+      } catch (e) {
+        console.warn('Failed to load tokens:', e);
+      }
+    }
+
+    window.revokeToken = async function(id) {
+      if (!confirm('Revoke this token? Any tool using it will lose access.')) return;
+      await fetch(API_BASE + '/v1/tokens/' + id, { method: 'DELETE', headers: authHeaders() });
+      tokenReveal.hidden = true;
+      loadTokens();
+    };
+
+    createTokenBtn.addEventListener('click', async () => {
+      const name = tokenNameInput.value.trim();
+      try {
+        const r = await fetch(API_BASE + '/v1/tokens', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({ name }),
+        });
+        if (!r.ok) return;
+        const data = await r.json();
+        // This is the only time the raw token is visible
+        tokenValue.textContent = data.token;
+        tokenReveal.hidden = false;
+        tokenNameInput.value = '';
+        // Store for subsequent authenticated requests this session
+        if (!_authToken) _authToken = data.token;
+        loadTokens();
+      } catch (e) {
+        console.warn('Failed to create token:', e);
+      }
+    });
+
+    tokenValue.addEventListener('click', () => {
+      navigator.clipboard.writeText(tokenValue.textContent);
+      tokenValue.style.borderColor = 'var(--signal)';
+      setTimeout(() => { tokenValue.style.borderColor = ''; }, 1200);
+    });
 
     // ── Surface setup ───────────────────────────
     const viewSurface = document.getElementById('viewSurfaceSetup');
