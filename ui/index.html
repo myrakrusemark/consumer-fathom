@@ -2625,6 +2625,8 @@
       } else {
         card.innerHTML = `${bodyHtml}${mediaHtml}`;
       }
+      // Background capture: archive story images to the lake
+      captureStoryImages(card, s);
       return card;
     }
 
@@ -2704,6 +2706,81 @@
         el.style.display = 'none';
       }
     }, true);
+
+    // ── Background image capture ────────────────
+    // When an external image loads successfully, try to capture it via
+    // canvas and upload to delta-store. CORS-friendly servers allow this;
+    // others silently fail. The image + context gets archived in the lake.
+
+    const _capturedUrls = new Set();
+
+    async function captureImage(imgEl) {
+      /**
+       * Shared utility: fetch an external image via CORS and upload to
+       * delta-store. Images display normally regardless — this only
+       * archives them when the server allows cross-origin fetch.
+       * Returns media_hash on success, null on failure.
+       */
+      const src = imgEl.src || '';
+      if (!src || src.startsWith('data:') || src.includes('/v1/media/')) return null;
+      if (_capturedUrls.has(src)) return null;
+      _capturedUrls.add(src);
+
+      try {
+        // Fetch the image bytes via CORS — silently fails for non-CORS servers
+        const r = await fetch(src, { mode: 'cors' });
+        if (!r.ok) return null;
+        const blob = await r.blob();
+        if (!blob.size) return null;
+
+        const form = new FormData();
+        form.append('file', blob, 'capture.webp');
+        form.append('source', 'browser-capture');
+        const up = await fetch(API_BASE + '/v1/media/upload', { method: 'POST', body: form });
+        if (!up.ok) return null;
+        const data = await up.json();
+        return data.media_hash || null;
+      } catch {
+        // CORS blocked or network error — image still displays, just not archived
+        return null;
+      }
+    }
+
+    function captureStoryImages(cardEl, story) {
+      /**
+       * Feed-specific: capture images in a story card and save them
+       * to the lake with the story's content as context.
+       */
+      const imgs = cardEl.querySelectorAll('img');
+      imgs.forEach(img => {
+        if (img.complete && img.naturalWidth > 0) {
+          _doCaptureStoryImage(img, story);
+        } else {
+          img.addEventListener('load', () => _doCaptureStoryImage(img, story), { once: true });
+        }
+      });
+    }
+
+    async function _doCaptureStoryImage(imgEl, story) {
+      const mediaHash = await captureImage(imgEl);
+      if (!mediaHash) return;
+      // The image is now in delta-store (captureImage uploaded it).
+      // Write a context delta so the lake knows what this image means.
+      const context = [story.title, story.body, story.tail].filter(Boolean).join('\n\n');
+      try {
+        await api('/v1/media/capture-context', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            media_hash: mediaHash,
+            content: context,
+            tags: ['feed-story', 'feed-image'],
+            source: 'browser-capture',
+          }),
+          raw: true,
+        });
+      } catch {}
+    }
 
     // GLightbox: make all images zoomable
     let _glightbox = null;

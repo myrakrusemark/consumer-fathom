@@ -883,6 +883,34 @@ async def upload_media(
     return result
 
 
+class CaptureContext(BaseModel):
+    media_hash: str
+    content: str = ""
+    tags: list[str] = []
+    source: str = "browser-capture"
+
+
+@app.post("/v1/media/capture-context")
+async def capture_context(req: CaptureContext):
+    """Write a context delta for a browser-captured image.
+
+    The image is already in delta-store (uploaded via /v1/media/upload).
+    This writes a companion text delta linking the media_hash to the
+    story content so the lake knows what the image means.
+    """
+    c = await delta_client._get()
+    body = {
+        "content": req.content or f"[captured image:{req.media_hash}]",
+        "tags": req.tags or ["browser-capture"],
+        "source": req.source,
+        "media_hash": req.media_hash,
+        "modality": "image",
+    }
+    r = await c.post("/deltas", json=body)
+    r.raise_for_status()
+    return r.json()
+
+
 # ── Crystal facet parsing ───────────────────────
 
 def _split_facets(text: str) -> list[dict]:
