@@ -5,3 +5,4 @@ __pycache__/
 data/tokens.json
 mcp-node/node_modules/
 connect/node_modules/
+cli/node_modules/

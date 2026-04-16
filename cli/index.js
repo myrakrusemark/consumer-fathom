@@ -1,0 +1,209 @@
+#!/usr/bin/env node
+/**
+ * fathom — CLI for the Fathom memory lake.
+ *
+ * Same tools as MCP, from the terminal.
+ *
+ * Env:
+ *   FATHOM_API_URL  — consumer API (default: http://localhost:8201)
+ *   FATHOM_API_KEY  — bearer token from Settings → API Keys
+ *
+ * Usage:
+ *   fathom search "what happened today"
+ *   fathom write "decided to ship v2 Friday" --tags decision,v2
+ *   fathom query --tags homeassistant --since 24h
+ *   fathom stats
+ *   fathom chat "summarize my week"
+ */
+
+const API_URL = (process.env.FATHOM_API_URL || "http://localhost:8201").replace(/\/$/, "");
+const API_KEY = process.env.FATHOM_API_KEY || "";
+
+function headers(json = true) {
+  const h = {};
+  if (json) h["Content-Type"] = "application/json";
+  if (API_KEY) h["Authorization"] = `Bearer ${API_KEY}`;
+  return h;
+}
+
+async function api(method, path, body) {
+  const opts = { method, headers: headers(method !== "GET") };
+  let url = `${API_URL}${path}`;
+  if (method === "GET" && body) {
+    url += "?" + new URLSearchParams(body);
+  } else if (body) {
+    opts.body = JSON.stringify(body);
+  }
+  const r = await fetch(url, opts);
+  if (!r.ok) {
+    const text = await r.text().catch(() => "");
+    console.error(`Error: ${r.status} ${r.statusText}`);
+    if (text) console.error(text);
+    process.exit(1);
+  }
+  return r.json();
+}
+
+// ── Formatters ───────────────────────────────────
+
+function fmtResults(data) {
+  const items = data.results || data.deltas || (Array.isArray(data) ? data : []);
+  if (!items.length) { console.log("No results."); return; }
+
+  console.log(`${items.length} results:\n`);
+  for (const raw of items) {
+    const d = raw.delta || raw;
+    const ts = (d.timestamp || "").slice(0, 16);
+    const tags = (d.tags || []).slice(0, 5).join(", ");
+    const src = d.source || "";
+    const content = (d.content || "").slice(0, 500);
+    const media = d.media_hash ? ` [image: ${d.media_hash}]` : "";
+    const dist = raw.distance != null ? ` d=${raw.distance.toFixed(3)}` : "";
+    console.log(`  \x1b[2m${ts} · ${src}${dist}\x1b[0m`);
+    console.log(`  \x1b[33m${tags}\x1b[0m${media}`);
+    console.log(`  ${content}\n`);
+  }
+}
+
+// ── Commands ─────────────────────────────────────
+
+async function cmdSearch(args) {
+  const query = args.filter(a => !a.startsWith("--")).join(" ");
+  if (!query) { console.error("Usage: fathom search <query> [--limit N]"); process.exit(1); }
+  const limit = parseInt(flagVal(args, "--limit") || "20", 10);
+  const data = await api("POST", "/v1/search", { origin: query, limit });
+  fmtResults(data);
+}
+
+async function cmdWrite(args) {
+  // Content is everything that's not a flag
+  const flags = new Set(["--tags", "--source"]);
+  const parts = [];
+  let i = 0;
+  while (i < args.length) {
+    if (flags.has(args[i])) { i += 2; continue; }
+    if (args[i] === "-") {
+      // Read from stdin
+      const chunks = [];
+      for await (const chunk of process.stdin) chunks.push(chunk);
+      parts.push(Buffer.concat(chunks).toString().trim());
+      i++;
+    } else {
+      parts.push(args[i]);
+      i++;
+    }
+  }
+  const content = parts.join(" ");
+  if (!content) { console.error("Usage: fathom write <content> [--tags a,b] [--source x]"); process.exit(1); }
+
+  const tags = (flagVal(args, "--tags") || "").split(",").filter(Boolean);
+  const source = flagVal(args, "--source") || "cli";
+
+  const data = await api("POST", "/v1/deltas", { content, tags, source });
+  console.log(`Written. ID: ${data.id || "?"}`);
+}
+
+async function cmdQuery(args) {
+  const params = {};
+  const tags = flagVal(args, "--tags");
+  const source = flagVal(args, "--source");
+  const since = flagVal(args, "--since");
+  const limit = flagVal(args, "--limit") || "30";
+
+  params.limit = limit;
+  if (tags) params.tags_include = tags;
+  if (source) params.source = source;
+  if (since) {
+    // Parse relative time: 24h, 7d, 30m
+    const match = since.match(/^(\d+)([mhd])$/);
+    if (match) {
+      const [, n, unit] = match;
+      const ms = { m: 60000, h: 3600000, d: 86400000 }[unit];
+      params.time_start = new Date(Date.now() - parseInt(n) * ms).toISOString();
+    } else {
+      params.time_start = since; // Assume ISO
+    }
+  }
+
+  const data = await api("GET", "/v1/deltas", params);
+  fmtResults(data);
+}
+
+async function cmdStats() {
+  const [stats, tags] = await Promise.all([
+    api("GET", "/v1/stats"),
+    api("GET", "/v1/tags"),
+  ]);
+
+  console.log(`Lake: ${(stats.total || 0).toLocaleString()} deltas, ${(stats.embedded || 0).toLocaleString()} embedded (${stats.percent || 0}% coverage)\n`);
+
+  // Top tags
+  if (typeof tags === "object" && !Array.isArray(tags)) {
+    const sorted = Object.entries(tags).sort((a, b) => b[1] - a[1]).slice(0, 20);
+    console.log("Top tags:");
+    for (const [tag, count] of sorted) {
+      console.log(`  \x1b[33m${tag}\x1b[0m (${count})`);
+    }
+  }
+}
+
+async function cmdChat(args) {
+  const message = args.filter(a => !a.startsWith("--")).join(" ");
+  if (!message) { console.error("Usage: fathom chat <message>"); process.exit(1); }
+  const sessionId = flagVal(args, "--session") || undefined;
+
+  const body = {
+    messages: [{ role: "user", content: message }],
+    stream: false,
+  };
+  if (sessionId) body.session_id = sessionId;
+
+  const data = await api("POST", "/v1/chat/completions", body);
+  const text = data.choices?.[0]?.message?.content || "";
+  console.log(text);
+  if (data.session_id) {
+    console.error(`\n\x1b[2msession: ${data.session_id}\x1b[0m`);
+  }
+}
+
+// ── Flag parsing ─────────────────────────────────
+
+function flagVal(args, flag) {
+  const i = args.indexOf(flag);
+  return i >= 0 && i + 1 < args.length ? args[i + 1] : null;
+}
+
+// ── Main ─────────────────────────────────────────
+
+const COMMANDS = {
+  search: { fn: cmdSearch, usage: "fathom search <query> [--limit N]" },
+  write:  { fn: cmdWrite,  usage: "fathom write <content> [--tags a,b] [--source x]" },
+  query:  { fn: cmdQuery,  usage: "fathom query [--tags a,b] [--source x] [--since 24h] [--limit N]" },
+  stats:  { fn: cmdStats,  usage: "fathom stats" },
+  chat:   { fn: cmdChat,   usage: "fathom chat <message> [--session ID]" },
+};
+
+const [cmd, ...args] = process.argv.slice(2);
+
+if (!cmd || cmd === "help" || cmd === "--help") {
+  console.log("fathom — CLI for the Fathom memory lake\n");
+  console.log("Commands:");
+  for (const [name, { usage }] of Object.entries(COMMANDS)) {
+    console.log(`  ${usage}`);
+  }
+  console.log("\nPipe stdin:  echo 'notes' | fathom write - --tags meeting");
+  console.log(`\nAPI: ${API_URL}`);
+  console.log(`Key: ${API_KEY ? API_KEY.slice(0, 8) + "…" : "(not set)"}`);
+  process.exit(0);
+}
+
+const command = COMMANDS[cmd];
+if (!command) {
+  console.error(`Unknown command: ${cmd}\nRun 'fathom help' for usage.`);
+  process.exit(1);
+}
+
+command.fn(args).catch(e => {
+  console.error(`Error: ${e.message}`);
+  process.exit(1);
+});

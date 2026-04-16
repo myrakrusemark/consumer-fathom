@@ -1,0 +1,11 @@
+{
+  "name": "fathom-delta-cli",
+  "version": "1.0.0",
+  "description": "Search, write, and query your Fathom memory lake from the terminal",
+  "bin": {
+    "fathom": "index.js"
+  },
+  "type": "module",
+  "keywords": ["fathom", "memory", "delta-lake", "cli", "claude"],
+  "license": "MIT"
+}
