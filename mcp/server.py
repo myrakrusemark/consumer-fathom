@@ -12,20 +12,17 @@ import json
 import os
 
 import httpx
-from mcp.server.fastmcp import FastMCP
+from mcp.server import Server
+from mcp.server.stdio import stdio_server
+from mcp.types import TextContent, Tool
 
 API_URL = os.environ.get("FATHOM_API_URL", "http://localhost:8201")
 API_KEY = os.environ.get("FATHOM_API_KEY", "")
 
-mcp = FastMCP(
-    "Fathom",
-    instructions=(
-        "Fathom is a personal memory lake. Use these tools to search, write, "
-        "and query the user's lake of memories — fragments of thought, research, "
-        "conversations, photos, and experience. Search before answering. "
-        "Follow threads: if a result mentions something unfamiliar, search for that too."
-    ),
-)
+server = Server("Fathom")
+
+# Tool definitions loaded from the API at startup
+_tools: dict[str, dict] = {}
 
 
 def _headers() -> dict[str, str]:
@@ -41,7 +38,6 @@ def _client() -> httpx.Client:
 
 def _format_results(data, key: str = "results") -> str:
     """Format API response into readable text for the LLM."""
-    # Handle search results (nested under .delta)
     items = data if isinstance(data, list) else data.get(key, data.get("deltas", []))
     if not items:
         return "No results."
@@ -58,9 +54,6 @@ def _format_results(data, key: str = "results") -> str:
     return "\n".join(lines)
 
 
-# ── Dynamic tool registration from /v1/tools ─────
-
-
 def _execute_tool(tool_def: dict, args: dict) -> str:
     """Execute a tool by calling its endpoint on the consumer API."""
     endpoint = tool_def["endpoint"]
@@ -71,6 +64,8 @@ def _execute_tool(tool_def: dict, args: dict) -> str:
     request_map = tool_def.get("request_map", {})
     mapped = {}
     for arg_name, value in args.items():
+        if value is None:
+            continue
         api_name = request_map.get(arg_name, arg_name)
         mapped[api_name] = value
 
@@ -78,7 +73,6 @@ def _execute_tool(tool_def: dict, args: dict) -> str:
         if method == "POST":
             r = c.post(path, json=mapped)
         elif method == "GET":
-            # For GET, arrays need special handling
             params = {}
             for k, v in mapped.items():
                 if isinstance(v, list):
@@ -100,7 +94,11 @@ def _execute_tool(tool_def: dict, args: dict) -> str:
     elif path == "/v1/deltas" and method == "GET":
         return _format_results(data)
     elif path == "/v1/stats":
-        return f"Lake: {data.get('total', '?')} deltas, {data.get('embedded', '?')} embedded ({data.get('percent', '?')}% coverage)"
+        return (
+            f"Lake: {data.get('total', '?')} deltas, "
+            f"{data.get('embedded', '?')} embedded "
+            f"({data.get('percent', '?')}% coverage)"
+        )
     elif path == "/v1/chat/completions":
         choices = data.get("choices", [])
         if choices:
@@ -110,73 +108,60 @@ def _execute_tool(tool_def: dict, args: dict) -> str:
         return json.dumps(data, indent=2)[:2000]
 
 
-def _register_tools():
-    """Fetch tool definitions from the API and register them as MCP tools."""
+def _load_tools():
+    """Fetch tool definitions from the API."""
+    global _tools
     try:
         with _client() as c:
             r = c.get("/v1/tools")
             r.raise_for_status()
             data = r.json()
+        for t in data.get("tools", []):
+            _tools[t["name"]] = t
     except Exception as e:
-        # Fall back: register a single "lake_stats" so the server isn't empty
-        @mcp.tool()
-        def connection_error() -> str:
-            """Could not connect to Fathom API."""
-            return f"Failed to connect to {API_URL}: {e}"
-        return
-
-    tools = data.get("tools", [])
-    for tool_def in tools:
-        _register_one(tool_def)
+        print(f"Warning: could not load tools from {API_URL}: {e}", flush=True)
 
 
-def _register_one(tool_def: dict):
-    """Register a single tool definition as an MCP tool."""
-    name = tool_def["name"]
-    desc = tool_def["description"]
-    params = tool_def.get("parameters", {})
-    props = params.get("properties", {})
-    required = params.get("required", [])
-
-    # Build the function dynamically
-    def make_handler(td):
-        def handler(**kwargs) -> str:
-            return _execute_tool(td, kwargs)
-        handler.__name__ = td["name"]
-        handler.__doc__ = td["description"]
-
-        # Build type annotations from JSON Schema for FastMCP
-        annotations = {}
-        for pname, pschema in props.items():
-            ptype = pschema.get("type", "string")
-            if ptype == "string":
-                annotations[pname] = str
-            elif ptype == "integer":
-                annotations[pname] = int
-            elif ptype == "array":
-                annotations[pname] = list[str]
-            else:
-                annotations[pname] = str
-
-            # Set defaults for optional params
-            if pname not in required:
-                default = pschema.get("default")
-                if default is not None:
-                    handler.__defaults__ = handler.__defaults__ or ()
-                    # Can't easily set per-param defaults dynamically,
-                    # so we'll use None and let the API handle defaults
-                    pass
-
-        handler.__annotations__ = annotations
-        return handler
-
-    fn = make_handler(tool_def)
-    mcp.tool()(fn)
+# ── MCP handlers ──────────────────────────────────
 
 
-# Register tools at import time
-_register_tools()
+@server.list_tools()
+async def list_tools() -> list[Tool]:
+    if not _tools:
+        _load_tools()
+    return [
+        Tool(
+            name=t["name"],
+            description=t["description"],
+            inputSchema=t.get("parameters", {"type": "object", "properties": {}}),
+        )
+        for t in _tools.values()
+    ]
+
+
+@server.call_tool()
+async def call_tool(name: str, arguments: dict) -> list[TextContent]:
+    if not _tools:
+        _load_tools()
+    tool_def = _tools.get(name)
+    if not tool_def:
+        return [TextContent(type="text", text=f"Unknown tool: {name}")]
+    try:
+        result = _execute_tool(tool_def, arguments)
+    except Exception as e:
+        result = f"Error: {e}"
+    return [TextContent(type="text", text=result)]
+
+
+# ── Main ──────────────────────────────────────────
+
+
+async def main():
+    _load_tools()
+    async with stdio_server() as (read, write):
+        await server.run(read, write, server.create_initialization_options())
 
 
 if __name__ == "__main__":
-    mcp.run(transport="stdio")
+    import asyncio
+    asyncio.run(main())
