@@ -1657,6 +1657,19 @@
     const API_BASE = 'http://localhost:8201';
     let currentSessionId = null;
 
+    // Auth token — persisted in localStorage, used by all fetch calls
+    let _authToken = '';
+    try { _authToken = localStorage.getItem('fathom-api-key') || ''; } catch (e) {}
+    function authHeaders() {
+      const h = { 'Content-Type': 'application/json' };
+      if (_authToken) h['Authorization'] = 'Bearer ' + _authToken;
+      return h;
+    }
+    function _saveAuthToken(token) {
+      _authToken = token;
+      try { localStorage.setItem('fathom-api-key', token); } catch (e) {}
+    }
+
     async function api(path, opts = {}) {
       const url = API_BASE + path;
       const authH = _authToken ? { 'Authorization': 'Bearer ' + _authToken } : {};
@@ -2194,19 +2207,7 @@
     const tokenValue = document.getElementById('tokenValue');
     const scopeCheckboxes = document.getElementById('scopeCheckboxes');
 
-    let _authToken = '';
     let _allScopes = {};
-    // Persist auth token so the UI stays authenticated across reloads
-    try { _authToken = localStorage.getItem('fathom-api-key') || ''; } catch (e) {}
-    function authHeaders() {
-      const h = { 'Content-Type': 'application/json' };
-      if (_authToken) h['Authorization'] = 'Bearer ' + _authToken;
-      return h;
-    }
-    function _saveAuthToken(token) {
-      _authToken = token;
-      try { localStorage.setItem('fathom-api-key', token); } catch (e) {}
-    }
 
     const SCOPE_LABELS = {
       'lake:read': 'Read lake',
