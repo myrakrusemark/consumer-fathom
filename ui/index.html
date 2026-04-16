@@ -1306,12 +1306,8 @@
         <span class="meta">one mind, all surfaces</span>
       </div>
       <div class="extend-grid">
-        <div class="extend" data-surface="mcp">
-          <span class="label">MCP</span>
-          <span class="sub">npx fathom-mcp</span>
-        </div>
-        <div class="extend" data-surface="hooks">
-          <span class="label">Hooks</span>
+        <div class="extend" data-surface="mcp-and-hooks">
+          <span class="label">MCP &amp; Hooks</span>
           <span class="sub">npx fathom-connect</span>
         </div>
         <div class="extend" data-surface="browser">
@@ -2293,64 +2289,35 @@
     const surfaceBackBtn = document.getElementById('surfaceBackBtn');
 
     const SURFACES = {
-      'mcp': {
+      'mcp-and-hooks': {
         icon: '⌘',
-        name: 'MCP',
-        desc: 'Connect Claude Desktop, Claude Code, Cursor, or any MCP-capable host to your lake. Tools are discovered automatically from your token\'s scopes.',
-        steps: [
-          {
-            title: 'Step 1 · Get your API key',
-            body: 'Go to <strong>Settings → API Keys</strong> and create a token. Copy it — you\'ll need it in the next step.',
-          },
-          {
-            title: 'Step 2 · Add to your MCP config',
-            body: 'In Claude Desktop: <strong>Settings → Developer → Edit Config</strong>. In Claude Code: <code style="display:inline;padding:2px 6px;">~/.claude.json</code> (user scope) or <code style="display:inline;padding:2px 6px;">.mcp.json</code> (project scope).',
-            code: `{
-  "mcpServers": {
-    "fathom": {
-      "command": "npx",
-      "args": ["-y", "fathom-mcp"],
-      "env": {
-        "FATHOM_API_URL": "${API_BASE}",
-        "FATHOM_API_KEY": "your-api-key"
-      }
-    }
-  }
-}`,
-          },
-          {
-            title: 'Step 3 · Restart and use',
-            body: 'Restart your MCP host. Fathom\'s tools appear automatically:',
-            code: `search_lake   — semantic search across your memories
-write_delta   — save observations, facts, notes
-query_deltas  — filter by tags, source, time
-lake_stats    — orientation: what's in the lake
-chat          — talk to Fathom with full memory`,
-            hint: 'Tools adapt to your token\'s scopes — a read-only token only sees search tools. For Claude Code, add Hooks for the full experience.',
-          },
-        ],
-      },
-      'hooks': {
-        icon: '↻',
-        name: 'Hooks',
-        desc: 'Automatic memory for Claude Code. Crystal injection on startup, recall search on every prompt, conversation capture in the background. One command sets up everything.',
+        name: 'MCP & Hooks',
+        desc: 'Connect Claude Code, Claude Desktop, or Cursor to your lake. MCP gives you tools. Hooks give you automatic memory — crystal injection, recall search, conversation capture.',
         steps: [
           {
             title: 'Quick setup',
-            body: 'Run this in your terminal. It installs MCP + hooks and writes your Claude Code settings.',
+            body: 'One command installs everything and writes your config files.',
             code: 'npx fathom-connect',
-            hint: 'You\'ll need your API key from Settings → API Keys.',
+            hint: 'You\'ll need your API key from Settings → API Keys. The installer tests your connection and asks which host you\'re using.',
           },
           {
-            title: 'What gets installed',
-            code: `SessionStart     → identity crystal injected
-UserPromptSubmit → lake searched, context injected
-UserPromptSubmit → your message saved to the lake (async)
-Stop             → assistant response saved to the lake (async)`,
+            title: 'What you get',
+            code: `MCP tools (all hosts):
+  search_lake   — semantic search across your memories
+  write_delta   — save observations, facts, notes
+  query_deltas  — filter by tags, source, time
+  lake_stats    — orientation: what's in the lake
+  chat          — talk to Fathom with full memory
+
+Hooks (Claude Code only):
+  SessionStart     → identity crystal injected
+  UserPromptSubmit → lake searched, context injected
+  UserPromptSubmit → your message saved to the lake (async)
+  Stop             → assistant response saved to the lake (async)`,
           },
           {
             title: 'Manual setup',
-            body: 'MCP goes in <code style="display:inline;padding:2px 6px;">~/.claude.json</code> (user scope). Hooks go in <code style="display:inline;padding:2px 6px;">~/.claude/settings.json</code>.',
+            body: 'MCP goes in <code style="display:inline;padding:2px 6px;">~/.claude.json</code> (user scope). Hooks go in <code style="display:inline;padding:2px 6px;">~/.claude/settings.json</code>. For Claude Desktop, MCP goes in <code style="display:inline;padding:2px 6px;">claude_desktop_config.json</code>.',
             code: `// ~/.claude.json — MCP server (user scope, all projects)
 {
   "mcpServers": {
@@ -2363,25 +2330,8 @@ Stop             → assistant response saved to the lake (async)`,
       }
     }
   }
-}
-
-// ~/.claude/settings.json — hooks
-{
-  "hooks": {
-    "SessionStart": [{ "hooks": [{
-      "type": "command",
-      "command": "FATHOM_API_URL='${API_BASE}' FATHOM_API_KEY='your-api-key' ~/.fathom/hooks/fathom-crystal-hook.sh"
-    }]}],
-    "UserPromptSubmit": [{ "hooks": [
-      { "type": "command", "command": "FATHOM_API_URL='${API_BASE}' FATHOM_API_KEY='your-api-key' ~/.fathom/hooks/fathom-delta-hook.sh", "async": true },
-      { "type": "command", "command": "FATHOM_API_URL='${API_BASE}' FATHOM_API_KEY='your-api-key' ~/.fathom/hooks/fathom-recall-hook.sh", "timeout": 8000 }
-    ]}],
-    "Stop": [{ "hooks": [{
-      "type": "command", "command": "FATHOM_API_URL='${API_BASE}' FATHOM_API_KEY='your-api-key' ~/.fathom/hooks/fathom-delta-hook.sh", "async": true
-    }]}]
-  }
 }`,
-            hint: 'npx fathom-connect writes both files for you and installs the hook scripts to ~/.fathom/hooks/.',
+            hint: 'npx fathom-connect writes all config files and installs hook scripts to ~/.fathom/hooks/.',
           },
         ],
       },
