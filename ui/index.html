@@ -2304,7 +2304,7 @@
           },
           {
             title: 'Step 2 · Add to your MCP config',
-            body: 'In Claude Desktop: <strong>Settings → Developer → Edit Config</strong>. In Claude Code: <code style="display:inline;padding:2px 6px;">.claude/settings.json</code>.',
+            body: 'In Claude Desktop: <strong>Settings → Developer → Edit Config</strong>. In Claude Code: <code style="display:inline;padding:2px 6px;">~/.claude.json</code> (user scope) or <code style="display:inline;padding:2px 6px;">.mcp.json</code> (project scope).',
             code: `{
   "mcpServers": {
     "fathom": {
@@ -2350,8 +2350,9 @@ Stop             → assistant response saved to the lake (async)`,
           },
           {
             title: 'Manual setup',
-            body: 'If you prefer to configure manually, add these to <code style="display:inline;padding:2px 6px;">~/.claude/settings.json</code>:',
-            code: `{
+            body: 'MCP goes in <code style="display:inline;padding:2px 6px;">~/.claude.json</code> (user scope). Hooks go in <code style="display:inline;padding:2px 6px;">~/.claude/settings.json</code>.',
+            code: `// ~/.claude.json — MCP server (user scope, all projects)
+{
   "mcpServers": {
     "fathom": {
       "command": "npx",
@@ -2361,7 +2362,11 @@ Stop             → assistant response saved to the lake (async)`,
         "FATHOM_API_KEY": "your-api-key"
       }
     }
-  },
+  }
+}
+
+// ~/.claude/settings.json — hooks
+{
   "hooks": {
     "SessionStart": [{ "hooks": [{
       "type": "command",
@@ -2376,7 +2381,7 @@ Stop             → assistant response saved to the lake (async)`,
     }]}]
   }
 }`,
-            hint: 'npx fathom-connect writes this for you and installs the hook scripts to ~/.fathom/hooks/.',
+            hint: 'npx fathom-connect writes both files for you and installs the hook scripts to ~/.fathom/hooks/.',
           },
         ],
       },

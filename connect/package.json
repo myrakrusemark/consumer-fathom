@@ -1,11 +1,17 @@
 {
   "name": "fathom-connect",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Connect Claude Code, Claude Desktop, or Cursor to your Fathom memory lake",
   "bin": {
     "fathom-connect": "index.js"
   },
   "type": "module",
-  "keywords": ["fathom", "mcp", "memory", "claude", "hooks"],
+  "keywords": [
+    "fathom",
+    "mcp",
+    "memory",
+    "claude",
+    "hooks"
+  ],
   "license": "MIT"
 }

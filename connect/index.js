@@ -132,21 +132,27 @@ exec curl -sfL "https://raw.githubusercontent.com/fathom-ai/fathom-connect/main/
 
 // ── Settings patching ────────────────────────────
 
-function patchClaudeSettings(settingsPath, url, key) {
+function patchClaudeMcp(url, key) {
+  // MCP servers → ~/.claude.json (user scope, all projects)
+  const claudeJson = join(HOME, ".claude.json");
+  let config = {};
+  if (existsSync(claudeJson)) {
+    try { config = JSON.parse(readFileSync(claudeJson, "utf8")); } catch { config = {}; }
+  }
+  if (!config.mcpServers) config.mcpServers = {};
+  config.mcpServers.fathom = mcpBlock(url, key);
+  writeFileSync(claudeJson, JSON.stringify(config, null, 2) + "\n");
+  return claudeJson;
+}
+
+function patchClaudeHooks(settingsPath, url, key) {
+  // Hooks → ~/.claude/settings.json
   let settings = {};
   if (existsSync(settingsPath)) {
-    try {
-      settings = JSON.parse(readFileSync(settingsPath, "utf8"));
-    } catch {
-      settings = {};
-    }
+    try { settings = JSON.parse(readFileSync(settingsPath, "utf8")); } catch { settings = {}; }
   }
 
-  // Add MCP server
-  if (!settings.mcpServers) settings.mcpServers = {};
-  settings.mcpServers.fathom = mcpBlock(url, key);
-
-  // Add hooks
+  // Hooks only — MCP is in ~/.claude.json now
   if (!settings.hooks) settings.hooks = {};
 
   for (const [name, def] of Object.entries(HOOKS)) {
@@ -227,14 +233,16 @@ async function main() {
   console.error(`  ✓ Connected — ${test.total.toLocaleString()} deltas in the lake`);
 
   if (host === "claude-code") {
-    // Install hooks
-    downloadHooks();
-    console.error(`  ✓ Hooks installed to ${HOOK_DIR}`);
+    // MCP → ~/.claude.json (user scope)
+    const mcpPath = patchClaudeMcp(url, key);
+    console.error(`  ✓ MCP server written to ${mcpPath}`);
 
-    // Patch settings
+    // Hooks → ~/.claude/settings.json
+    downloadHooks();
+    console.error(`  ✓ Hook scripts installed to ${HOOK_DIR}`);
     const settingsPath = join(HOME, ".claude", "settings.json");
-    patchClaudeSettings(settingsPath, url, key);
-    console.error(`  ✓ MCP + hooks written to ${settingsPath}`);
+    patchClaudeHooks(settingsPath, url, key);
+    console.error(`  ✓ Hooks configured in ${settingsPath}`);
     console.error("  ✓ Crystal injection: on");
     console.error("  ✓ Delta capture: on");
     console.error("  ✓ Recall search: on");
