@@ -26,12 +26,12 @@ class Settings(BaseSettings):
     base_url: str = ""       # overrides provider default if set
     model: str = ""          # overrides provider default if set
 
-    # Database (shared Postgres)
-    database_url: str = "postgresql://fathom:fathom@localhost:5432/deltas"
-
     # Delta store
     delta_store_url: str = "http://localhost:8100"
     delta_api_key: str = ""
+
+    # Source runner
+    source_runner_url: str = "http://localhost:4260"
 
     # Paths (container defaults)
     crystal_path: str = "/data/crystal.json"

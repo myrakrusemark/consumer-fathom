@@ -1,6 +1,7 @@
 """Fathom Consumer API — OpenAI-compat chat completions with delta lake tools."""
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from contextlib import asynccontextmanager
@@ -8,7 +9,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, File, Form, UploadFile
+import httpx
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -57,14 +59,17 @@ class SessionUpdate(BaseModel):
 
 
 class SourceCreate(BaseModel):
-    type: str
-    name: str
-    config: dict | None = None
+    source_type: str
+    config: dict
+    name: str = ""
+    interval_minutes: int = 30
+    expiry_days: float | None = 30
 
 
 class SourceUpdate(BaseModel):
-    state: str | None = None
     config: dict | None = None
+    interval_minutes: int | None = None
+    expiry_days: float | None = None
 
 
 # ── App ─────────────────────────────────────────
@@ -72,9 +77,7 @@ class SourceUpdate(BaseModel):
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    await db.init_pool()
     yield
-    await db.close_pool()
     await delta_client.close()
 
 
@@ -713,39 +716,136 @@ async def usage():
     }
 
 
-# ── Source endpoints ────────────────────────────
+# ── Source endpoints (proxy to source-runner) ──
+
+
+def _source_runner() -> httpx.AsyncClient:
+    """Lazy client for source-runner API."""
+    return httpx.AsyncClient(
+        base_url=settings.source_runner_url.rstrip("/"),
+        timeout=15,
+    )
 
 
 @app.get("/v1/sources")
 async def list_sources():
-    sources = await db.list_sources()
-    for s in sources:
-        for k in ("created_at", "updated_at"):
-            if hasattr(s.get(k), "isoformat"):
-                s[k] = s[k].isoformat()
-    return {"sources": sources}
+    async with _source_runner() as c:
+        r = await c.get("/api/sources")
+        r.raise_for_status()
+        return r.json()
+
+
+@app.get("/v1/sources/types")
+async def list_source_types():
+    async with _source_runner() as c:
+        r = await c.get("/api/sources/types")
+        r.raise_for_status()
+        return r.json()
 
 
 @app.post("/v1/sources")
 async def create_source(req: SourceCreate):
-    return await db.create_source(req.type, req.name, req.config)
+    async with _source_runner() as c:
+        r = await c.post("/api/sources", json=req.model_dump())
+        if r.status_code >= 400:
+            raise HTTPException(r.status_code, r.json().get("detail", r.text))
+        return r.json()
 
 
-@app.patch("/v1/sources/{source_id}")
+@app.put("/v1/sources/{source_id}")
 async def update_source(source_id: str, req: SourceUpdate):
-    result = await db.update_source(source_id, state=req.state, config=req.config)
-    if not result:
-        return {"error": "not found"}, 404
-    for k in ("created_at", "updated_at"):
-        if hasattr(result.get(k), "isoformat"):
-            result[k] = result[k].isoformat()
-    return result
+    # Include explicitly-set fields (even if None, for "forever" expiry)
+    body = {k: v for k, v in req.model_dump(exclude_unset=True).items()}
+    async with _source_runner() as c:
+        r = await c.put(f"/api/sources/{source_id}", json=body)
+        if r.status_code == 404:
+            raise HTTPException(404, f"Source not found: {source_id}")
+        r.raise_for_status()
+        return r.json()
+
+
+@app.post("/v1/sources/{source_id}/pause")
+async def pause_source(source_id: str):
+    async with _source_runner() as c:
+        r = await c.post(f"/api/sources/{source_id}/pause")
+        r.raise_for_status()
+        return r.json()
+
+
+@app.post("/v1/sources/{source_id}/resume")
+async def resume_source(source_id: str):
+    async with _source_runner() as c:
+        r = await c.post(f"/api/sources/{source_id}/resume")
+        r.raise_for_status()
+        return r.json()
+
+
+@app.post("/v1/sources/{source_id}/poll")
+async def poll_source(source_id: str):
+    async with _source_runner() as c:
+        r = await c.post(f"/api/sources/{source_id}/poll")
+        if r.status_code == 404:
+            raise HTTPException(404, f"Source not found: {source_id}")
+        r.raise_for_status()
+        return r.json()
 
 
 @app.delete("/v1/sources/{source_id}")
 async def delete_source(source_id: str):
-    deleted = await db.delete_source(source_id)
-    return {"deleted": deleted}
+    async with _source_runner() as c:
+        r = await c.delete(f"/api/sources/{source_id}")
+        r.raise_for_status()
+        return r.json()
+
+
+@app.get("/v1/sources/{source_id}/detail")
+async def source_detail(source_id: str):
+    """Fetch source metadata + recent deltas + time-windowed counts."""
+    # Get source info from source-runner
+    async with _source_runner() as c:
+        r = await c.get(f"/api/sources/{source_id}")
+        if r.status_code == 404:
+            raise HTTPException(404, f"Source not found: {source_id}")
+        r.raise_for_status()
+        source = r.json()
+
+    # The source field in deltas is "{type}/{id}" for scoped sources
+    source_type = source.get("source_type", "")
+    delta_source = source.get("source", source_type)
+    if delta_source == source_type:
+        delta_source = f"{source_type}/{source_id}"
+
+    now = datetime.now(timezone.utc)
+    t_24h = (now - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    t_7d = (now - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+    # Fetch recent deltas + counts in parallel
+    recent, last_24h, last_7d = await asyncio.gather(
+        delta_client.query(limit=20, source=delta_source),
+        delta_client.query(limit=1000, source=delta_source, time_start=t_24h),
+        delta_client.query(limit=5000, source=delta_source, time_start=t_7d),
+    )
+
+    # Slim down recent deltas for the response
+    deltas = []
+    for d in recent[:20]:
+        deltas.append({
+            "id": d.get("id"),
+            "content": d.get("content") or "",
+            "timestamp": d.get("timestamp"),
+            "tags": d.get("tags", []),
+            "media_hash": d.get("media_hash"),
+        })
+
+    return {
+        "source": source,
+        "counts": {
+            "last_24h": len(last_24h),
+            "last_7d": len(last_7d),
+            "all_time": source.get("deltaCount") or 0,
+        },
+        "deltas": deltas,
+    }
 
 
 # ── Media proxy ─────────────────────────────────

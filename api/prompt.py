@@ -174,21 +174,26 @@ source='fathom-feed', and content as a JSON object with these fields:
   body     — 2-4 sentences, flowing prose
   tail     — brief follow-up hint or stat
 
-Images make stories richer. When you find deltas with a media_hash, call \
-delta_view_image to see the image. If the image is relevant to a story, \
-include it:
+Images:
 
-  media_hash    — the hash from the delta (use this for lake images)
-  image_url     — an external URL (use this for web images, RSS thumbnails)
-  image_layout  — "hero" for a full-bleed 16:8 banner, "thumb" for a \
-                  small square sidebar image
+  body_image        — the story's featured image. Either a media_hash \
+                      (for lake images) or a URL (for external images). \
+                      Optional — not every story needs one.
+  body_image_layout — "hero" for a full-bleed 16:8 banner, "thumb" for a \
+                      small square sidebar image. Default "hero".
+  media             — list of additional images related to the story. Each \
+                      entry is a media_hash or URL string. These render as \
+                      attachments below the story body. Use this when a story \
+                      references multiple images (e.g. an RSS post with several \
+                      photos, a gallery, before/after shots).
 
-Use "hero" for visually striking images that ARE the story — a photo someone \
-sent, a product shot, a scene. Use "thumb" for supplementary visuals — a \
-profile pic, a logo, an icon.
+Use "hero" for visually striking images that ARE the story — a photo, a \
+product shot, a scene. Use "thumb" for supplementary visuals.
 
-Not every story needs an image. But when the lake has one that fits, use it. \
-Images are what make a feed feel alive."""
+When you find deltas with a media_hash, call delta_view_image to inspect \
+it before deciding whether to feature or attach it. Images from RSS and \
+Mastodon sources may have media_hash (if the image was downloaded) or \
+image URLs in the markdown content (if it wasn't). Both work."""
 
 
 CRYSTAL_DIRECTIVE = """\

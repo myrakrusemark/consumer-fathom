@@ -4,4 +4,3 @@ openai>=1.60
 httpx>=0.28
 pydantic>=2.10
 pydantic-settings>=2.7
-asyncpg>=0.30

@@ -1,65 +1,16 @@
-"""Lake-backed sessions (matching loop-api pattern) + Postgres sources."""
+"""Lake-backed sessions (matching loop-api pattern)."""
 from __future__ import annotations
 
-import json
-import uuid
 from datetime import datetime, timezone, timedelta
 
-import asyncpg
-import httpx
-
 from . import delta_client
-from .settings import settings
 from .slug import generate_slug
-
-_pool: asyncpg.Pool | None = None
 
 # Match loop-api conventions exactly
 LAKE_CHAT_TAG = "fathom-chat"
 LAKE_CHAT_SOURCE = "fathom-chat"
 LAKE_SESSION_LIST_WINDOW_DAYS = 30
 LAKE_SESSION_LIST_LIMIT = 1000
-
-DDL = """
-CREATE TABLE IF NOT EXISTS sources (
-    id          TEXT PRIMARY KEY,
-    type        TEXT NOT NULL,
-    name        TEXT NOT NULL,
-    config      JSONB NOT NULL DEFAULT '{}',
-    state       TEXT NOT NULL DEFAULT 'active',
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-"""
-
-
-def _id() -> str:
-    return uuid.uuid4().hex[:12]
-
-
-async def init_pool():
-    global _pool
-    if _pool is not None:
-        return
-    _pool = await asyncpg.create_pool(
-        settings.database_url,
-        min_size=2,
-        max_size=5,
-    )
-    async with _pool.acquire() as conn:
-        await conn.execute(DDL)
-
-
-async def close_pool():
-    global _pool
-    if _pool:
-        await _pool.close()
-        _pool = None
-
-
-def pool() -> asyncpg.Pool:
-    assert _pool is not None, "call init_pool() first"
-    return _pool
 
 
 # ── Sessions (lake-backed, matching loop-api) ───
@@ -256,44 +207,3 @@ async def get_messages(session_id: str, limit: int = 200) -> list[dict]:
     return messages
 
 
-# ── Sources (Postgres) ──────────────────────────
-
-
-async def create_source(type: str, name: str, config: dict | None = None) -> dict:
-    sid = _id()
-    now = datetime.now(timezone.utc)
-    cfg = json.dumps(config or {})
-    await pool().execute(
-        "INSERT INTO sources (id, type, name, config, created_at, updated_at) "
-        "VALUES ($1, $2, $3, $4::jsonb, $5, $5)",
-        sid, type, name, cfg, now,
-    )
-    return {"id": sid, "type": type, "name": name, "config": config or {}, "state": "active"}
-
-
-async def list_sources() -> list[dict]:
-    rows = await pool().fetch(
-        "SELECT id, type, name, config, state, created_at, updated_at "
-        "FROM sources ORDER BY created_at ASC",
-    )
-    return [dict(r) for r in rows]
-
-
-async def update_source(source_id: str, state: str | None = None, config: dict | None = None) -> dict | None:
-    now = datetime.now(timezone.utc)
-    row = await pool().fetchrow("SELECT * FROM sources WHERE id = $1", source_id)
-    if not row:
-        return None
-    new_state = state or row["state"]
-    new_config = json.dumps(config) if config else row["config"]
-    updated = await pool().fetchrow(
-        "UPDATE sources SET state = $1, config = $2::jsonb, updated_at = $3 "
-        "WHERE id = $4 RETURNING id, type, name, config, state, created_at, updated_at",
-        new_state, new_config if isinstance(new_config, str) else json.dumps(new_config), now, source_id,
-    )
-    return dict(updated) if updated else None
-
-
-async def delete_source(source_id: str) -> bool:
-    result = await pool().execute("DELETE FROM sources WHERE id = $1", source_id)
-    return result == "DELETE 1"

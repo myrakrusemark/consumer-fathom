@@ -19,6 +19,8 @@
     })();
   </script>
   <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/glightbox@3/dist/css/glightbox.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/glightbox@3/dist/js/glightbox.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -196,11 +198,12 @@
     /* Card with full-bleed image hero */
     .card-img-hero {
       aspect-ratio: 16 / 8;
-      width: 100%;
-      background-size: cover; background-position: center;
+      width: 100%; display: block;
+      overflow: hidden;
       background-color: var(--bg-deep);
       border-bottom: 1px solid var(--rule);
       position: relative;
+      text-decoration: none;
     }
     .card-img-hero::after {
       content: ""; position: absolute; inset: 0;
@@ -218,6 +221,36 @@
     .card-horiz .card-body { flex: 1; padding: 16px 18px; }
     @media (min-width: 640px) {
       .card-horiz .thumb { width: 168px; }
+    }
+
+    /* Media attachments strip */
+    .card-media {
+      display: flex; gap: 6px; padding: 0 18px 14px;
+      overflow-x: auto; scrollbar-width: none;
+    }
+    .card-media::-webkit-scrollbar { display: none; }
+    .card-media a {
+      flex-shrink: 0; display: block;
+      border-radius: 6px; overflow: hidden;
+      border: 1px solid var(--rule);
+    }
+    .card-media img {
+      height: 64px; width: auto; display: block;
+      object-fit: cover; background: var(--bg-deep);
+    }
+    .card-media-links {
+      padding: 0 18px 14px;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .card-media-links a {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 12.5px; color: var(--accent); text-decoration: none;
+      font-family: var(--mono); letter-spacing: 0.01em;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .card-media-links a:hover { text-decoration: underline; }
+    .card-media-links a::before {
+      content: "→"; flex-shrink: 0; color: var(--ink-faint);
     }
 
     /* Surface animation — elements float up from the depths */
@@ -285,8 +318,11 @@
       flex-shrink: 0;
     }
     .chip .label { display: inline-block; }
+    .chip .label .source-type { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
     .chip[data-state="paused"] { color: var(--ink-faint); opacity: 0.55; }
     .chip[data-state="paused"] .dot { background: var(--ink-faint); box-shadow: none; }
+    .chip[data-state="error"] { color: #d35; opacity: 0.75; }
+    .chip[data-state="error"] .dot { background: #d35; box-shadow: 0 0 6px rgba(221,51,85,0.4); }
     .chip:not(.add) { cursor: pointer; user-select: none; padding-right: 10px; }
     .chip:not(.add):active { transform: scale(0.97); }
     .chip .kabob {
@@ -413,6 +449,33 @@
       border: 1px solid var(--rule); font-weight: 500;
     }
     .btn.ghost:hover { border-color: var(--ink-faint); }
+    .btn.ghost .dot {
+      width: 6px; height: 6px; border-radius: 50%; background: var(--signal);
+      box-shadow: 0 0 6px var(--dot-glow); display: inline-block; vertical-align: middle;
+    }
+    .btn.ghost .dot.paused { background: var(--ink-faint); box-shadow: none; }
+    .btn.ghost.compact { padding: 7px 14px; font-size: 13px; border-radius: 8px; }
+    .btn.ghost.icon-only { padding: 7px 8px; min-width: 0; border-radius: 8px; }
+    .detail-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+    .detail-kebab-wrap { position: relative; }
+    .detail-kebab-menu {
+      position: absolute; top: 100%; right: 0; margin-top: 4px;
+      background: var(--surface); border: 1px solid var(--rule); border-radius: 10px;
+      padding: 4px 0; min-width: 160px; z-index: 100;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    }
+    .detail-kebab-menu .menu-item {
+      display: block; width: 100%; text-align: left; padding: 8px 14px;
+      background: none; border: none; color: var(--ink); font-size: 13px;
+      cursor: pointer; font-family: var(--sans);
+    }
+    .detail-kebab-menu .menu-item:hover { background: var(--surface-2); }
+    .detail-kebab-menu .menu-item.active { color: var(--accent); }
+    .detail-kebab-menu .menu-sep { height: 1px; background: var(--rule); margin: 4px 0; }
+    .detail-kebab-menu .menu-label {
+      padding: 6px 14px 2px; font-size: 10px; text-transform: uppercase;
+      letter-spacing: 0.06em; color: var(--ink-faint); font-family: var(--sans);
+    }
 
     /* ── Composer (pinned) ───────────────────────── */
     .composer-wrap {
@@ -420,6 +483,13 @@
       padding: 16px 16px calc(14px + env(safe-area-inset-bottom));
       background: linear-gradient(180deg, transparent 0%, var(--bg) 40%);
       z-index: 20;
+      transition: transform 320ms ease, opacity 320ms ease, filter 320ms ease;
+    }
+    .composer-wrap.sunk {
+      transform: translateY(20px) scale(0.96);
+      opacity: 0;
+      filter: blur(4px);
+      pointer-events: none;
     }
     .composer {
       max-width: 720px; margin: 0 auto;
@@ -705,14 +775,21 @@
     .delta-row .text {
       font-size: 14.5px; color: var(--ink-soft); line-height: 1.55;
     }
+    .delta-row .text a { color: var(--accent); text-decoration: none; }
+    .delta-row .text a:hover { text-decoration: underline; }
+    .delta-row .text img { max-width: 100%; border-radius: 8px; margin: 8px 0; }
+    .delta-row .text p { margin: 0 0 8px; }
+    .delta-row .text p:last-child { margin-bottom: 0; }
+    .delta-row .text h1, .delta-row .text h2, .delta-row .text h3 {
+      font-size: 14.5px; font-weight: 600; margin: 8px 0 4px; color: var(--ink);
+    }
+    .delta-row.long { cursor: pointer; }
     .delta-row.long .text {
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
+      max-height: 3.1em;
       overflow: hidden;
     }
     .delta-row.long.expanded .text {
-      -webkit-line-clamp: unset;
+      max-height: none;
       overflow: visible;
     }
     .delta-row .show-more { display: none; }
@@ -1187,15 +1264,7 @@
         <span class="meta">7 active · 2 paused</span>
       </div>
       <div class="sources" id="sourcesList">
-        <span class="chip" data-source="obsidian" data-state="active"><span class="dot"></span><span class="label">Obsidian vault</span><button class="kabob" tabindex="-1" aria-label="Source settings"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg></button></span>
-        <span class="chip" data-source="browser" data-state="active"><span class="dot"></span><span class="label">Browser extension</span><button class="kabob" tabindex="-1" aria-label="Source settings"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg></button></span>
-        <span class="chip" data-source="claude-desktop" data-state="active"><span class="dot"></span><span class="label">Claude Desktop</span><button class="kabob" tabindex="-1" aria-label="Source settings"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg></button></span>
-        <span class="chip" data-source="gmail" data-state="active"><span class="dot"></span><span class="label">Gmail</span><button class="kabob" tabindex="-1" aria-label="Source settings"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg></button></span>
-        <span class="chip" data-source="heartbeat" data-state="active"><span class="dot"></span><span class="label">Heartbeat</span><button class="kabob" tabindex="-1" aria-label="Source settings"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg></button></span>
-        <span class="chip" data-source="topoco" data-state="active"><span class="dot"></span><span class="label">Topoco sales</span><button class="kabob" tabindex="-1" aria-label="Source settings"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg></button></span>
-        <span class="chip" data-source="rss" data-state="active"><span class="dot"></span><span class="label">RSS · 12 feeds</span><button class="kabob" tabindex="-1" aria-label="Source settings"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg></button></span>
-        <span class="chip" data-source="slack" data-state="paused"><span class="dot"></span><span class="label">Slack</span><button class="kabob" tabindex="-1" aria-label="Source settings"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg></button></span>
-        <span class="chip" data-source="calendar" data-state="paused"><span class="dot"></span><span class="label">Calendar</span><button class="kabob" tabindex="-1" aria-label="Source settings"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg></button></span>
+        <!-- Populated by loadSources() -->
         <button class="chip add" id="addSourceBtn" type="button">+ Add source</button>
       </div>
     </section>
@@ -1265,7 +1334,31 @@
       <section class="source-hero">
         <div class="row">
           <div class="source-logo" id="detailLogo">G</div>
-          <button class="btn ghost" id="detailQuickPause">Pause</button>
+          <div class="detail-actions">
+            <button class="btn ghost compact" id="detailQuickPause"><span class="dot" id="detailDot"></span> Pause</button>
+            <div class="detail-kebab-wrap">
+            <button class="btn ghost icon-only" id="detailKebab" aria-label="More options"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg></button>
+            <div class="detail-kebab-menu" id="detailKebabMenu" hidden>
+              <button class="menu-item" id="detailRunNow">Run now</button>
+              <div class="menu-sep"></div>
+              <div class="menu-label">Poll every</div>
+              <button class="menu-item freq" data-freq="1m">1 min</button>
+              <button class="menu-item freq" data-freq="5m">5 min</button>
+              <button class="menu-item freq" data-freq="15m">15 min</button>
+              <button class="menu-item freq" data-freq="30m">30 min</button>
+              <button class="menu-item freq" data-freq="1h">1 hour</button>
+              <button class="menu-item freq" data-freq="6h">6 hours</button>
+              <button class="menu-item freq" data-freq="daily">Daily</button>
+              <div class="menu-sep"></div>
+              <div class="menu-label">Keep deltas</div>
+              <button class="menu-item expiry" data-expiry="">Forever</button>
+              <button class="menu-item expiry" data-expiry="1">1 day</button>
+              <button class="menu-item expiry" data-expiry="3">3 days</button>
+              <button class="menu-item expiry" data-expiry="7">1 week</button>
+              <button class="menu-item expiry" data-expiry="30">1 month</button>
+            </div>
+          </div>
+          </div>
         </div>
         <h1 id="detailName">Gmail</h1>
       </section>
@@ -1276,10 +1369,10 @@
           <h2>Activity</h2>
           <span class="meta" id="detailLastSeen">Last activity · 4 min ago</span>
         </div>
-        <div class="stats-row">
-          <div class="stat"><span class="n">312</span><span class="lbl">last 24h</span></div>
-          <div class="stat"><span class="n">2,104</span><span class="lbl">last 7d</span></div>
-          <div class="stat"><span class="n">48,209</span><span class="lbl">all time</span></div>
+        <div class="stats-row" id="detailStats">
+          <div class="stat"><span class="n" id="detailCount24h">—</span><span class="lbl">last 24h</span></div>
+          <div class="stat"><span class="n" id="detailCount7d">—</span><span class="lbl">last 7d</span></div>
+          <div class="stat"><span class="n" id="detailCountAll">—</span><span class="lbl">all time</span></div>
         </div>
       </section>
 
@@ -1288,46 +1381,8 @@
         <div class="section-head">
           <h2>Recent deltas</h2>
         </div>
-        <div class="delta-list">
-          <div class="delta-row long">
-            <span class="when">4m</span>
-            <div class="body">
-              <div class="text">Subject: "Re: Topoco quarterly summary" from Beverly. She walked through Q1 performance numbers, flagged two concerns about Etsy listing visibility since the April algorithm change, and asked for a meeting next week to align on the Q2 roadmap before the Memorial Day inventory push. Thread now 4 messages deep.</div>
-              <button class="show-more" type="button">Show more</button>
-            </div>
-          </div>
-
-          <div class="delta-row">
-            <span class="when">31m</span>
-            <div class="body">
-              <div class="text">Calendar invite from Anthropic recruiting for 2026-04-22 at 14:30 CDT. Unanswered.</div>
-            </div>
-          </div>
-
-          <div class="delta-row long">
-            <span class="when">1h</span>
-            <div class="body">
-              <div class="text">Shipping notification: 2 filament spools delivered, tracking #1Z999AA12. Matte black PLA 2kg and transparent PETG 1kg — ordered last Thursday from the Bambu store. Marked received. Expected at the Topoco lab by end of day so Finn and Jake can resume the evening run.</div>
-              <button class="show-more" type="button">Show more</button>
-            </div>
-            <div class="thumb" style="background-image: url('https://picsum.photos/seed/fathom-spools/200/200')"></div>
-          </div>
-
-          <div class="delta-row long">
-            <span class="when">2h</span>
-            <div class="body">
-              <div class="text">Newsletter from Stratechery — "The Agentic Web" by Ben Thompson. Ben argues agents are the next aggregation layer after search, and that the platforms which control identity and memory will win the next decade. Flagged for later, marked as relevant to the IDA patent narrative.</div>
-              <button class="show-more" type="button">Show more</button>
-            </div>
-            <div class="thumb" style="background-image: url('https://picsum.photos/seed/fathom-stratechery/200/200')"></div>
-          </div>
-
-          <div class="delta-row">
-            <span class="when">4h</span>
-            <div class="body">
-              <div class="text">Password reset requested on old Shopify staging account — ignored.</div>
-            </div>
-          </div>
+        <div class="delta-list" id="detailDeltas">
+          <!-- Populated by loadSourceDetail() -->
         </div>
       </section>
 
@@ -1357,111 +1412,16 @@
     </header>
 
     <main>
-      <!-- Step 1: Choose type -->
+      <!-- Step 1: Choose type (populated dynamically from source-runner) -->
       <section class="wizard-step active" id="addStep1">
         <div class="wizard-stamp">Step 1 · Choose type</div>
         <h1 class="wizard-title">What's feeding you?</h1>
-        <p class="wizard-sub">Pick a source type. Any feed of the same type clusters together on your home screen — so if you already have RSS feeds, a new one joins the group.</p>
+        <p class="wizard-sub">Pick a source type. Each one polls on a schedule and writes deltas to the lake.</p>
 
         <div class="type-group">
-          <h3>Connected accounts</h3>
-          <div class="type-grid">
-            <button class="type-tile" data-type="gmail">
-              <div class="type-icon">✉</div>
-              <div class="type-name">Gmail</div>
-              <div class="type-sub">Email, threads, attachments</div>
-              <div class="type-status">Connected</div>
-            </button>
-            <button class="type-tile" data-type="slack">
-              <div class="type-icon">#</div>
-              <div class="type-name">Slack</div>
-              <div class="type-sub">Workspaces, DMs, channels</div>
-              <div class="type-status">Paused · 2 workspaces</div>
-            </button>
-            <button class="type-tile" data-type="github">
-              <div class="type-icon">◈</div>
-              <div class="type-name">GitHub</div>
-              <div class="type-sub">Commits, issues, PRs</div>
-              <div class="type-status not-connected">Not connected</div>
-            </button>
-            <button class="type-tile" data-type="notion">
-              <div class="type-icon">◍</div>
-              <div class="type-name">Notion</div>
-              <div class="type-sub">Pages, databases</div>
-              <div class="type-status not-connected">Not connected</div>
-            </button>
-            <button class="type-tile" data-type="drive">
-              <div class="type-icon">△</div>
-              <div class="type-name">Google Drive</div>
-              <div class="type-sub">Docs, sheets, shared files</div>
-              <div class="type-status not-connected">Not connected</div>
-            </button>
-          </div>
-        </div>
-
-        <div class="type-group">
-          <h3>Streams</h3>
-          <div class="type-grid">
-            <button class="type-tile" data-type="rss">
-              <div class="type-icon">∿</div>
-              <div class="type-name">RSS feed</div>
-              <div class="type-sub">Blogs, podcasts, journals</div>
-              <div class="type-status">12 connected</div>
-            </button>
-            <button class="type-tile" data-type="webhook">
-              <div class="type-icon">⟡</div>
-              <div class="type-name">Webhook</div>
-              <div class="type-sub">Custom HTTP events</div>
-              <div class="type-status not-connected">Not connected</div>
-            </button>
-            <button class="type-tile" data-type="api">
-              <div class="type-icon">⟐</div>
-              <div class="type-name">API poller</div>
-              <div class="type-sub">Pull from any JSON endpoint</div>
-              <div class="type-status not-connected">Not connected</div>
-            </button>
-          </div>
-        </div>
-
-        <div class="type-group">
-          <h3>Local watchers</h3>
-          <div class="type-grid">
-            <button class="type-tile" data-type="obsidian">
-              <div class="type-icon">⌘</div>
-              <div class="type-name">Obsidian vault</div>
-              <div class="type-sub">Markdown notes, daily journals</div>
-              <div class="type-status">Connected</div>
-            </button>
-            <button class="type-tile" data-type="folder">
-              <div class="type-icon">▣</div>
-              <div class="type-name">Folder</div>
-              <div class="type-sub">Watch any directory</div>
-              <div class="type-status not-connected">Not connected</div>
-            </button>
-          </div>
-        </div>
-
-        <div class="type-group">
-          <h3>Agent captures</h3>
-          <div class="type-grid">
-            <button class="type-tile" data-type="claude-desktop">
-              <div class="type-icon">✦</div>
-              <div class="type-name">Claude Desktop</div>
-              <div class="type-sub">MCP connector logs</div>
-              <div class="type-status">Connected</div>
-            </button>
-            <button class="type-tile" data-type="chatgpt">
-              <div class="type-icon">◉</div>
-              <div class="type-name">ChatGPT</div>
-              <div class="type-sub">Export-based ingestion</div>
-              <div class="type-status not-connected">Not connected</div>
-            </button>
-            <button class="type-tile" data-type="cursor">
-              <div class="type-icon">▷</div>
-              <div class="type-name">Cursor</div>
-              <div class="type-sub">Coding session logs</div>
-              <div class="type-status not-connected">Not connected</div>
-            </button>
+          <h3>Available sources</h3>
+          <div class="type-grid" id="addTypeGrid">
+            <!-- Populated by loadSources() -->
           </div>
         </div>
       </section>
@@ -1591,7 +1551,7 @@
   </div><!-- /view-chat -->
 
   <!-- ── Composer (pinned bottom) ──────────────── -->
-  <div class="composer-wrap">
+  <div class="composer-wrap" id="composerWrap">
     <div class="composer">
       <input type="file" id="fileInput" accept="image/*" hidden />
       <button class="attach" id="attachBtn" aria-label="Attach">
@@ -1625,6 +1585,13 @@
       return opts.raw ? r : r.json();
     }
 
+    // Composer visibility — only show on main + chat views
+    const composerWrap = document.getElementById('composerWrap');
+    function syncComposer() {
+      const show = !viewMain.hidden || !document.getElementById('viewChat').hidden;
+      composerWrap.classList.toggle('sunk', !show);
+    }
+
     // Auto-grow composer
     const ta = document.querySelector('.composer textarea');
     ta.addEventListener('input', () => {
@@ -1654,58 +1621,257 @@
       applyTheme(current === 'light' ? 'dark' : 'light');
     });
 
-    // ── Source interactions ─────────────────────
-    // Per-source display data. Keys match data-source attributes on chips.
-    const SOURCES = {
-      obsidian:        { name: 'Obsidian vault',   logo: '⌘', last: '2 min ago',  auth: 'Local watcher' },
-      browser:         { name: 'Browser extension',logo: '◷', last: '8 min ago',  auth: 'Chrome · Firefox' },
-      'claude-desktop':{ name: 'Claude Desktop',   logo: '✦', last: 'just now',   auth: 'MCP connected' },
-      gmail:           { name: 'Gmail',            logo: 'G', last: '4 min ago',  auth: 'OAuth · myrakrusemark@gmail.com' },
-      heartbeat:       { name: 'Heartbeat',        logo: '❤', last: '30 sec ago', auth: 'Internal · always on' },
-      topoco:          { name: 'Topoco sales',     logo: '◉', last: '1 h ago',    auth: 'Shopify · Etsy · Amazon' },
-      rss:             { name: 'RSS feeds',        logo: '∿', last: '14 min ago', auth: '12 feeds connected' },
-      slack:           { name: 'Slack',            logo: '#', last: '3 days ago', auth: 'OAuth · 2 workspaces' },
-      calendar:        { name: 'Calendar',         logo: '◧', last: '5 days ago', auth: 'Google Calendar' },
-    };
+    // ── Source interactions (live from source-runner) ──
+    let _sources = {};  // id → source object from API
 
     const viewMain = document.getElementById('viewMain');
     const viewDetail = document.getElementById('viewSourceDetail');
     const sourcesList = document.getElementById('sourcesList');
     const backBtn = document.getElementById('backBtn');
 
-    function openSourceDetail(sourceId) {
-      const data = SOURCES[sourceId];
-      if (!data) return;
-      document.getElementById('detailTitle').textContent = data.name;
-      document.getElementById('detailLogo').textContent = data.logo;
-      document.getElementById('detailName').textContent = data.name;
-      document.getElementById('detailLastSeen').textContent = 'Last activity · ' + data.last;
+    const KABOB_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>';
 
-      // Reflect current chip state on the detail page
-      const chip = sourcesList.querySelector(`.chip[data-source="${sourceId}"]`);
-      const paused = chip && chip.getAttribute('data-state') === 'paused';
-      document.getElementById('detailQuickPause').textContent = paused ? 'Resume' : 'Pause';
+    function _relativeTime(iso) {
+      if (!iso) return '';
+      const diff = Date.now() - new Date(iso).getTime();
+      const mins = Math.floor(diff / 60000);
+      if (mins < 1) return 'just now';
+      if (mins < 60) return mins + ' min ago';
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24) return hrs + 'h ago';
+      return Math.floor(hrs / 24) + 'd ago';
+    }
+
+    function _chipHTML(src) {
+      // Skip "available" types that aren't configured
+      if (src.status === 'available') return '';
+      const state = src.status === 'paused' ? 'paused' : (src.status === 'error' ? 'error' : 'active');
+      const name = src.name || src.id;
+      const type = src.source_type || '';
+      const label = type ? `${name} <span class="source-type">${type}</span>` : name;
+      return `<span class="chip" data-source="${src.id}" data-state="${state}"><span class="dot"></span><span class="label">${label}</span></span>`;
+    }
+
+    async function loadSources() {
+      try {
+        const r = await fetch(API_BASE + '/v1/sources');
+        if (!r.ok) return;
+        const data = await r.json();
+        const sources = data.sources || [];
+        _sources = {};
+        _availableTypes = sources.filter(s => s.status === 'available');
+        sources.forEach(s => { _sources[s.id] = s; });
+
+        // Render chips (configured sources only, then add button)
+        const configured = sources.filter(s => s.status !== 'available');
+        const addBtn = sourcesList.querySelector('.chip.add');
+        sourcesList.innerHTML = configured.map(_chipHTML).join('') + (addBtn ? addBtn.outerHTML : '<button class="chip add" id="addSourceBtn" type="button">+ Add source</button>');
+
+        // Update section meta
+        const active = configured.filter(s => s.status === 'active').length;
+        const paused = configured.filter(s => s.status === 'paused').length;
+        const meta = sourcesList.closest('.section')?.querySelector('.meta');
+        if (meta) meta.textContent = active + ' active' + (paused ? ' · ' + paused + ' paused' : '');
+
+        // Re-wire add button
+        const newAddBtn = document.getElementById('addSourceBtn');
+        if (newAddBtn) newAddBtn.addEventListener('click', openAddSource);
+
+        // Populate add-source wizard type grid
+        const TYPE_ICONS = { rss: '∿', vault: '⌘', mastodon: '◎', homeassistant: '⌂' };
+        const typeGrid = document.getElementById('addTypeGrid');
+        if (typeGrid) {
+          const configured = sources.filter(s => s.status !== 'available');
+          typeGrid.innerHTML = _availableTypes.map(t => {
+            const icon = TYPE_ICONS[t.source_type] || '◇';
+            const count = configured.filter(s => s.source_type === t.source_type).length;
+            const status = count > 0
+              ? `<div class="type-status">${count} configured</div>`
+              : `<div class="type-status not-connected">Not connected</div>`;
+            return `<button class="type-tile" data-type="${t.source_type}">
+              <div class="type-icon">${icon}</div>
+              <div class="type-name">${t.name}</div>
+              <div class="type-sub">${t.description}</div>
+              ${status}
+            </button>`;
+          }).join('');
+          // Wire click handlers on new tiles
+          typeGrid.querySelectorAll('.type-tile').forEach(tile => {
+            tile.addEventListener('click', () => {
+              populateStep2(tile.dataset.type);
+              showAddStep(2);
+            });
+          });
+        }
+      } catch (e) {
+        console.warn('Failed to load sources:', e);
+      }
+    }
+
+    function _fmtCount(n) {
+      if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+      return String(n);
+    }
+
+    function _deltaRowHTML(d) {
+      const when = d.timestamp ? _relativeTime(d.timestamp) : '';
+      const html = renderMd(d.content || '');
+      return `<div class="delta-row long" onclick="this.classList.toggle('expanded')"><span class="when">${when}</span><div class="body"><div class="text">${html}</div></div></div>`;
+    }
+
+    async function loadSourceDetail(sourceId) {
+      // Set counts to loading state
+      document.getElementById('detailCount24h').textContent = '—';
+      document.getElementById('detailCount7d').textContent = '—';
+      document.getElementById('detailCountAll').textContent = '—';
+      document.getElementById('detailDeltas').innerHTML = '';
+
+      try {
+        const r = await fetch(API_BASE + '/v1/sources/' + sourceId + '/detail');
+        if (!r.ok) return;
+        const data = await r.json();
+
+        document.getElementById('detailCount24h').textContent = _fmtCount(data.counts.last_24h);
+        document.getElementById('detailCount7d').textContent = _fmtCount(data.counts.last_7d);
+        document.getElementById('detailCountAll').textContent = _fmtCount(data.counts.all_time);
+
+        document.getElementById('detailDeltas').innerHTML = data.deltas.map(_deltaRowHTML).join('') || '<div style="color: var(--ink-faint); padding: 16px 0;">No deltas yet.</div>';
+        refreshLightbox();
+      } catch (e) {
+        console.warn('Failed to load source detail:', e);
+      }
+    }
+
+    function openSourceDetail(sourceId) {
+      const data = _sources[sourceId];
+      if (!data) return;
+      const name = data.name || data.source_type;
+      document.getElementById('detailTitle').textContent = name;
+      document.getElementById('detailLogo').textContent = (name[0] || '?').toUpperCase();
+      document.getElementById('detailName').textContent = name;
+      document.getElementById('detailLastSeen').textContent = data.lastSync ? 'Last sync · ' + _relativeTime(data.lastSync) : 'Never synced';
+
+      const paused = data.status === 'paused';
+      document.getElementById('detailQuickPause').innerHTML = (paused ? '<span class="dot paused"></span> Resume' : '<span class="dot"></span> Pause');
 
       viewMain.hidden = true;
       viewDetail.hidden = false;
       viewDetail.dataset.source = sourceId;
+      kebabMenu.hidden = true;
+      syncComposer();
+      _markActiveFreq(data.pollInterval || '');
+      _markActiveExpiry(data.expiryDays);
       scrollViewToTop(viewDetail);
+
+      // Load live data
+      loadSourceDetail(sourceId);
     }
 
     function closeDetail() {
       viewDetail.hidden = true;
       viewMain.hidden = false;
+      syncComposer();
     }
     backBtn.addEventListener('click', closeDetail);
 
-    // Top-of-detail pause button — toggles chip state directly
-    document.getElementById('detailQuickPause').addEventListener('click', () => {
+    // Kebab menu toggle
+    const kebabBtn = document.getElementById('detailKebab');
+    const kebabMenu = document.getElementById('detailKebabMenu');
+    kebabBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      kebabMenu.hidden = !kebabMenu.hidden;
+    });
+    document.addEventListener('click', () => { kebabMenu.hidden = true; });
+    kebabMenu.addEventListener('click', (e) => e.stopPropagation());
+
+    // Run now
+    document.getElementById('detailRunNow').addEventListener('click', async () => {
       const sourceId = viewDetail.dataset.source;
-      const chip = sourcesList.querySelector(`.chip[data-source="${sourceId}"]`);
-      if (!chip) return;
-      const nextPaused = chip.getAttribute('data-state') !== 'paused';
-      chip.setAttribute('data-state', nextPaused ? 'paused' : 'active');
-      document.getElementById('detailQuickPause').textContent = nextPaused ? 'Resume' : 'Pause';
+      kebabMenu.hidden = true;
+      try {
+        await fetch(API_BASE + '/v1/sources/' + sourceId + '/poll', { method: 'POST' });
+        // Reload detail after a short delay for the poll to complete
+        setTimeout(() => loadSourceDetail(sourceId), 3000);
+      } catch (e) {
+        console.warn('Failed to poll source:', e);
+      }
+    });
+
+    // Frequency selection
+    kebabMenu.querySelectorAll('.menu-item.freq').forEach(item => {
+      item.addEventListener('click', async () => {
+        const sourceId = viewDetail.dataset.source;
+        const freq = item.dataset.freq;
+        const FREQ_MINS = { '1m': 1, '5m': 5, '15m': 15, '30m': 30, '1h': 60, '6h': 360, 'daily': 1440 };
+        kebabMenu.hidden = true;
+        try {
+          await fetch(API_BASE + '/v1/sources/' + sourceId, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ interval_minutes: FREQ_MINS[freq] || 30 }),
+          });
+          // Update local state and highlight
+          if (_sources[sourceId]) _sources[sourceId].pollInterval = freq;
+          _markActiveFreq(freq);
+          await loadSources();
+        } catch (e) {
+          console.warn('Failed to update frequency:', e);
+        }
+      });
+    });
+
+    function _markActiveFreq(freq) {
+      kebabMenu.querySelectorAll('.menu-item.freq').forEach(f => {
+        f.classList.toggle('active', f.dataset.freq === freq);
+      });
+    }
+
+    function _markActiveExpiry(days) {
+      const val = (days == null) ? '' : String(days);
+      kebabMenu.querySelectorAll('.menu-item.expiry').forEach(f => {
+        f.classList.toggle('active', f.dataset.expiry === val);
+      });
+    }
+
+    // Expiry selection
+    kebabMenu.querySelectorAll('.menu-item.expiry').forEach(item => {
+      item.addEventListener('click', async () => {
+        const sourceId = viewDetail.dataset.source;
+        const raw = item.dataset.expiry;
+        const days = raw === '' ? null : parseFloat(raw);
+        kebabMenu.hidden = true;
+        try {
+          await fetch(API_BASE + '/v1/sources/' + sourceId, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ expiry_days: days }),
+          });
+          if (_sources[sourceId]) _sources[sourceId].expiryDays = days;
+          _markActiveExpiry(days);
+        } catch (e) {
+          console.warn('Failed to update expiry:', e);
+        }
+      });
+    });
+
+    // Pause / resume via API
+    document.getElementById('detailQuickPause').addEventListener('click', async () => {
+      const sourceId = viewDetail.dataset.source;
+      const src = _sources[sourceId];
+      if (!src) return;
+      const action = src.status === 'paused' ? 'resume' : 'pause';
+      try {
+        await fetch(API_BASE + '/v1/sources/' + sourceId + '/' + action, { method: 'POST' });
+        await loadSources();
+        // Update detail view
+        const updated = _sources[sourceId];
+        if (updated) {
+          const p = updated.status === 'paused';
+          document.getElementById('detailQuickPause').innerHTML = p ? '<span class="dot paused"></span> Resume' : '<span class="dot"></span> Pause';
+        }
+      } catch (e) {
+        console.warn('Failed to ' + action + ' source:', e);
+      }
     });
 
     // Chip interactions: tap = toggle pause, kabob = open detail, long-press = open detail
@@ -1714,16 +1880,8 @@
     sourcesList.addEventListener('click', (e) => {
       const chip = e.target.closest('.chip');
       if (!chip || chip.classList.contains('add')) return;
-      const kabob = e.target.closest('.kabob');
-      if (kabob) {
-        e.stopPropagation();
-        openSourceDetail(chip.dataset.source);
-        return;
-      }
       if (chip._longPressed) { chip._longPressed = false; return; }
-      // toggle pause
-      const current = chip.getAttribute('data-state');
-      chip.setAttribute('data-state', current === 'paused' ? 'active' : 'paused');
+      openSourceDetail(chip.dataset.source);
     });
 
     // Long-press (touch devices)
@@ -1751,28 +1909,12 @@
     // ── Add-source wizard ───────────────────────
     const viewAdd = document.getElementById('viewAddSource');
     const addBackBtn = document.getElementById('addBackBtn');
-
-    const TYPE_META = {
-      gmail:     { label: 'Gmail',          kind: 'oauth',  provider: 'Google' },
-      slack:     { label: 'Slack',          kind: 'oauth',  provider: 'Slack' },
-      github:    { label: 'GitHub',         kind: 'oauth',  provider: 'GitHub' },
-      notion:    { label: 'Notion',         kind: 'oauth',  provider: 'Notion' },
-      drive:     { label: 'Google Drive',   kind: 'oauth',  provider: 'Google' },
-      rss:       { label: 'RSS feed',       kind: 'rss' },
-      webhook:   { label: 'Webhook',        kind: 'webhook' },
-      api:       { label: 'API poller',     kind: 'api' },
-      obsidian:  { label: 'Obsidian vault', kind: 'local' },
-      folder:    { label: 'Folder',         kind: 'local' },
-      'claude-desktop': { label: 'Claude Desktop', kind: 'agent' },
-      chatgpt:   { label: 'ChatGPT',        kind: 'agent' },
-      cursor:    { label: 'Cursor',         kind: 'agent' },
-    };
+    let _availableTypes = [];  // from GET /v1/sources/types
 
     function scrollViewToTop(view) {
       const main = view && view.querySelector('main');
       if (main) main.scrollTop = 0;
       window.scrollTo(0, 0);
-      // Run again after paint in case content swap restored the old offset.
       requestAnimationFrame(() => {
         if (main) main.scrollTop = 0;
         window.scrollTo(0, 0);
@@ -1790,10 +1932,12 @@
       viewMain.hidden = true;
       viewAdd.hidden = false;
       showAddStep(1);
+      syncComposer();
     }
     function closeAddSource() {
       viewAdd.hidden = true;
       viewMain.hidden = false;
+      syncComposer();
     }
 
     addBackBtn.addEventListener('click', () => {
@@ -1802,11 +1946,11 @@
       else showAddStep(step - 1);
     });
 
-    // Type tile selection → populate step 2 based on kind
-    function populateStep2(type) {
-      const meta = TYPE_META[type];
-      if (!meta) return;
-      viewAdd.dataset.currentType = type;
+    // Build step-2 form from source-runner type metadata
+    function populateStep2(sourceType) {
+      viewAdd.dataset.currentType = sourceType;
+      const type = _availableTypes.find(t => t.source_type === sourceType);
+      const label = type ? type.name : sourceType;
 
       const stamp = document.getElementById('addStep2Stamp');
       const title = document.getElementById('addStep2Title');
@@ -1814,149 +1958,122 @@
       const form = document.getElementById('addStep2Form');
       const save = document.getElementById('addStep2Save');
 
-      if (meta.kind === 'rss') {
-        stamp.textContent = 'Step 2 · Configure feed';
-        title.textContent = 'Add an RSS feed';
-        sub.textContent = "Drop the feed URL below. Fathom polls it on schedule and clusters it with your other RSS feeds.";
-        save.textContent = 'Add to lake';
+      stamp.textContent = 'Step 2 · Configure';
+      title.textContent = 'Add ' + label;
+      save.textContent = 'Add to lake';
+
+      const authType = type ? type.auth.type : 'none';
+
+      if (sourceType === 'rss') {
+        sub.textContent = "Drop the feed URL below. Fathom polls it on schedule and converts articles to markdown.";
         form.innerHTML = `
           <div class="form-group">
             <label>Feed URL</label>
-            <input class="form-input" type="url" placeholder="https://stratechery.com/feed" autocomplete="off"/>
-            <div class="form-hint">We'll auto-detect the feed name and icon from the URL.</div>
+            <input class="form-input" id="addFieldFeed" type="url" placeholder="https://stratechery.com/feed" autocomplete="off"/>
           </div>
           <div class="form-group">
             <label>Display name <span style="color: var(--ink-faint); font-weight: 400;">(optional)</span></label>
-            <input class="form-input" type="text" placeholder="Stratechery" autocomplete="off"/>
-          </div>
-          <div class="form-group">
-            <label>Check for new items</label>
-            <select class="form-select">
-              <option value="900">Every 15 minutes</option>
-              <option value="3600" selected>Every hour</option>
-              <option value="14400">Every 4 hours</option>
-              <option value="86400">Once a day</option>
-            </select>
+            <input class="form-input" id="addFieldName" type="text" placeholder="Stratechery" autocomplete="off"/>
           </div>`;
-      } else if (meta.kind === 'oauth') {
-        stamp.textContent = 'Step 2 · Sign in';
-        title.textContent = `Connect ${meta.label}`;
-        sub.textContent = `Fathom will open a ${meta.provider} sign-in window. We only request read access to the data you choose.`;
-        save.textContent = `Sign in with ${meta.provider}`;
+      } else if (sourceType === 'vault') {
+        sub.textContent = "Point at a vault directory. Fathom watches for new and changed files, chunks them, and uploads images.";
         form.innerHTML = `
           <div class="form-group">
-            <label>What Fathom will see</label>
-            <div class="form-input" style="background: var(--surface); cursor: default; line-height: 1.6;">
-              Messages, threads, attachments · read-only<br/>
-              <span style="color: var(--ink-faint); font-size: 13px;">No sending, no deleting, no modifying anything on your account.</span>
-            </div>
-          </div>`;
-      } else if (meta.kind === 'local') {
-        stamp.textContent = 'Step 2 · Pick a location';
-        title.textContent = type === 'obsidian' ? 'Watch an Obsidian vault' : 'Watch a folder';
-        sub.textContent = "Fathom monitors this location for changes and adds new content to the lake. Nothing leaves your machine unless you ask.";
-        save.textContent = 'Start watching';
-        form.innerHTML = `
-          <div class="form-group">
-            <label>Path</label>
-            <input class="form-input" type="text" placeholder="/Users/myra/Dropbox/Obsidian" autocomplete="off"/>
-            <div class="form-hint">Local path on your machine.</div>
+            <label>Vault path</label>
+            <input class="form-input" id="addFieldPath" type="text" placeholder="/home/myra/Dropbox/Work/fathom/vault" autocomplete="off"/>
           </div>
           <div class="form-group">
-            <label>File types</label>
-            <input class="form-input" type="text" value=".md, .markdown, .txt" autocomplete="off"/>
+            <label>Display name <span style="color: var(--ink-faint); font-weight: 400;">(optional)</span></label>
+            <input class="form-input" id="addFieldName" type="text" placeholder="Fathom vault" autocomplete="off"/>
           </div>`;
-      } else if (meta.kind === 'webhook') {
-        stamp.textContent = 'Step 2 · Configure endpoint';
-        title.textContent = 'Set up a webhook';
-        sub.textContent = "Fathom generates a unique URL. POST any JSON payload to it and it becomes a delta.";
-        save.textContent = 'Generate URL';
+      } else if (sourceType === 'mastodon') {
+        sub.textContent = "Connect a Mastodon account. Fathom polls your home timeline and notifications.";
         form.innerHTML = `
           <div class="form-group">
-            <label>Name</label>
-            <input class="form-input" type="text" placeholder="Topoco order hook" autocomplete="off"/>
+            <label>Instance URL</label>
+            <input class="form-input" id="addFieldInstance" type="url" placeholder="https://mastodon.social" autocomplete="off"/>
           </div>
           <div class="form-group">
-            <label>Tag incoming events with</label>
-            <input class="form-input" type="text" placeholder="topoco, orders" autocomplete="off"/>
-            <div class="form-hint">Comma-separated. Applied to every delta from this webhook.</div>
+            <label>Access token</label>
+            <input class="form-input" id="addFieldToken" type="text" placeholder="Bearer token" autocomplete="off"/>
+          </div>
+          <div class="form-group">
+            <label>Display name <span style="color: var(--ink-faint); font-weight: 400;">(optional)</span></label>
+            <input class="form-input" id="addFieldName" type="text" autocomplete="off"/>
           </div>`;
-      } else if (meta.kind === 'api') {
-        stamp.textContent = 'Step 2 · Configure poller';
-        title.textContent = 'Poll an API';
-        sub.textContent = "Fathom hits the endpoint on your schedule, diffs the response, and writes new items as deltas.";
-        save.textContent = 'Start polling';
+      } else if (sourceType === 'homeassistant') {
+        sub.textContent = "Connect Home Assistant. Fathom polls entity states on schedule.";
         form.innerHTML = `
           <div class="form-group">
-            <label>Endpoint</label>
-            <input class="form-input" type="url" placeholder="https://api.example.com/v1/items" autocomplete="off"/>
+            <label>HA URL</label>
+            <input class="form-input" id="addFieldUrl" type="url" placeholder="http://homeassistant.local:8123" autocomplete="off"/>
           </div>
           <div class="form-group">
-            <label>Auth header <span style="color: var(--ink-faint); font-weight: 400;">(optional)</span></label>
-            <input class="form-input" type="text" placeholder="Bearer sk-..." autocomplete="off"/>
+            <label>Long-lived access token</label>
+            <input class="form-input" id="addFieldToken" type="text" autocomplete="off"/>
           </div>
           <div class="form-group">
-            <label>Poll every</label>
-            <select class="form-select">
-              <option>Every 15 minutes</option>
-              <option selected>Every hour</option>
-              <option>Every 4 hours</option>
-            </select>
+            <label>Entity IDs (comma-separated)</label>
+            <input class="form-input" id="addFieldEntities" type="text" placeholder="sensor.temperature, binary_sensor.door" autocomplete="off"/>
+          </div>
+          <div class="form-group">
+            <label>Display name <span style="color: var(--ink-faint); font-weight: 400;">(optional)</span></label>
+            <input class="form-input" id="addFieldName" type="text" autocomplete="off"/>
           </div>`;
-      } else if (meta.kind === 'agent') {
-        stamp.textContent = 'Step 2 · Install connector';
-        title.textContent = `Connect ${meta.label}`;
-        sub.textContent = "Install the Fathom connector in " + meta.label + ". Every session gets captured and flows into your lake.";
-        save.textContent = 'Copy install command';
+      } else {
+        sub.textContent = "Configure this source.";
         form.innerHTML = `
           <div class="form-group">
-            <label>Install command</label>
-            <div class="form-input" style="font-family: var(--mono); font-size: 13px; background: var(--bg-deep); cursor: text;">
-              npx fathom-connector add ${type}
-            </div>
-            <div class="form-hint">Paste this into your terminal. You'll be prompted to authorize.</div>
+            <label>Display name</label>
+            <input class="form-input" id="addFieldName" type="text" autocomplete="off"/>
           </div>`;
       }
     }
 
-    document.querySelectorAll('.type-tile').forEach(tile => {
-      tile.addEventListener('click', () => {
-        populateStep2(tile.dataset.type);
-        showAddStep(2);
-      });
-    });
-
     document.getElementById('addStep2Back').addEventListener('click', () => showAddStep(1));
 
-    document.getElementById('addStep2Save').addEventListener('click', () => {
-      const type = viewAdd.dataset.currentType;
-      const meta = TYPE_META[type];
+    // Save: POST to source-runner via consumer API
+    document.getElementById('addStep2Save').addEventListener('click', async () => {
+      const sourceType = viewAdd.dataset.currentType;
+      const name = (document.getElementById('addFieldName') || {}).value || '';
+      let config = {};
+
+      if (sourceType === 'rss') {
+        config.feed = (document.getElementById('addFieldFeed') || {}).value || '';
+      } else if (sourceType === 'vault') {
+        config.path = (document.getElementById('addFieldPath') || {}).value || '';
+      } else if (sourceType === 'mastodon') {
+        config.instance = (document.getElementById('addFieldInstance') || {}).value || '';
+        config.token = (document.getElementById('addFieldToken') || {}).value || '';
+      } else if (sourceType === 'homeassistant') {
+        config.url = (document.getElementById('addFieldUrl') || {}).value || '';
+        config.token = (document.getElementById('addFieldToken') || {}).value || '';
+        const raw = (document.getElementById('addFieldEntities') || {}).value || '';
+        config.entities = raw.split(',').map(s => s.trim()).filter(Boolean);
+      }
 
       const title3 = document.getElementById('addStep3Title');
       const sub3 = document.getElementById('addStep3Sub');
 
-      // Clustering: update the existing same-type chip if present
-      if (type === 'rss') {
-        const rssLabel = sourcesList.querySelector('.chip[data-source="rss"] .label');
-        if (rssLabel) rssLabel.textContent = 'RSS · 13 feeds';
-        title3.textContent = 'Added to your lake.';
-        sub3.textContent = 'RSS · 13 feeds — your new source joins 12 others on the home screen.';
-      } else if (type === 'slack') {
-        const slackChip = sourcesList.querySelector('.chip[data-source="slack"]');
-        if (slackChip) slackChip.setAttribute('data-state', 'active');
-        title3.textContent = 'Signed in.';
-        sub3.textContent = 'Slack is active again — 2 workspaces flowing into the lake.';
-      } else if (meta && meta.kind === 'oauth') {
-        title3.textContent = `Connected ${meta.label}.`;
-        sub3.textContent = `First sync is running now. Expect the first deltas within a minute.`;
-      } else if (meta && meta.kind === 'local') {
-        title3.textContent = 'Watching.';
-        sub3.textContent = 'Initial scan is running. Edits and new files will show up as deltas.';
-      } else {
-        title3.textContent = 'Added to your lake.';
-        sub3.textContent = 'Your new source will start feeding deltas on the next cycle.';
+      try {
+        const r = await fetch(API_BASE + '/v1/sources', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source_type: sourceType, config, name }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          title3.textContent = 'Something went wrong.';
+          sub3.textContent = err.detail || 'Failed to create source.';
+        } else {
+          title3.textContent = 'Added to your lake.';
+          sub3.textContent = (name || sourceType) + ' will start feeding deltas on the next poll cycle.';
+          await loadSources();
+        }
+      } catch (e) {
+        title3.textContent = 'Connection failed.';
+        sub3.textContent = 'Could not reach the source runner. Is it running?';
       }
-
       showAddStep(3);
     });
 
@@ -1964,6 +2081,9 @@
 
     // Wire the main-view "+ Add source" button to open the wizard
     document.getElementById('addSourceBtn').addEventListener('click', openAddSource);
+
+    // Load sources on startup
+    loadSources();
 
     // ── Settings ─────────────────────────────────
     const viewSettings = document.getElementById('viewSettings');
@@ -1973,10 +2093,12 @@
       viewMain.hidden = true;
       viewSettings.hidden = false;
       scrollViewToTop(viewSettings);
+      syncComposer();
     }
     function closeSettings() {
       viewSettings.hidden = true;
       viewMain.hidden = false;
+      syncComposer();
     }
     settingsBackBtn.addEventListener('click', closeSettings);
 
@@ -2059,6 +2181,23 @@
       return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
+    // Customize marked: external links in new tab, images zoomable
+    if (typeof marked !== 'undefined') {
+      const renderer = new marked.Renderer();
+      const _link = renderer.link.bind(renderer);
+      renderer.link = function(token) {
+        const html = _link(token);
+        return html.replace('<a ', '<a target="_blank" rel="noopener" ');
+      };
+      const _image = renderer.image.bind(renderer);
+      renderer.image = function(token) {
+        const src = token.href || '';
+        const alt = token.text || '';
+        return `<a href="${src}" class="glightbox" data-gallery="content"><img src="${src}" alt="${alt}" loading="lazy" /></a>`;
+      };
+      marked.setOptions({ renderer });
+    }
+
     function renderMd(text) {
       if (typeof marked !== 'undefined' && marked.parse) {
         return marked.parse(text);
@@ -2129,11 +2268,13 @@
       [viewMain, viewDetail, viewAdd, viewSettings].forEach(v => v && (v.hidden = true));
       viewChat.hidden = false;
       scrollToBottomOfChat();
+      syncComposer();
     }
 
     function closeChat() {
       viewChat.hidden = true;
       viewMain.hidden = false;
+      syncComposer();
     }
 
     function scrollToBottomOfChat() {
@@ -2408,17 +2549,52 @@
     let feedOffset = 0;
     const FEED_PAGE = 5;
 
+    function _resolveMediaSrc(ref) {
+      // A media ref can be a media_hash (hex string) or a URL
+      if (!ref) return null;
+      if (ref.startsWith('http://') || ref.startsWith('https://')) return ref;
+      if (/^[0-9a-f]+$/.test(ref)) return `${API_BASE}/v1/media/${ref}`;
+      return ref;
+    }
+
+    function _isImageRef(ref) {
+      if (!ref) return false;
+      if (/^[0-9a-f]+$/.test(ref)) return true;  // media_hash = always image
+      return /\.(jpg|jpeg|png|gif|webp|svg|avif)(\?|$)/i.test(ref);
+    }
+
     function storyImageSrc(s) {
-      // New format: flat fields from fathom_think feed directive
+      // New format: body_image (hash or URL)
+      if (s.body_image) return _resolveMediaSrc(s.body_image);
+      // Legacy format
       if (s.media_hash) return `${API_BASE}/v1/media/${s.media_hash}`;
       if (s.image_url) return s.image_url;
-      // Existing format: images array from loop-api feed
       if (s.images && s.images.length > 0) {
         const img = s.images[0];
         if (img.media_hash) return `${API_BASE}/v1/media/${img.media_hash}`;
         if (img.url) return img.url;
       }
       return null;
+    }
+
+    function _renderMediaStrip(media) {
+      if (!media || !media.length) return '';
+      const images = [];
+      const links = [];
+      for (const ref of media) {
+        const src = _resolveMediaSrc(ref);
+        if (!src) continue;
+        if (_isImageRef(ref)) {
+          images.push(`<a href="${src}" class="glightbox" data-gallery="media"><img src="${src}" alt="" loading="lazy" /></a>`);
+        } else {
+          const label = ref.replace(/^https?:\/\//, '');
+          links.push(`<a href="${src}" target="_blank" rel="noopener">${escapeHtml(label)}</a>`);
+        }
+      }
+      let html = '';
+      if (images.length) html += `<div class="card-media">${images.join('')}</div>`;
+      if (links.length) html += `<div class="card-media-links">${links.join('')}</div>`;
+      return html;
     }
 
     function renderStoryCard(s, delay) {
@@ -2431,7 +2607,8 @@
       const body = s.body || '';
       const tail = s.tail || '';
       const imgSrc = storyImageSrc(s);
-      const layout = s.image_layout || 'hero';
+      const layout = s.body_image_layout || s.image_layout || 'hero';
+      const mediaHtml = _renderMediaStrip(s.media);
 
       const bodyHtml = `<div class="card-body">
         ${kicker ? `<div class="kicker">${escapeHtml(kicker)}</div>` : ''}
@@ -2442,11 +2619,11 @@
 
       if (imgSrc && layout === 'thumb') {
         card.classList.add('card-horiz');
-        card.innerHTML = `<div class="thumb" style="background-image: url('${imgSrc}')"></div>${bodyHtml}`;
+        card.innerHTML = `<a href="${imgSrc}" class="glightbox thumb" data-gallery="feed" style="background-image: url('${imgSrc}')"></a>${bodyHtml}${mediaHtml}`;
       } else if (imgSrc) {
-        card.innerHTML = `<div class="card-img-hero" style="background-image: url('${imgSrc}')"></div>${bodyHtml}`;
+        card.innerHTML = `<a href="${imgSrc}" class="glightbox card-img-hero" data-gallery="feed"><img src="${imgSrc}" alt="" style="width:100%;height:100%;object-fit:cover;" loading="lazy" /></a>${bodyHtml}${mediaHtml}`;
       } else {
-        card.innerHTML = bodyHtml;
+        card.innerHTML = `${bodyHtml}${mediaHtml}`;
       }
       return card;
     }
@@ -2465,6 +2642,7 @@
           showMoreBtn.disabled = true;
           showMoreBtn.style.opacity = '0.4';
         }
+        refreshLightbox();
       } catch (err) {
         // API down — static cards remain as fallback
       }
@@ -2472,6 +2650,8 @@
 
     // Tap a feed story → open it as a new chat session
     feed.addEventListener('click', (e) => {
+      // Don't hijack clicks on images, lightbox links, or media strip
+      if (e.target.closest('.glightbox, .card-media, a[target]')) return;
       const card = e.target.closest('.card');
       if (!card) return;
       const h3 = card.querySelector('h3');
@@ -2511,6 +2691,32 @@
 
     // Load feed on page load
     loadFeedStories(false);
+
+    // ── Image handling: 404 hide + lightbox ────
+    // Hide any image that fails to load (broken URL, 403, etc.)
+    document.addEventListener('error', (e) => {
+      if (e.target.tagName === 'IMG') {
+        const el = e.target;
+        // If it's a hero background, hide the hero div
+        const hero = el.closest('.card-img-hero');
+        if (hero) { hero.style.display = 'none'; return; }
+        // Otherwise hide the image itself
+        el.style.display = 'none';
+      }
+    }, true);
+
+    // GLightbox: make all images zoomable
+    let _glightbox = null;
+    function refreshLightbox() {
+      if (typeof GLightbox === 'undefined') return;
+      if (_glightbox) _glightbox.destroy();
+      _glightbox = GLightbox({
+        selector: '.glightbox',
+        touchNavigation: true,
+        zoomable: true,
+        draggable: true,
+      });
+    }
 
     // Show more / Show less for delta rows
     document.querySelectorAll('.delta-row.long .show-more').forEach(btn => {
