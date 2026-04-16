@@ -1310,6 +1310,10 @@
           <span class="label">MCP &amp; Hooks</span>
           <span class="sub">npx fathom-connect</span>
         </div>
+        <div class="extend" data-surface="cli">
+          <span class="label">CLI</span>
+          <span class="sub">npx fathom-delta-cli</span>
+        </div>
         <div class="extend" data-surface="browser">
           <span class="label">Browser</span>
           <span class="sub">WIP</span>
@@ -2332,6 +2336,39 @@ Hooks (Claude Code only):
   }
 }`,
             hint: 'npx fathom-connect writes all config files and installs hook scripts to ~/.fathom/hooks/.',
+          },
+        ],
+      },
+      'cli': {
+        icon: '▸',
+        name: 'CLI',
+        desc: 'Search, write, and query your lake from the terminal. Pipe output from other tools directly into Fathom.',
+        steps: [
+          {
+            title: 'Install',
+            code: 'npm i -g fathom-delta-cli',
+            hint: 'Or run directly with npx: npx fathom-delta-cli search "query"',
+          },
+          {
+            title: 'Configure',
+            code: `export FATHOM_API_URL=${API_BASE}
+export FATHOM_API_KEY=your-api-key`,
+            hint: 'Add these to your shell profile (~/.bashrc, ~/.zshrc) to persist.',
+          },
+          {
+            title: 'Commands',
+            code: `fathom search "what happened today"       # semantic search
+fathom write "shipped v2" --tags release   # write a delta
+fathom query --tags homeassistant --since 24h  # filter
+fathom stats                               # lake overview
+fathom chat "summarize my week"            # chat with memory`,
+          },
+          {
+            title: 'Pipe anything in',
+            code: `git log --oneline -10 | fathom write - --tags git,changelog
+curl api.example.com/status | fathom write - --tags monitoring
+cat meeting-notes.md | fathom write - --tags meeting --source notes`,
+            hint: 'Use - as content to read from stdin.',
           },
         ],
       },
