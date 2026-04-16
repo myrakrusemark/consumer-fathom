@@ -1,6 +1,6 @@
 {
   "name": "fathom-agent",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Local agent for Fathom — watches files, clipboard, and more, pushes deltas to your lake",
   "bin": {
     "fathom-agent": "index.js"
@@ -10,6 +10,13 @@
     "chokidar": "^4.0.0",
     "clipboardy": "^4.0.0"
   },
-  "keywords": ["fathom", "agent", "memory", "vault", "clipboard", "watcher"],
+  "keywords": [
+    "fathom",
+    "agent",
+    "memory",
+    "vault",
+    "clipboard",
+    "watcher"
+  ],
   "license": "MIT"
 }

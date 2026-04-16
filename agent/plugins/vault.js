@@ -20,10 +20,19 @@ export default {
   type: "watch", // continuous, not polled
 
   start(config, pusher) {
-    const paths = config.paths || [];
+    const allPaths = config.paths || [];
+    // Filter to paths that actually exist
+    const paths = allPaths.filter((p) => {
+      try { statSync(p); return true; } catch { return false; }
+    });
     if (!paths.length) {
-      console.log("  vault: no paths configured");
+      const skipped = allPaths.length ? ` (${allPaths.length} paths not found)` : "";
+      console.log(`  vault: no valid paths${skipped}`);
       return null;
+    }
+    if (paths.length < allPaths.length) {
+      const missing = allPaths.filter((p) => !paths.includes(p));
+      console.log(`  vault: skipping missing paths: ${missing.join(", ")}`);
     }
 
     const seen = new Map(); // path → content hash

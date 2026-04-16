@@ -79,11 +79,23 @@ Usage:
   fathom-agent --clipboard           Watch clipboard
   fathom-agent --vault ~/a --vault ~/b --clipboard   Combine
   fathom-agent --init                Create default config
-  fathom-agent --install             Install as system service
+  fathom-agent --install             Install as system service (auto-start)
   fathom-agent --uninstall           Remove system service
 
 Config: ${CONFIG_PATH}
-Env: FATHOM_API_URL, FATHOM_API_KEY (override config values)
+Env:    FATHOM_API_URL, FATHOM_API_KEY (override config values)
+
+Examples:
+  # Watch an Obsidian vault + clipboard
+  fathom-agent --vault ~/Documents/obsidian --clipboard
+
+  # First-time setup
+  fathom-agent --init                    # creates config with defaults
+  nano ~/.fathom/agent.json              # edit paths
+  fathom-agent                           # run
+  fathom-agent --install                 # persist as service
+
+Custom plugins: drop .js files in ~/.fathom/plugins/
 `);
       process.exit(0);
     } else {
@@ -270,15 +282,33 @@ async function main() {
   }
 
   if (cliArgs.init) {
+    const home = homedir();
     config.api_url = apiUrl;
     config.api_key = apiKey;
     config.plugins = {
-      vault: { enabled: false, paths: [], tags: [] },
-      clipboard: { enabled: false, tags: [] },
+      vault: {
+        enabled: true,
+        paths: [
+          join(home, "Documents", "notes"),
+          join(home, "Documents", "obsidian"),
+        ],
+        source: "vault",
+        tags: ["vault-note"],
+        _comment: "Watch markdown directories. Paths that don't exist are ignored.",
+      },
+      clipboard: {
+        enabled: true,
+        interval: 3000,
+        source: "clipboard",
+        tags: ["clipboard"],
+        _comment: "Captures clipboard text every 3 seconds. Only saves meaningful changes (>10 chars).",
+      },
     };
     saveConfig(config);
-    console.log(`Config written to ${CONFIG_PATH}`);
-    console.log("Edit it to configure your watchers, then run fathom-agent.");
+    console.log(`Config written to ${CONFIG_PATH}\n`);
+    console.log("Example config:\n");
+    console.log(JSON.stringify(config, null, 2));
+    console.log(`\nEdit ${CONFIG_PATH} to adjust paths and settings, then run fathom-agent.`);
     process.exit(0);
   }
 
