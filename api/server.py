@@ -541,6 +541,22 @@ async def chat_completions(req: ChatRequest):
         }
 
 
+@app.get("/v1/crystal")
+async def get_crystal():
+    """Return the current identity crystal."""
+    crystal = load_crystal()
+    if not crystal:
+        raise HTTPException(404, "No crystal generated yet")
+    p = Path(settings.crystal_path)
+    created_at = None
+    try:
+        data = json.loads(p.read_text())
+        created_at = data.get("created_at")
+    except Exception:
+        pass
+    return {"text": crystal, "created_at": created_at}
+
+
 @app.post("/v1/crystal/refresh")
 async def refresh_crystal():
     """Regenerate the identity crystal via LLM + delta lake tools."""
