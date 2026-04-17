@@ -3575,16 +3575,26 @@ GET  /v1/usage               Usage stats`,
       const totalDeltas = usage.total || 0;
       const moodCount = (moodHist.history || []).length;
       const crystalCount = (crystalEvents.events || []).length;
-      const driftCount = (driftHist.history || []).length;
+      const pressureCount = (pressureHist.history || []).length;
+      // Page-load drift samples don't count — only ones older than ~5min.
+      const realDriftCount = (driftHist.history || []).filter(e => {
+        const t = new Date(e.t).getTime();
+        return t && (Date.now() - t) > 5 * 60 * 1000;
+      }).length;
 
-      // Fresh-install / pre-warm state: no real signal yet on any track that
-      // requires Fathom to have woken up. Drift snapshots from the page itself
-      // don't count — only deltas in the lake do.
-      const noActivity = totalDeltas === 0 && moodCount === 0 && crystalCount === 0;
+      // The mood-layer tracks are what make this an ECG. Usage data alone is
+      // legacy chart material — if mood / drift / pressure / crystal events
+      // are all unpopulated, show the empty state regardless of usage.
+      const moodLayerCold = moodCount === 0
+        && crystalCount === 0
+        && realDriftCount === 0
+        && pressureCount === 0;
 
-      if (noActivity) {
-        renderECGEmpty();
-        ecgMeta.textContent = 'no signal yet';
+      if (moodLayerCold) {
+        renderECGEmpty(totalDeltas);
+        ecgMeta.textContent = totalDeltas
+          ? `${totalDeltas.toLocaleString()} deltas · mood layer warming up`
+          : 'no signal yet';
         return;
       }
 
@@ -3592,7 +3602,7 @@ GET  /v1/usage               Usage stats`,
       ecgMeta.textContent = `${totalDeltas.toLocaleString()} total deltas · window ${ECG_WINDOW_DAYS}d`;
     }
 
-    function renderECGEmpty() {
+    function renderECGEmpty(totalDeltas) {
       while (ecgSvg.firstChild) ecgSvg.removeChild(ecgSvg.firstChild);
       const W = ecgSvg.clientWidth || 800;
       const H = ECG_HEIGHT;
@@ -3616,6 +3626,9 @@ GET  /v1/usage               Usage stats`,
       title.textContent = 'Fathom is still waking up.';
       ecgSvg.appendChild(title);
 
+      const lakeMsg = totalDeltas
+        ? `Lake holds ${totalDeltas.toLocaleString()} deltas, but the mood layer is brand new.`
+        : 'No deltas in the lake yet — no pulse to plot.';
       const sub1 = ecgSvgNS('text', {
         x: W / 2, y: H / 2 + 14,
         'text-anchor': 'middle',
@@ -3623,28 +3636,32 @@ GET  /v1/usage               Usage stats`,
         fill: 'var(--ink-faint)',
         'letter-spacing': '0.04em',
       });
-      sub1.textContent = 'No deltas in the lake yet — no pulse to plot.';
+      sub1.textContent = lakeMsg;
       ecgSvg.appendChild(sub1);
 
-      const sub2 = ecgSvgNS('text', {
-        x: W / 2, y: H / 2 + 70,
-        'text-anchor': 'middle',
-        'font-family': 'var(--mono)', 'font-size': '10.5px',
-        fill: 'var(--ink-faint)',
-        'letter-spacing': '0.04em',
-      });
-      sub2.textContent = 'Add a source, have a conversation, generate a crystal.';
-      ecgSvg.appendChild(sub2);
-
-      const sub3 = ecgSvgNS('text', {
-        x: W / 2, y: H / 2 + 88,
-        'text-anchor': 'middle',
-        'font-family': 'var(--mono)', 'font-size': '10.5px',
-        fill: 'var(--ink-faint)',
-        'letter-spacing': '0.04em',
-      });
-      sub3.textContent = 'Give it some time. Real data will fill in here.';
-      ecgSvg.appendChild(sub3);
+      const lines = totalDeltas
+        ? [
+            "Give Fathom some time to wake up and orient itself.",
+            "Pressure builds with every delta. The first carrier wave fires when it crosses threshold.",
+            "Real data will fill in here as the rhythm starts.",
+          ]
+        : [
+            "Add a source, have a conversation, generate a crystal.",
+            "Give it some time. Real data will fill in here.",
+          ];
+      let y = H / 2 + 60;
+      for (const text of lines) {
+        const t = ecgSvgNS('text', {
+          x: W / 2, y,
+          'text-anchor': 'middle',
+          'font-family': 'var(--mono)', 'font-size': '10.5px',
+          fill: 'var(--ink-faint)',
+          'letter-spacing': '0.04em',
+        });
+        t.textContent = text;
+        ecgSvg.appendChild(t);
+        y += 18;
+      }
     }
 
     function renderECG({ usage, pressureHist, driftHist, moodHist, crystalEvents }) {
