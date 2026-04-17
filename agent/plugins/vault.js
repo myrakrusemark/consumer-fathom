@@ -3,25 +3,31 @@
  *
  * On file add/change: reads content, chunks if needed, pushes.
  * On file delete: pushes a tombstone delta.
+ * Images: detects ![[image]] and ![](path) references, uploads them.
  * Deduplicates by content hash — won't re-push unchanged files.
  */
 
 import { watch } from "chokidar";
-import { readFileSync, statSync } from "fs";
+import { readFileSync, statSync, existsSync } from "fs";
 import { createHash } from "crypto";
-import { basename, relative, extname } from "path";
+import { basename, relative, extname, dirname, join, resolve } from "path";
 
 const MAX_CHUNK = 3000; // chars per delta
-const EXTENSIONS = new Set([".md", ".txt", ".org", ".rst"]);
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
+const TEXT_EXTENSIONS = new Set([".md", ".txt", ".org", ".rst"]);
+const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp"]);
+
+// Match ![[file.png]] (Obsidian wikilink) and ![alt](path) (standard markdown)
+const WIKILINK_IMG = /!\[\[([^\]]+?)(?:\|[^\]]*?)?\]\]/g;
+const MD_IMG = /!\[([^\]]*?)\]\(([^)]+?)\)/g;
 
 export default {
   name: "Vault",
   icon: "📁",
-  type: "watch", // continuous, not polled
+  type: "watch",
 
   start(config, pusher) {
     const allPaths = config.paths || [];
-    // Filter to paths that actually exist
     const paths = allPaths.filter((p) => {
       try { statSync(p); return true; } catch { return false; }
     });
@@ -36,26 +42,31 @@ export default {
     }
 
     const seen = new Map(); // path → content hash
+    const uploadedImages = new Set(); // absolute image paths already uploaded
 
     const watcher = watch(paths, {
       persistent: true,
-      ignoreInitial: false, // process existing files on startup
+      ignoreInitial: false,
       ignored: [
-        /(^|[\/\\])\../, // dotfiles
+        /(^|[\/\\])\./,
         /node_modules/,
         /\.sync-conflict/,
+        /\.trash/i,
       ],
       awaitWriteFinish: { stabilityThreshold: 500 },
     });
 
     const source = config.source || "vault";
+    const apiUrl = pusher.apiUrl;
+    const apiKey = pusher.apiKey;
 
-    watcher.on("add", (filepath) => handleFile(filepath, "add"));
-    watcher.on("change", (filepath) => handleFile(filepath, "change"));
+    watcher.on("add", (filepath) => handleFile(filepath));
+    watcher.on("change", (filepath) => handleFile(filepath));
     watcher.on("unlink", (filepath) => handleDelete(filepath));
 
-    function handleFile(filepath, event) {
-      if (!EXTENSIONS.has(extname(filepath).toLowerCase())) return;
+    function handleFile(filepath) {
+      const ext = extname(filepath).toLowerCase();
+      if (!TEXT_EXTENSIONS.has(ext)) return;
 
       let content;
       try {
@@ -65,19 +76,23 @@ export default {
       }
 
       const hash = createHash("md5").update(content).digest("hex");
-      if (seen.get(filepath) === hash) return; // unchanged
+      if (seen.get(filepath) === hash) return;
       seen.set(filepath, hash);
 
-      const name = basename(filepath, extname(filepath));
-      const relPath = paths.reduce((best, p) => {
-        const r = relative(p, filepath);
-        return r.length < best.length ? r : best;
-      }, filepath);
-
+      const relPath = bestRelative(paths, filepath);
       const tags = ["vault-note", `doc:${relPath.replace(/\.[^.]+$/, "")}`];
       if (config.tags) tags.push(...config.tags);
 
-      // Chunk large files
+      // Extract and upload images
+      const images = extractImageRefs(content);
+      for (const img of images) {
+        const absPath = resolveImagePath(img.src, filepath, paths);
+        if (!absPath || uploadedImages.has(absPath)) continue;
+        uploadImage(absPath, img.alt || basename(absPath), [...tags, "vault-image", "image"], source, apiUrl, apiKey);
+        uploadedImages.add(absPath);
+      }
+
+      // Chunk and push text
       const chunks = chunk(content, MAX_CHUNK);
       for (const [i, text] of chunks.entries()) {
         const chunkTag = chunks.length > 1 ? [`chunk:${i + 1}/${chunks.length}`] : [];
@@ -90,18 +105,15 @@ export default {
     }
 
     function handleDelete(filepath) {
-      if (!EXTENSIONS.has(extname(filepath).toLowerCase())) return;
+      const ext = extname(filepath).toLowerCase();
+      if (!TEXT_EXTENSIONS.has(ext)) return;
       seen.delete(filepath);
 
-      const relPath = paths.reduce((best, p) => {
-        const r = relative(p, filepath);
-        return r.length < best.length ? r : best;
-      }, filepath);
-
+      const relPath = bestRelative(paths, filepath);
       pusher.push({
         content: `Vault note deleted: ${basename(filepath)}`,
         tags: ["vault-deletion", "deleted", `doc:${relPath.replace(/\.[^.]+$/, "")}`],
-        source: config.source || "vault",
+        source,
       });
     }
 
@@ -110,12 +122,96 @@ export default {
   },
 };
 
+// ── Helpers ──────────────────────────────────────
+
+function bestRelative(bases, filepath) {
+  return bases.reduce((best, p) => {
+    const r = relative(p, filepath);
+    return r.length < best.length ? r : best;
+  }, filepath);
+}
+
+function extractImageRefs(markdown) {
+  const images = [];
+
+  // Obsidian wikilinks: ![[image.png]] or ![[image.png|alt]]
+  let m;
+  WIKILINK_IMG.lastIndex = 0;
+  while ((m = WIKILINK_IMG.exec(markdown))) {
+    images.push({ src: m[1].trim(), alt: "" });
+  }
+
+  // Standard markdown: ![alt](path)
+  MD_IMG.lastIndex = 0;
+  while ((m = MD_IMG.exec(markdown))) {
+    const src = m[2].trim();
+    // Skip URLs
+    if (src.startsWith("http://") || src.startsWith("https://")) continue;
+    images.push({ src, alt: m[1] });
+  }
+
+  return images;
+}
+
+function resolveImagePath(src, mdFile, vaultPaths) {
+  // Try relative to the markdown file first
+  const fromMd = resolve(dirname(mdFile), src);
+  if (existsSync(fromMd) && isImage(fromMd)) return fromMd;
+
+  // Try relative to each vault root (Obsidian stores attachments anywhere)
+  for (const vaultRoot of vaultPaths) {
+    const fromRoot = join(vaultRoot, src);
+    if (existsSync(fromRoot) && isImage(fromRoot)) return fromRoot;
+
+    // Obsidian wikilinks often omit the folder — search recursively
+    // Just check common attachment folders
+    for (const sub of ["", "attachments", "assets", "images", "media", "files"]) {
+      const candidate = join(vaultRoot, sub, src);
+      if (existsSync(candidate) && isImage(candidate)) return candidate;
+    }
+  }
+
+  return null;
+}
+
+function isImage(filepath) {
+  return IMAGE_EXTENSIONS.has(extname(filepath).toLowerCase());
+}
+
+async function uploadImage(absPath, alt, tags, source, apiUrl, apiKey) {
+  try {
+    const stat = statSync(absPath);
+    if (stat.size > MAX_IMAGE_SIZE) return;
+  } catch {
+    return;
+  }
+
+  const headers = {};
+  if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+
+  try {
+    const file = readFileSync(absPath);
+    const form = new FormData();
+    form.append("file", new Blob([file]), basename(absPath));
+    form.append("content", alt);
+    form.append("tags", tags.join(","));
+    form.append("source", source);
+
+    await fetch(`${apiUrl}/v1/media/upload`, {
+      method: "POST",
+      headers,
+      body: form,
+    });
+  } catch {
+    // Silent fail — image upload is best-effort
+  }
+}
+
 function chunk(text, limit) {
   if (text.length <= limit) return [text];
   const chunks = [];
   let remaining = text;
   while (remaining.length > limit) {
-    // Try to break at paragraph, then newline, then sentence
     let breakAt = remaining.lastIndexOf("\n\n", limit);
     if (breakAt < limit / 4) breakAt = remaining.lastIndexOf("\n", limit);
     if (breakAt < limit / 4) breakAt = remaining.lastIndexOf(". ", limit);
