@@ -3678,13 +3678,21 @@ GET  /v1/usage               Usage stats`,
     const ECG_HEIGHT = 280;
     const ECG_PADDING = { left: 16, right: 12, top: 14, bottom: 26 };
 
-    // One shared plot zone for all the line tracks (they overlap like a real
-    // ECG), one thin colored strip for the mood band underneath. Crystal
-    // events render as full-height verticals across both zones.
+    // Layout zones (top→bottom, normalized 0-1 within the plot area):
+    //   lines: usage + pressure overlap on the same scale
+    //   drift: its own zone, rendered as a mirrored area around a centerline
+    //          (volume = magnitude of deviation from a fully-aligned crystal)
+    //   mood:  thin colored strip at the bottom
+    // Crystal events render as full-height verticals across all zones.
     const ECG_ZONES = {
-      lines: { y0: 0.00, y1: 0.84 },
-      mood:  { y0: 0.88, y1: 1.00 },
+      lines: { y0: 0.00, y1: 0.50 },
+      drift: { y0: 0.54, y1: 0.80 },
+      mood:  { y0: 0.84, y1: 0.96 },
     };
+    // Drift normalization — a drift of `threshold` reaches the zone's edge.
+    // Auto-regen fires at ~0.9 of threshold so a fresh crystal pinches it
+    // back to the centerline. Same value as crystal_drift_threshold.
+    const DRIFT_AXIS_MAX = 0.55;
 
     const FEELING_COLORS = {
       calm: '#6cbfd3', settled: '#6cbfd3', contemplative: '#8ab0d4',
@@ -3887,14 +3895,46 @@ GET  /v1/usage               Usage stats`,
         );
       }
 
-      // ── Drift line ─────────────────────────────
+      // ── Drift — mirrored area around a centerline ─
+      // Volume of the blob = magnitude of deviation from a fully-aligned
+      // crystal. A fresh crystal collapses this to the centerline.
+      const driftTop = ECG_PADDING.top + ECG_ZONES.drift.y0 * plotH;
+      const driftBot = ECG_PADDING.top + ECG_ZONES.drift.y1 * plotH;
+      const driftCenter = (driftTop + driftBot) / 2;
+      const driftHalf = (driftBot - driftTop) / 2;
+
+      // Centerline (the "0 distance" axis)
+      ecgSvg.appendChild(ecgSvgNS('line', {
+        x1: ECG_PADDING.left, x2: W - ECG_PADDING.right,
+        y1: driftCenter, y2: driftCenter,
+        stroke: '#7fcca0', 'stroke-width': 0.5, opacity: 0.4,
+      }));
+
       const dHist = (driftHist.history || []).filter(e => new Date(e.t).getTime() >= tStart);
-      if (dHist.length) {
-        const maxD = Math.max(0.05, ...dHist.map(e => e.v));
-        drawLine(
-          dHist.map(e => [xForT(new Date(e.t).getTime()), yForLine(e.v / maxD)]),
-          'ecg-line-drift'
-        );
+      if (dHist.length >= 2) {
+        const norm = (v) => Math.max(0, Math.min(1, v / DRIFT_AXIS_MAX));
+        const upper = dHist.map(e => [xForT(new Date(e.t).getTime()), driftCenter - norm(e.v) * driftHalf]);
+        const lower = dHist.map(e => [xForT(new Date(e.t).getTime()), driftCenter + norm(e.v) * driftHalf]);
+        // Build a closed path: upper edge L→R, then lower edge R→L
+        let d = 'M' + upper[0][0] + ' ' + upper[0][1];
+        for (let i = 1; i < upper.length; i++) d += ' L' + upper[i][0] + ' ' + upper[i][1];
+        for (let i = lower.length - 1; i >= 0; i--) d += ' L' + lower[i][0] + ' ' + lower[i][1];
+        d += ' Z';
+        ecgSvg.appendChild(ecgSvgNS('path', {
+          d, fill: '#7fcca0', 'fill-opacity': 0.32,
+          stroke: '#7fcca0', 'stroke-width': 1, 'stroke-opacity': 0.85,
+        }));
+      } else if (dHist.length === 1) {
+        // Single sample: draw a tiny tick at the point
+        const e = dHist[0];
+        const x = xForT(new Date(e.t).getTime());
+        const norm = Math.max(0, Math.min(1, e.v / DRIFT_AXIS_MAX));
+        ecgSvg.appendChild(ecgSvgNS('line', {
+          x1: x, x2: x,
+          y1: driftCenter - norm * driftHalf,
+          y2: driftCenter + norm * driftHalf,
+          stroke: '#7fcca0', 'stroke-width': 1.5,
+        }));
       }
 
       // ── Mood band (thin colored strip) + hover tooltips ─
