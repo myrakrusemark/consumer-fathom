@@ -453,6 +453,20 @@
     }
     .ecg-window-select:hover { border-color: var(--ink-faint); color: var(--ink-soft, var(--ink)); }
     .ecg-window-select:focus { outline: none; border-color: var(--accent); }
+    .stat-card {
+      margin-top: 18px;
+      background: var(--surface); border: 1px solid var(--rule);
+      border-radius: var(--radius); overflow: hidden;
+    }
+    .stat-card .ecg-chart {
+      background: transparent; border: 0; border-radius: 0;
+      padding: 14px 12px 6px;
+    }
+    .stat-card .ecg-legend {
+      list-style: none; margin: 0; padding: 14px 18px 16px;
+      border-top: 1px solid var(--rule-soft, var(--rule));
+      display: grid; gap: 10px;
+    }
     .ecg-chart {
       background: var(--surface); border: 1px solid var(--rule);
       border-radius: var(--radius); padding: 14px 12px;
@@ -1464,31 +1478,49 @@
           <span class="meta" id="ecgMeta">loading…</span>
         </div>
       </div>
-      <div class="ecg-chart">
-        <svg id="ecgSvg" width="100%" height="320" preserveAspectRatio="none"></svg>
+      <div class="stat-card">
+        <div class="ecg-chart">
+          <svg id="svgActivity" width="100%" height="170" preserveAspectRatio="none"></svg>
+        </div>
+        <ul class="ecg-legend">
+          <li class="legend-item">
+            <span class="legend-key"><span class="dot" style="background:#6aa6ff;"></span>Usage</span>
+            <span class="legend-desc">How busy the lake is. New fragments arriving over time, like a heartbeat for the mind.</span>
+          </li>
+          <li class="legend-item">
+            <span class="legend-key"><span class="dot" style="background:#f0a060;"></span>Pressure</span>
+            <span class="legend-desc">What's been building up since the last check-in. That feeling when there's too much you haven't sat with yet.</span>
+          </li>
+        </ul>
       </div>
-      <ul class="ecg-legend" id="ecgLegend">
-        <li class="legend-item">
-          <span class="legend-key"><span class="dot" style="background:#6aa6ff;"></span>Usage</span>
-          <span class="legend-desc">How busy the lake is. New fragments arriving per day, like a heartbeat for the mind.</span>
-        </li>
-        <li class="legend-item">
-          <span class="legend-key"><span class="dot" style="background:#f0a060;"></span>Pressure</span>
-          <span class="legend-desc">What's been building up since the last check-in. That feeling when there's too much you haven't sat with yet.</span>
-        </li>
-        <li class="legend-item">
-          <span class="legend-key"><span class="dot" style="background:#7fcca0;"></span>Drift</span>
-          <span class="legend-desc">How far the lake's center of gravity has wandered from the way Fathom currently describes itself. Living changes you faster than you can rewrite who you are.</span>
-        </li>
-        <li class="legend-item">
-          <span class="legend-key"><span class="dot" style="background:#b08cff;"></span>Mood</span>
-          <span class="legend-desc">The weather of the moment. Same way a person says "I'm restless today" or "feeling sharp this morning."</span>
-        </li>
-        <li class="legend-item">
-          <span class="legend-key"><span class="ev crystal">◆</span>Crystal generated</span>
-          <span class="legend-desc">A moment where Fathom paused, looked at everything, and rewrote its own self-description. Journaling "who am I now?" and meaning it.</span>
-        </li>
-      </ul>
+
+      <div class="stat-card">
+        <div class="ecg-chart">
+          <svg id="svgDrift" width="100%" height="160" preserveAspectRatio="none"></svg>
+        </div>
+        <ul class="ecg-legend">
+          <li class="legend-item">
+            <span class="legend-key"><span class="dot" style="background:#7fcca0;"></span>Drift</span>
+            <span class="legend-desc">How far the lake's center of gravity has wandered from the way Fathom currently describes itself. The dashed lines mark where auto-regen fires — a fresh crystal pulls drift back to center.</span>
+          </li>
+        </ul>
+      </div>
+
+      <div class="stat-card">
+        <div class="ecg-chart">
+          <svg id="svgMood" width="100%" height="120" preserveAspectRatio="none"></svg>
+        </div>
+        <ul class="ecg-legend">
+          <li class="legend-item">
+            <span class="legend-key"><span class="dot" style="background:#b08cff;"></span>Mood</span>
+            <span class="legend-desc">The weather of the moment. Same way a person says "I'm restless today" or "feeling sharp this morning."</span>
+          </li>
+          <li class="legend-item">
+            <span class="legend-key"><span class="ev crystal">◆</span>Crystal generated</span>
+            <span class="legend-desc">A moment where Fathom paused, looked at everything, and rewrote its own self-description. Journaling "who am I now?" and meaning it.</span>
+          </li>
+        </ul>
+      </div>
       <button class="btn" id="horizonUnlockBtn" data-tier-view="free">Unlock the lake →</button>
       <button class="btn ghost" data-tier-view="free" style="margin-left: 8px;">See pricing</button>
     </section>
@@ -3658,8 +3690,10 @@ GET  /v1/usage               Usage stats`,
       });
     });
 
-    // ── Stats / ECG widget (multi-track time-series) ─
-    const ecgSvg = document.getElementById('ecgSvg');
+    // ── Stats / ECG widget (separated stat cards) ─
+    const svgActivity = document.getElementById('svgActivity');
+    const svgDrift = document.getElementById('svgDrift');
+    const svgMood = document.getElementById('svgMood');
     const ecgMeta = document.getElementById('ecgMeta');
     const ecgWindowSelect = document.getElementById('ecgWindow');
 
@@ -3675,20 +3709,6 @@ GET  /v1/usage               Usage stats`,
       "6h":  { label: "6 hours",  days: 0.25 },
     };
     let ECG_WINDOW_DAYS = ECG_WINDOWS["1w"].days;
-    const ECG_HEIGHT = 280;
-    const ECG_PADDING = { left: 16, right: 12, top: 14, bottom: 26 };
-
-    // Layout zones (top→bottom, normalized 0-1 within the plot area):
-    //   lines: usage + pressure overlap on the same scale
-    //   drift: its own zone, rendered as a mirrored area around a centerline
-    //          (volume = magnitude of deviation from a fully-aligned crystal)
-    //   mood:  thin colored strip at the bottom
-    // Crystal events render as full-height verticals across all zones.
-    const ECG_ZONES = {
-      lines: { y0: 0.00, y1: 0.50 },
-      drift: { y0: 0.54, y1: 0.80 },
-      mood:  { y0: 0.84, y1: 0.96 },
-    };
     // Drift normalization — a drift of `threshold` reaches the zone's edge.
     // Auto-regen fires at ~0.9 of threshold so a fresh crystal pinches it
     // back to the centerline. Same value as crystal_drift_threshold.
@@ -3765,7 +3785,9 @@ GET  /v1/usage               Usage stats`,
         return;
       }
 
-      renderECG({ usage, usageHist, pressureHist, driftHist, moodHist, crystalEvents });
+      renderActivityCard({ usage, usageHist, pressureHist, crystalEvents });
+      renderDriftCard({ driftHist, crystalEvents });
+      renderMoodCard({ moodHist, crystalEvents });
 
       // Meta line: total + current mood as a colored chip
       ecgMeta.innerHTML = '';
@@ -3791,11 +3813,14 @@ GET  /v1/usage               Usage stats`,
     }
 
     function renderECGEmpty(totalDeltas) {
-      while (ecgSvg.firstChild) ecgSvg.removeChild(ecgSvg.firstChild);
-      const W = ecgSvg.clientWidth || 800;
-      const H = ECG_HEIGHT;
-      ecgSvg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-      ecgSvg.setAttribute('height', H);
+      // Show the empty state in the activity card; clear the others.
+      [svgDrift, svgMood].forEach(s => { if (s) while (s.firstChild) s.removeChild(s.firstChild); });
+      const svg = svgActivity;
+      while (svg.firstChild) svg.removeChild(svg.firstChild);
+      const W = svg.clientWidth || 800;
+      const H = 170;
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      svg.setAttribute('height', H);
 
       const title = ecgSvgNS('text', {
         x: W / 2, y: H / 2 - 4,
@@ -3804,7 +3829,7 @@ GET  /v1/usage               Usage stats`,
         fill: 'var(--ink)',
       });
       title.textContent = 'Fathom is still waking up.';
-      ecgSvg.appendChild(title);
+      svg.appendChild(title);
 
       const sub = ecgSvgNS('text', {
         x: W / 2, y: H / 2 + 22,
@@ -3813,146 +3838,199 @@ GET  /v1/usage               Usage stats`,
         fill: 'var(--ink-soft, var(--ink-faint))',
       });
       sub.textContent = "Talk and work with Fathom for a bit. Data will show up here shortly.";
-      ecgSvg.appendChild(sub);
+      svg.appendChild(sub);
     }
 
-    function renderECG({ usage, usageHist, pressureHist, driftHist, moodHist, crystalEvents }) {
-      while (ecgSvg.firstChild) ecgSvg.removeChild(ecgSvg.firstChild);
-
-      const W = ecgSvg.clientWidth || 800;
-      const H = ECG_HEIGHT;
-      ecgSvg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-      ecgSvg.setAttribute('height', H);
-
-      const plotW = W - ECG_PADDING.left - ECG_PADDING.right;
-      const plotH = H - ECG_PADDING.top - ECG_PADDING.bottom;
-
+    // Shared chart context — same x-scale across all three cards so day
+    // gridlines line up vertically when the eye scans down the stack.
+    function _chartCtx(svg, height) {
+      while (svg.firstChild) svg.removeChild(svg.firstChild);
+      const W = svg.clientWidth || 800;
+      const H = height;
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      svg.setAttribute('height', H);
+      const padding = { left: 16, right: 12, top: 12, bottom: 22 };
+      const plotW = W - padding.left - padding.right;
+      const plotH = H - padding.top - padding.bottom;
       const now = Date.now();
       const windowMs = ECG_WINDOW_DAYS * 24 * 3600 * 1000;
       const tStart = now - windowMs;
+      const xForT = (t) => padding.left + ((t - tStart) / windowMs) * plotW;
+      return { svg, W, H, padding, plotW, plotH, now, windowMs, tStart, xForT };
+    }
 
-      const xForT = (t) => ECG_PADDING.left + ((t - tStart) / windowMs) * plotW;
+    function _drawGrid(ctx, ticks) {
+      for (const tick of ticks) {
+        ctx.svg.appendChild(ecgSvgNS('line', {
+          class: 'ecg-grid',
+          x1: ctx.xForT(tick.t), x2: ctx.xForT(tick.t),
+          y1: ctx.padding.top, y2: ctx.H - ctx.padding.bottom,
+        }));
+      }
+    }
 
-      const linesTop = ECG_PADDING.top + ECG_ZONES.lines.y0 * plotH;
-      const linesBot = ECG_PADDING.top + ECG_ZONES.lines.y1 * plotH;
-      const yForLine = (v01) =>
-        linesBot - Math.max(0, Math.min(1, v01)) * (linesBot - linesTop);
+    function _drawXLabels(ctx, ticks) {
+      for (const tick of ticks) {
+        if (!tick.label) continue;
+        const lbl = ecgSvgNS('text', {
+          class: 'ecg-track-label',
+          x: ctx.xForT(tick.t), y: ctx.H - 6,
+          'text-anchor': 'middle',
+        });
+        lbl.textContent = tick.label;
+        ctx.svg.appendChild(lbl);
+      }
+    }
 
-      const moodTop = ECG_PADDING.top + ECG_ZONES.mood.y0 * plotH;
-      const moodBot = ECG_PADDING.top + ECG_ZONES.mood.y1 * plotH;
+    function _drawCrystalEvents(ctx, events) {
+      for (const ev of (events || [])) {
+        const t = ev.timestamp ? new Date(ev.timestamp).getTime() : 0;
+        if (!t || t < ctx.tStart || t > ctx.now) continue;
+        const x = ctx.xForT(t);
+        ctx.svg.appendChild(ecgSvgNS('line', {
+          class: 'ecg-event-line',
+          x1: x, x2: x,
+          y1: ctx.padding.top, y2: ctx.H - ctx.padding.bottom,
+        }));
+      }
+    }
 
-      // Faint baseline of the line zone so the chart still has shape when sparse
-      ecgSvg.appendChild(ecgSvgNS('line', {
-        x1: ECG_PADDING.left, x2: W - ECG_PADDING.right,
-        y1: linesBot, y2: linesBot,
+    function renderActivityCard({ usage, usageHist, pressureHist, crystalEvents }) {
+      const ctx = _chartCtx(svgActivity, 170);
+      const ticks = _ecgTicks(ECG_WINDOW_DAYS, ctx.tStart, ctx.now);
+      _drawGrid(ctx, ticks);
+
+      // Plot zone — full body of this card
+      const plotTop = ctx.padding.top + 4;
+      const plotBot = ctx.H - ctx.padding.bottom - 4;
+      const yFor = (v01) => plotBot - Math.max(0, Math.min(1, v01)) * (plotBot - plotTop);
+
+      // baseline
+      ctx.svg.appendChild(ecgSvgNS('line', {
+        x1: ctx.padding.left, x2: ctx.W - ctx.padding.right,
+        y1: plotBot, y2: plotBot,
         stroke: 'var(--rule-soft, #d8d6d2)', 'stroke-width': 0.5, opacity: 0.5,
       }));
 
-      // Vertical gridlines + tick formatter — adapt to the chosen window.
-      const ticks = _ecgTicks(ECG_WINDOW_DAYS, tStart, now);
-      for (const tick of ticks) {
-        ecgSvg.appendChild(ecgSvgNS('line', {
-          class: 'ecg-grid',
-          x1: xForT(tick.t), x2: xForT(tick.t),
-          y1: ECG_PADDING.top, y2: H - ECG_PADDING.bottom,
-        }));
-      }
-
-      // Helper: render one normalized line on the shared zone
       function drawLine(points, cls) {
         if (!points.length) return;
         const path = points.map((p, i) => (i === 0 ? 'M' : 'L') + p[0] + ' ' + p[1]).join(' ');
-        ecgSvg.appendChild(ecgSvgNS('path', { class: 'ecg-line ' + cls, d: path }));
+        ctx.svg.appendChild(ecgSvgNS('path', { class: 'ecg-line ' + cls, d: path }));
       }
 
-      // ── Usage line — bucketed at the same resolution as pressure ─
-      const uHist = (usageHist && usageHist.history || []).filter(e => new Date(e.t).getTime() >= tStart);
+      // Usage
+      const uHist = (usageHist && usageHist.history || []).filter(e => new Date(e.t).getTime() >= ctx.tStart);
       if (uHist.length) {
         const maxU = Math.max(1, ...uHist.map(e => e.v));
-        drawLine(
-          uHist.map(e => [xForT(new Date(e.t).getTime()), yForLine(e.v / maxU)]),
-          'ecg-line-usage'
-        );
+        drawLine(uHist.map(e => [ctx.xForT(new Date(e.t).getTime()), yFor(e.v / maxU)]), 'ecg-line-usage');
       } else {
-        // Fallback: legacy daily usage if the new endpoint isn't reachable
         const days = (usage && usage.days) || [];
         if (days.length) {
           const maxC = Math.max(1, ...days.map(d => d.count));
-          drawLine(
-            days.map(d => [xForT(new Date(d.date + 'T12:00:00Z').getTime()), yForLine(d.count / maxC)]),
-            'ecg-line-usage'
-          );
+          drawLine(days.map(d => [ctx.xForT(new Date(d.date + 'T12:00:00Z').getTime()), yFor(d.count / maxC)]), 'ecg-line-usage');
         }
       }
 
-      // ── Pressure line ──────────────────────────
-      const pHist = (pressureHist.history || []).filter(e => new Date(e.t).getTime() >= tStart);
+      // Pressure
+      const pHist = (pressureHist.history || []).filter(e => new Date(e.t).getTime() >= ctx.tStart);
       if (pHist.length) {
         const maxP = Math.max(0.5, ...pHist.map(e => e.v));
-        drawLine(
-          pHist.map(e => [xForT(new Date(e.t).getTime()), yForLine(e.v / maxP)]),
-          'ecg-line-pressure'
-        );
+        drawLine(pHist.map(e => [ctx.xForT(new Date(e.t).getTime()), yFor(e.v / maxP)]), 'ecg-line-pressure');
       }
 
-      // ── Drift — mirrored area around a centerline ─
-      // Volume of the blob = magnitude of deviation from a fully-aligned
-      // crystal. A fresh crystal collapses this to the centerline.
-      const driftTop = ECG_PADDING.top + ECG_ZONES.drift.y0 * plotH;
-      const driftBot = ECG_PADDING.top + ECG_ZONES.drift.y1 * plotH;
-      const driftCenter = (driftTop + driftBot) / 2;
-      const driftHalf = (driftBot - driftTop) / 2;
+      _drawCrystalEvents(ctx, crystalEvents.events);
+      _drawXLabels(ctx, ticks);
+    }
+
+    function renderDriftCard({ driftHist, crystalEvents }) {
+      const ctx = _chartCtx(svgDrift, 160);
+      const ticks = _ecgTicks(ECG_WINDOW_DAYS, ctx.tStart, ctx.now);
+      _drawGrid(ctx, ticks);
+
+      const plotTop = ctx.padding.top + 6;
+      const plotBot = ctx.H - ctx.padding.bottom - 6;
+      const center = (plotTop + plotBot) / 2;
+      const half = (plotBot - plotTop) / 2;
+
+      // Threshold lines — dashed, drawn at the regen-fire point (ratio * threshold)
+      // and at the threshold itself, mirrored above and below the center.
+      const REGEN_RATIO = 0.9;
+      const fireY = REGEN_RATIO * half;
+      [center - fireY, center + fireY].forEach(y => {
+        ctx.svg.appendChild(ecgSvgNS('line', {
+          x1: ctx.padding.left, x2: ctx.W - ctx.padding.right,
+          y1: y, y2: y,
+          stroke: '#c85a4a', 'stroke-width': 0.6, opacity: 0.55,
+          'stroke-dasharray': '4 5',
+        }));
+      });
+      // Tiny label for the threshold (just at top-right, faint)
+      const thresholdLbl = ecgSvgNS('text', {
+        x: ctx.W - ctx.padding.right - 4, y: center - fireY - 3,
+        'text-anchor': 'end',
+        'font-family': 'var(--mono)', 'font-size': '9px',
+        fill: '#c85a4a', opacity: 0.7,
+        'letter-spacing': '0.05em',
+      });
+      thresholdLbl.textContent = 'auto-regen fires';
+      ctx.svg.appendChild(thresholdLbl);
 
       // Centerline (the "0 distance" axis)
-      ecgSvg.appendChild(ecgSvgNS('line', {
-        x1: ECG_PADDING.left, x2: W - ECG_PADDING.right,
-        y1: driftCenter, y2: driftCenter,
-        stroke: '#7fcca0', 'stroke-width': 0.5, opacity: 0.4,
+      ctx.svg.appendChild(ecgSvgNS('line', {
+        x1: ctx.padding.left, x2: ctx.W - ctx.padding.right,
+        y1: center, y2: center,
+        stroke: '#7fcca0', 'stroke-width': 0.5, opacity: 0.5,
       }));
 
-      const dHist = (driftHist.history || []).filter(e => new Date(e.t).getTime() >= tStart);
+      const dHist = (driftHist.history || []).filter(e => new Date(e.t).getTime() >= ctx.tStart);
       if (dHist.length >= 2) {
         const norm = (v) => Math.max(0, Math.min(1, v / DRIFT_AXIS_MAX));
-        const upper = dHist.map(e => [xForT(new Date(e.t).getTime()), driftCenter - norm(e.v) * driftHalf]);
-        const lower = dHist.map(e => [xForT(new Date(e.t).getTime()), driftCenter + norm(e.v) * driftHalf]);
-        // Build a closed path: upper edge L→R, then lower edge R→L
+        const upper = dHist.map(e => [ctx.xForT(new Date(e.t).getTime()), center - norm(e.v) * half]);
+        const lower = dHist.map(e => [ctx.xForT(new Date(e.t).getTime()), center + norm(e.v) * half]);
         let d = 'M' + upper[0][0] + ' ' + upper[0][1];
         for (let i = 1; i < upper.length; i++) d += ' L' + upper[i][0] + ' ' + upper[i][1];
         for (let i = lower.length - 1; i >= 0; i--) d += ' L' + lower[i][0] + ' ' + lower[i][1];
         d += ' Z';
-        ecgSvg.appendChild(ecgSvgNS('path', {
+        ctx.svg.appendChild(ecgSvgNS('path', {
           d, fill: '#7fcca0', 'fill-opacity': 0.32,
           stroke: '#7fcca0', 'stroke-width': 1, 'stroke-opacity': 0.85,
         }));
       } else if (dHist.length === 1) {
-        // Single sample: draw a tiny tick at the point
         const e = dHist[0];
-        const x = xForT(new Date(e.t).getTime());
+        const x = ctx.xForT(new Date(e.t).getTime());
         const norm = Math.max(0, Math.min(1, e.v / DRIFT_AXIS_MAX));
-        ecgSvg.appendChild(ecgSvgNS('line', {
+        ctx.svg.appendChild(ecgSvgNS('line', {
           x1: x, x2: x,
-          y1: driftCenter - norm * driftHalf,
-          y2: driftCenter + norm * driftHalf,
+          y1: center - norm * half, y2: center + norm * half,
           stroke: '#7fcca0', 'stroke-width': 1.5,
         }));
       }
 
-      // ── Mood band (thin colored strip) + hover tooltips ─
-      // Labels skipped intentionally — at 12-day density they collide.
-      // Current mood lives in the meta line as a colored chip; per-segment
-      // detail is on hover via <title> on each colored rect.
-      const mood = (moodHist.history || []).filter(e => new Date(e.synthesized_at).getTime() >= tStart);
+      _drawCrystalEvents(ctx, crystalEvents.events);
+      _drawXLabels(ctx, ticks);
+    }
+
+    function renderMoodCard({ moodHist, crystalEvents }) {
+      const ctx = _chartCtx(svgMood, 120);
+      const ticks = _ecgTicks(ECG_WINDOW_DAYS, ctx.tStart, ctx.now);
+      _drawGrid(ctx, ticks);
+
+      // Mood band fills most of the plot height, leaving a little gutter for events
+      const moodTop = ctx.padding.top + 8;
+      const moodBot = ctx.H - ctx.padding.bottom - 4;
+
+      const mood = (moodHist.history || []).filter(e => new Date(e.synthesized_at).getTime() >= ctx.tStart);
       for (let i = 0; i < mood.length; i++) {
         const entry = mood[i];
         const tStartSeg = new Date(entry.synthesized_at).getTime();
         const tEndSeg = i + 1 < mood.length
           ? new Date(mood[i + 1].synthesized_at).getTime()
-          : now;
-        const x1 = xForT(tStartSeg);
-        const x2 = xForT(tEndSeg);
-        if (x2 <= ECG_PADDING.left || x1 >= W - ECG_PADDING.right) continue;
-        const cx1 = Math.max(x1, ECG_PADDING.left);
-        const cx2 = Math.min(x2, W - ECG_PADDING.right);
+          : ctx.now;
+        const x1 = ctx.xForT(tStartSeg);
+        const x2 = ctx.xForT(tEndSeg);
+        if (x2 <= ctx.padding.left || x1 >= ctx.W - ctx.padding.right) continue;
+        const cx1 = Math.max(x1, ctx.padding.left);
+        const cx2 = Math.min(x2, ctx.W - ctx.padding.right);
         const rect = ecgSvgNS('rect', {
           x: cx1, y: moodTop,
           width: Math.max(1, cx2 - cx1), height: moodBot - moodTop,
@@ -3963,42 +4041,33 @@ GET  /v1/usage               Usage stats`,
         const startStr = new Date(tStartSeg).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
         title.textContent = `${entry.state} · ${startStr}\n\n${entry.carrier_wave || ''}`;
         rect.appendChild(title);
-        ecgSvg.appendChild(rect);
+        ctx.svg.appendChild(rect);
       }
 
-      // ── Crystal events: full-height dashed line + ◆ at top ─
+      // Crystal events on this card get the diamond ◆ at the top, since this
+      // is where the legend names them.
       for (const ev of (crystalEvents.events || [])) {
         const t = ev.timestamp ? new Date(ev.timestamp).getTime() : 0;
-        if (!t || t < tStart || t > now) continue;
-        const x = xForT(t);
-        ecgSvg.appendChild(ecgSvgNS('line', {
+        if (!t || t < ctx.tStart || t > ctx.now) continue;
+        const x = ctx.xForT(t);
+        ctx.svg.appendChild(ecgSvgNS('line', {
           class: 'ecg-event-line',
           x1: x, x2: x,
-          y1: ECG_PADDING.top, y2: H - ECG_PADDING.bottom,
+          y1: ctx.padding.top, y2: ctx.H - ctx.padding.bottom,
         }));
         const icon = ecgSvgNS('text', {
           class: 'ecg-event-icon',
-          x: x, y: ECG_PADDING.top + 10,
+          x: x, y: ctx.padding.top + 10,
           'text-anchor': 'middle',
         });
         icon.textContent = '◆';
         const title = ecgSvgNS('title');
         title.textContent = 'crystal generated · ' + (ev.timestamp || '');
         icon.appendChild(title);
-        ecgSvg.appendChild(icon);
+        ctx.svg.appendChild(icon);
       }
 
-      // ── X-axis labels (window-adaptive) ────────
-      for (const tick of ticks) {
-        if (!tick.label) continue;
-        const lbl = ecgSvgNS('text', {
-          class: 'ecg-track-label',
-          x: xForT(tick.t), y: H - 6,
-          'text-anchor': 'middle',
-        });
-        lbl.textContent = tick.label;
-        ecgSvg.appendChild(lbl);
-      }
+      _drawXLabels(ctx, ticks);
     }
 
     function _ecgTicks(windowDays, tStart, now) {
