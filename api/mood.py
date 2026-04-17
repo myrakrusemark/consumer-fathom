@@ -46,7 +46,14 @@ def _strip_fences(text: str) -> str:
 
 
 def _parse_mood_payload(text: str) -> dict:
-    """Parse the LLM's mood JSON. Falls back to wrapping raw text on parse failure."""
+    """Parse the LLM's mood JSON. Falls back to wrapping raw text on parse failure.
+
+    Mood deltas may be stored as either:
+      - the canonical JSON we now write (full structured fields), OR
+      - older plaintext from before the headline/subtext fields existed
+    Both round-trip through this function — old deltas get empty
+    headline/subtext but keep their carrier_wave intact.
+    """
     raw = _strip_fences(text)
     try:
         obj = json.loads(raw)
@@ -56,12 +63,30 @@ def _parse_mood_payload(text: str) -> dict:
             threads = []
         threads = [str(t).strip() for t in threads if str(t).strip()][:4]
         state = _sanitize_state(obj.get("state") or "")
+        headline = (obj.get("headline") or "").strip()
+        subtext = (obj.get("subtext") or "").strip()
         if not carrier:
             raise ValueError("empty carrier_wave")
-        return {"state": state, "carrier_wave": carrier, "threads": threads}
+        return {
+            "state": state,
+            "headline": headline,
+            "subtext": subtext,
+            "carrier_wave": carrier,
+            "threads": threads,
+        }
     except Exception:
-        log.warning("mood synthesis returned non-JSON; storing as raw carrier wave")
-        return {"state": "unset", "carrier_wave": raw or text.strip(), "threads": []}
+        # Plaintext fallback for older mood deltas
+        carrier = raw or text.strip()
+        # Strip any "Threads:" tail an older synthesis appended
+        if "\n\nThreads:" in carrier:
+            carrier = carrier.split("\n\nThreads:")[0].strip()
+        return {
+            "state": "unset",
+            "headline": "",
+            "subtext": "",
+            "carrier_wave": carrier,
+            "threads": [],
+        }
 
 
 def _state_from_tags(tags: list[str]) -> str:
@@ -122,6 +147,8 @@ async def latest_mood() -> dict | None:
     return {
         "id": prior.get("id"),
         "state": state,
+        "headline": parsed["headline"],
+        "subtext": parsed["subtext"],
         "carrier_wave": parsed["carrier_wave"],
         "threads": parsed["threads"],
         "synthesized_at": prior.get("timestamp"),
@@ -148,6 +175,8 @@ async def mood_history(limit: int = 200) -> list[dict]:
         timeline.append({
             "id": d.get("id"),
             "state": state,
+            "headline": parsed["headline"],
+            "subtext": parsed["subtext"],
             "carrier_wave": parsed["carrier_wave"],
             "synthesized_at": d.get("timestamp"),
         })
@@ -200,10 +229,15 @@ async def synthesize_mood(session_slug: str | None = None) -> dict | None:
     text = resp.choices[0].message.content if resp.choices else ""
     parsed = _parse_mood_payload(text or "")
 
-    threads_block = ""
-    if parsed["threads"]:
-        threads_block = "\n\nThreads:\n" + "\n".join(f"- {t}" for t in parsed["threads"])
-    delta_content = parsed["carrier_wave"] + threads_block
+    # Store the full structured payload as canonical JSON so all the
+    # fields round-trip cleanly (headline, subtext, carrier_wave, threads).
+    delta_content = json.dumps({
+        "state": parsed["state"],
+        "headline": parsed["headline"],
+        "subtext": parsed["subtext"],
+        "carrier_wave": parsed["carrier_wave"],
+        "threads": parsed["threads"],
+    }, ensure_ascii=False)
 
     state = parsed["state"]
     delta_tags = MOOD_TAGS + [f"feeling:{state}"]
@@ -223,6 +257,8 @@ async def synthesize_mood(session_slug: str | None = None) -> dict | None:
     return {
         "id": (written or {}).get("id"),
         "state": state,
+        "headline": parsed["headline"],
+        "subtext": parsed["subtext"],
         "carrier_wave": parsed["carrier_wave"],
         "threads": parsed["threads"],
         "synthesized_at": _now().isoformat(),

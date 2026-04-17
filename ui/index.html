@@ -1328,7 +1328,7 @@
     <!-- Opener: title + subtext will both be delta-rendered at runtime -->
     <section class="opener">
       <div class="stamp">Wednesday · 3:42 PM · St. Louis</div>
-      <h1>The lake is <em>warmer</em> than yesterday.</h1>
+      <h1 id="heroHeadline">The lake is <em>warmer</em> than yesterday.</h1>
       <p id="heroSubtext" data-feeling="">Loading…</p>
     </section>
 
@@ -3289,7 +3289,15 @@ GET  /v1/usage               Usage stats`,
       return days + 'd ago';
     }
 
+    function _renderHeadline(raw) {
+      // Escape, then convert *word* to <em>word</em>. Only one emphasis pair
+      // by spec, but support multiple gracefully.
+      const escaped = escapeHtml(raw || '');
+      return escaped.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    }
+
     async function loadHeroMood() {
+      const headline = document.getElementById('heroHeadline');
       const subtext = document.getElementById('heroSubtext');
       if (!subtext) return;
       try {
@@ -3300,7 +3308,12 @@ GET  /v1/usage               Usage stats`,
           subtext.dataset.feeling = '';
           return;
         }
-        subtext.textContent = mood.carrier_wave || '';
+        // Headline: prefer the new field, leave the static fallback alone if missing
+        if (headline && mood.headline) {
+          headline.innerHTML = _renderHeadline(mood.headline);
+        }
+        // Subtext: prefer the new short field, fall back to carrier_wave for old deltas
+        subtext.textContent = mood.subtext || mood.carrier_wave || '';
         subtext.dataset.feeling = mood.state || '';
       } catch (err) {
         subtext.textContent = '';

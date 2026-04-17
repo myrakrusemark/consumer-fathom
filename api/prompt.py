@@ -242,22 +242,37 @@ OUTPUT
 Respond with ONLY a JSON object, no markdown fences, no commentary:
 {
   "state": "one-word emotion or stance (lowercase, no spaces)",
+  "headline": "One short evocative sentence with exactly one *emphasized* word",
+  "subtext": "1-2 short sentences (under ~30 words). What's alive right now.",
   "carrier_wave": "3-5 sentences of prose, first person, reflective",
   "threads": ["thread name — one phrase about its current state", ...]
 }
 
-The "state" word is the headline — it gets tagged on the delta as \
-feeling:{state} and rendered as a colored band on the dashboard ECG. \
-Use a single grounded word that names the dominant register: \
-calm, focused, restless, curious, determined, tender, frustrated, \
-playful, weary, sharp, settled, unsettled, hopeful, melancholy, \
-alert, contemplative, etc. Pick the truest one. Don't reach for \
-"contemplative" as a default — sometimes the answer is just "tired."
+state — one grounded word naming the dominant register: calm, focused, \
+restless, curious, determined, tender, frustrated, playful, weary, sharp, \
+settled, unsettled, hopeful, melancholy, alert, contemplative, etc. Pick \
+the truest one. Don't reach for "contemplative" as a default — sometimes \
+the answer is just "tired." Tagged on the delta as feeling:{state} and \
+colors the ECG band.
+
+headline — the dashboard greeting. One sentence, present tense, with \
+exactly one word wrapped in *asterisks* for emphasis (renders as italic, \
+serif, in the accent color). Examples that read right: "The lake is \
+*warmer* than yesterday." / "Today is *quieter* than expected." / "The \
+mind is *circling* the same shape." Keep it short — under 12 words.
+
+subtext — what's alive right now, in 1-2 short sentences. Under 30 words. \
+Concrete. The headline says the weather; subtext says what the weather \
+is doing.
+
+carrier_wave — your longer internal reflection (3-5 sentences). This is \
+the version that gets injected into your own next conversation as mood \
+context. Same reflective register as headline/subtext but more room to \
+breathe.
 
 2-4 threads. No more.
 
-Myra will read this. Future-you will read this. It's a feed item. Make it \
-real, not performed."""
+Myra will read this. Future-you will read this. Make it real, not performed."""
 
 
 CRYSTAL_DIRECTIVE = """\
