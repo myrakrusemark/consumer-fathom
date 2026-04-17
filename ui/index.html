@@ -294,9 +294,18 @@
       animation: surface 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
     }
 
+    /* Hero headline / subtext use the same surface animation when mood loads */
+    .opener .surfacing {
+      animation: surface 1s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+    .opener .surfacing.surfacing-delayed {
+      animation-delay: 0.12s;
+    }
+
     @media (prefers-reduced-motion: reduce) {
       .feed .card,
       .card.surfacing,
+      .opener .surfacing,
       .chat-stream .msg,
       .chat-stream .tool-strip { animation: none; }
     }
@@ -3339,6 +3348,17 @@ GET  /v1/usage               Usage stats`,
       subtext.dataset.feeling = '';
     }
 
+    function _surface(el, delayed) {
+      // Replay the surface animation on an element by toggling the class
+      // with a forced reflow in between (CSS won't replay an already-set
+      // animation otherwise).
+      if (!el) return;
+      el.classList.remove('surfacing', 'surfacing-delayed');
+      void el.offsetWidth;
+      el.classList.add('surfacing');
+      if (delayed) el.classList.add('surfacing-delayed');
+    }
+
     async function loadHeroMood() {
       const headline = document.getElementById('heroHeadline');
       const subtext = document.getElementById('heroSubtext');
@@ -3350,15 +3370,21 @@ GET  /v1/usage               Usage stats`,
           // No mood yet — leave the Hello default
           return;
         }
+        let changed = false;
         if (headline && mood.headline) {
           headline.innerHTML = _renderHeadline(mood.headline);
+          _surface(headline, false);
+          changed = true;
         }
         // Prefer the new short subtext; fall back to carrier_wave for older deltas
         const body = mood.subtext || mood.carrier_wave;
         if (body) {
           subtext.textContent = body;
           subtext.dataset.feeling = mood.state || '';
+          _surface(subtext, true);
+          changed = true;
         }
+        return changed;
       } catch (err) {
         // Network down — leave greeting in place
       }
