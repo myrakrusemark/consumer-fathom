@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     crystal_path: str = "/data/crystal.json"
     feed_directive_path: str = "/data/feed-directive.txt"
     tokens_path: str = "/data/tokens.json"
+    mood_state_path: str = "/data/mood-state.json"
+
+    # Mood layer (carrier wave) — pressure thresholds
+    mood_pressure_threshold: float = 5.0
+    mood_decay_half_life_seconds: int = 14400  # 4 hours
+    mood_contrast_wake_seconds: int = 21600    # 6 hours
 
     # Server
     host: str = "0.0.0.0"

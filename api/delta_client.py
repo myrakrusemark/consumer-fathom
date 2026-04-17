@@ -1,9 +1,14 @@
 """Async HTTP client for the delta store API."""
 from __future__ import annotations
 
+import asyncio
+import logging
+
 import httpx
 
 from .settings import settings
+
+log = logging.getLogger(__name__)
 
 _client: httpx.AsyncClient | None = None
 
@@ -59,7 +64,29 @@ async def write(
     body = {"content": content, "source": source, "tags": tags or []}
     r = await c.post("/deltas", json=body)
     r.raise_for_status()
-    return r.json()
+    result = r.json()
+    _record_pressure({"content": content, "tags": tags or [], "source": source})
+    return result
+
+
+def _record_pressure(delta: dict) -> None:
+    """Fire-and-forget pressure update. Imported lazily to avoid circular import."""
+    try:
+        from . import pressure as _pressure
+    except Exception:
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    task = loop.create_task(_pressure.add_delta(delta))
+    task.add_done_callback(_swallow_pressure_error)
+
+
+def _swallow_pressure_error(task: asyncio.Task) -> None:
+    exc = task.exception()
+    if exc is not None:
+        log.debug("pressure update failed: %s", exc)
 
 
 # ── Query (structured filter) ───────────────────

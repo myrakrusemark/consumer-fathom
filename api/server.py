@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import auth, db, delta_client
+from . import auth, db, delta_client, mood, pressure
 from .prompt import (
     CRYSTAL_DIRECTIVE,
     FEED_DIRECTIVE,
@@ -297,6 +297,10 @@ async def fathom_think(
     model = model or settings.resolved_model
     crystal = load_crystal()
 
+    # Mood layer — wake-gated synthesis. May trigger a fresh mood, or just
+    # return the most recent one. Failures degrade gracefully (mood = None).
+    current_mood = await mood.maybe_synthesize_on_wake(session_slug=session_slug)
+
     # Resolve tool surface: replace, extend, or default
     resolved_tools = tools if tools is not None else TOOLS
     if extra_tools:
@@ -306,6 +310,8 @@ async def fathom_think(
     system = build_system_prompt(
         crystal_text=crystal,
         session_slug=session_slug,
+        mood_carrier_wave=(current_mood or {}).get("carrier_wave"),
+        mood_threads=(current_mood or {}).get("threads"),
     )
 
     # Append task-specific directive
@@ -617,6 +623,40 @@ async def delete_session(session_id: str):
 async def get_feed_stories(limit: int = 20, offset: int = 0):
     """Proxy to delta-store's feed stories endpoint."""
     return await delta_client.feed_stories(limit=limit, offset=offset)
+
+
+@app.get("/v1/moods/latest")
+async def get_latest_mood():
+    """Return the most recent mood (carrier wave) plus current pressure state.
+
+    The UI surfaces this as a feed-style card so Myra can see what Fathom
+    is carrying right now.
+    """
+    latest = await mood.latest_mood()
+    pressure_state = await pressure.read_pressure()
+    pressure_view = {
+        "volume": pressure_state["volume"],
+        "threshold": pressure_state["threshold"],
+        "ratio": (
+            pressure_state["volume"] / pressure_state["threshold"]
+            if pressure_state["threshold"] > 0 else 0.0
+        ),
+        "last_synthesis_at": (
+            pressure_state["last_synthesis_at"].isoformat()
+            if pressure_state["last_synthesis_at"] else None
+        ),
+        "time_since_synthesis_seconds": pressure_state["time_since_synthesis_seconds"],
+    }
+    return {"mood": latest, "pressure": pressure_view}
+
+
+@app.post("/v1/moods/synthesize")
+async def force_mood_synthesis():
+    """Manually trigger a mood synthesis (for testing / UI refresh button)."""
+    fresh = await mood.synthesize_mood()
+    if not fresh:
+        raise HTTPException(503, "Mood synthesis failed — see logs")
+    return fresh
 
 
 @app.get("/v1/usage")

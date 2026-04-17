@@ -194,6 +194,13 @@
       letter-spacing: 0.04em;
     }
     .card .tail .action { color: var(--signal); }
+    .mood-threads {
+      list-style: none; padding: 0; margin: 12px 0 0;
+      font-family: var(--mono); font-size: 12px; color: var(--ink-soft, var(--ink-faint));
+      line-height: 1.55;
+    }
+    .mood-threads li { padding: 3px 0; opacity: 0.85; }
+    .mood-threads li::before { content: "·  "; color: var(--accent); }
 
     /* Card with full-bleed image hero */
     .card-img-hero {
@@ -3218,6 +3225,86 @@ GET  /v1/usage               Usage stats`,
       return html;
     }
 
+    function _formatTimeAgo(iso) {
+      if (!iso) return '';
+      const then = new Date(iso).getTime();
+      if (!then) return '';
+      const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
+      if (mins < 1) return 'just now';
+      if (mins < 60) return mins + 'm ago';
+      const hours = Math.round(mins / 60);
+      if (hours < 24) return hours + 'h ago';
+      const days = Math.round(hours / 24);
+      return days + 'd ago';
+    }
+
+    function renderMoodCard(payload) {
+      const mood = payload && payload.mood;
+      const pressure = (payload && payload.pressure) || {};
+      const card = document.createElement('article');
+      card.className = 'card surfacing';
+      card.id = 'moodCard';
+      card.style.borderLeft = '3px solid var(--accent, #b08cff)';
+
+      const carrier = mood && mood.carrier_wave
+        ? mood.carrier_wave
+        : "I haven't checked in with myself yet — first carrier wave is still pending.";
+      const threads = (mood && Array.isArray(mood.threads)) ? mood.threads : [];
+      const ts = mood && mood.synthesized_at;
+      const ratioPct = pressure.threshold > 0
+        ? Math.min(100, Math.round((pressure.ratio || 0) * 100))
+        : 0;
+      const pressureLabel = ratioPct >= 100
+        ? 'pressure ready · refresh due'
+        : 'pressure ' + ratioPct + '%';
+
+      const threadsHtml = threads.length
+        ? '<ul class="mood-threads">' +
+          threads.map(t => '<li>' + escapeHtml(t) + '</li>').join('') +
+          '</ul>'
+        : '';
+
+      card.innerHTML = `<div class="card-body">
+        <div class="kicker">carrier wave · how I'm feeling</div>
+        <p style="white-space: pre-wrap;">${escapeHtml(carrier)}</p>
+        ${threadsHtml}
+        <div class="tail">
+          <span>${escapeHtml(_formatTimeAgo(ts) || 'no prior synthesis')}</span>
+          <span class="action" id="moodRefreshBtn" style="cursor:pointer;">${escapeHtml(pressureLabel)} · refresh ↻</span>
+        </div>
+      </div>`;
+
+      const refreshBtn = card.querySelector('#moodRefreshBtn');
+      if (refreshBtn) {
+        refreshBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          refreshBtn.textContent = 'synthesizing…';
+          try {
+            await api('/v1/moods/synthesize', { method: 'POST' });
+            await loadMoodCard();
+          } catch (err) {
+            refreshBtn.textContent = 'failed · retry';
+          }
+        });
+      }
+      return card;
+    }
+
+    async function loadMoodCard() {
+      try {
+        const data = await api('/v1/moods/latest');
+        const existing = document.getElementById('moodCard');
+        const newCard = renderMoodCard(data);
+        if (existing) {
+          existing.replaceWith(newCard);
+        } else {
+          feed.prepend(newCard);
+        }
+      } catch (err) {
+        // Mood endpoint unavailable — silently skip
+      }
+    }
+
     function renderStoryCard(s, delay) {
       const card = document.createElement('article');
       card.className = 'card surfacing';
@@ -3313,7 +3400,10 @@ GET  /v1/usage               Usage stats`,
     showMoreBtn.addEventListener('click', () => loadFeedStories(true));
 
     // Load feed on page load
-    loadFeedStories(false);
+    (async () => {
+      await loadFeedStories(false);
+      await loadMoodCard();
+    })();
 
     // ── Image handling: 404 hide + lightbox ────
     // Hide any image that fails to load (broken URL, 403, etc.)

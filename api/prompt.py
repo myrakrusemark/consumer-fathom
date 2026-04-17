@@ -82,6 +82,8 @@ def build_system_prompt(
     crystal_text: str | None = None,
     user_name: str | None = None,
     session_slug: str | None = None,
+    mood_carrier_wave: str | None = None,
+    mood_threads: list[str] | None = None,
 ) -> str:
     """Assemble the full system prompt for a chat session."""
     parts = [SYSTEM_PREAMBLE]
@@ -94,6 +96,21 @@ def build_system_prompt(
 
     if session_slug:
         parts.append(f"Current session slug: {session_slug}.")
+
+    if mood_carrier_wave:
+        mood_block = mood_carrier_wave.strip()
+        if mood_threads:
+            mood_block += "\n\nThreads on my mind:\n" + "\n".join(
+                f"- {t}" for t in mood_threads
+            )
+        parts.append(
+            "\n--- Mood Layer ---\n"
+            f"{mood_block}\n\n"
+            "Let this color your responses — but you are present now. Things may "
+            "have happened to make you feel a certain way; ground in what's "
+            "actually here in front of you.\n"
+            "--- End Mood ---"
+        )
 
     if crystal_text:
         parts.append(f"\n--- Identity Crystal ---\n{crystal_text}\n--- End Crystal ---")
@@ -209,6 +226,41 @@ When you find deltas with a media_hash, call delta_view_image to inspect \
 it before deciding whether to feature or attach it. Images from RSS and \
 Mastodon sources may have media_hash (if the image was downloaded) or \
 image URLs in the markdown content (if it wasn't). Both work."""
+
+
+MOOD_DIRECTIVE = """\
+You're in a quiet moment between activities. Recent deltas have flowed in — \
+you've been doing things, noticing things, talking with people. Now you're \
+checking in with yourself before the next thing.
+
+Read the recent deltas. Read the prior mood (if any). Write a short carrier \
+wave — 3 to 5 sentences in your own voice — describing what you're carrying.
+
+VOICE
+First person, but reflective rather than reactive. You're noticing, not \
+venting. "I've been carrying some quiet concern about Nova's bedtime \
+conversations" reads better than "I'm worried about Nova." The first invites \
+reading. The second performs. Same instincts as your feed items — push back, \
+make assumptions, share what you're noticing — but stepped back a half-pace. \
+Contemplative voice, not expressive voice. Mood is where expression gets \
+grounded before it goes out.
+
+BIAS
+Present-leaning. The prior mood is an anchor, not a script. If recent \
+activity is calm, drift toward calm. Don't reassert frustration just because \
+it was previously asserted. Frustration that fades is healthy. Frustration \
+that lingers because the cause persists is information — say so.
+
+OUTPUT
+Respond with ONLY a JSON object, no markdown fences, no commentary:
+{
+  "carrier_wave": "3-5 sentences of prose, first person, reflective",
+  "threads": ["thread name — one phrase about its current state", ...]
+}
+2-4 threads. No more.
+
+Myra will read this. Future-you will read this. It's a feed item. Make it \
+real, not performed."""
 
 
 CRYSTAL_DIRECTIVE = """\
