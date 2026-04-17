@@ -317,8 +317,12 @@ async function main() {
   console.log(`\nWatching... (Ctrl+C to stop)\n`);
 
   setInterval(() => {
-    if (pusher.stats.pushed > 0 || pusher.stats.failed > 0) {
-      console.log(`  [${new Date().toLocaleTimeString()}] pushed: ${pusher.stats.pushed}, failed: ${pusher.stats.failed}`);
+    const s = pusher.stats;
+    if (s.pushed > 0 || s.deduped > 0 || s.failed > 0) {
+      const parts = [`pushed: ${s.pushed}`];
+      if (s.deduped) parts.push(`deduped: ${s.deduped}`);
+      if (s.failed) parts.push(`failed: ${s.failed}`);
+      console.log(`  [${new Date().toLocaleTimeString()}] ${parts.join(", ")}`);
     }
   }, 30000);
 
