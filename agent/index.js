@@ -287,7 +287,7 @@ async function main() {
     config.api_key = apiKey;
     config.plugins = {
       vault: {
-        enabled: true,
+        enabled: false,
         paths: [
           join(home, "Documents", "notes"),
           join(home, "Documents", "obsidian"),
@@ -297,7 +297,7 @@ async function main() {
         _comment: "Watch markdown directories. Paths that don't exist are ignored.",
       },
       clipboard: {
-        enabled: true,
+        enabled: false,
         interval: 3000,
         source: "clipboard",
         tags: ["clipboard"],
@@ -305,10 +305,8 @@ async function main() {
       },
     };
     saveConfig(config);
-    console.log(`Config written to ${CONFIG_PATH}\n`);
-    console.log("Example config:\n");
-    console.log(JSON.stringify(config, null, 2));
-    console.log(`\nEdit ${CONFIG_PATH} to adjust paths and settings, then run fathom-agent.`);
+    console.log(`Config written to ${CONFIG_PATH}`);
+    console.log(`Enable plugins and adjust paths, then run fathom-agent.`);
     process.exit(0);
   }
 
