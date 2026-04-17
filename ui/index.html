@@ -458,9 +458,14 @@
       background: var(--surface); border: 1px solid var(--rule);
       border-radius: var(--radius); overflow: hidden;
     }
+    .stat-card-title {
+      font-family: var(--serif); font-weight: 400; font-size: 18px;
+      color: var(--ink);
+      margin: 0; padding: 14px 18px 0;
+    }
     .stat-card .ecg-chart {
       background: transparent; border: 0; border-radius: 0;
-      padding: 14px 12px 6px;
+      padding: 10px 12px 6px;
     }
     .stat-card .ecg-legend {
       list-style: none; margin: 0; padding: 14px 18px 16px;
@@ -1481,18 +1486,24 @@
         </div>
       </div>
       <div class="stat-card">
+        <h3 class="stat-card-title">Usage</h3>
         <div class="ecg-chart">
           <svg id="svgActivity" width="100%" height="170" preserveAspectRatio="none"></svg>
         </div>
         <ul class="ecg-legend">
           <li class="legend-item">
-            <span class="legend-key"><span class="dot" style="background:#6aa6ff;"></span>Usage In / Out</span>
-            <span class="legend-desc">Moments arriving (blue) and being retrieved (green) over time. The volume between them is the imbalance — capture-heavy means Fathom is taking in faster than it's pulling things back out; recall-heavy means the opposite.</span>
+            <span class="legend-key"><span class="dot" style="background:#6aa6ff;"></span>Usage In</span>
+            <span class="legend-desc">Moments arriving over time — captures into Fathom from sources, conversations, and tools.</span>
+          </li>
+          <li class="legend-item">
+            <span class="legend-key"><span class="dot" style="background:#7fcca0;"></span>Usage Out</span>
+            <span class="legend-desc">Moments being retrieved — Fathom actively recalling pieces of what it's stored, in conversation or response to a question.</span>
           </li>
         </ul>
       </div>
 
       <div class="stat-card">
+        <h3 class="stat-card-title">Weather</h3>
         <div class="ecg-chart">
           <svg id="svgPressureMood" width="100%" height="200" preserveAspectRatio="none"></svg>
         </div>
@@ -1509,6 +1520,7 @@
       </div>
 
       <div class="stat-card">
+        <h3 class="stat-card-title">Identity</h3>
         <div class="ecg-chart">
           <svg id="svgDrift" width="100%" height="160" preserveAspectRatio="none"></svg>
         </div>
