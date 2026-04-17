@@ -463,6 +463,10 @@
       color: var(--ink);
       margin: 0; padding: 14px 18px 0;
     }
+    .ecg-cta-row {
+      margin-top: 32px;
+      display: flex; flex-wrap: wrap; align-items: center;
+    }
     .stat-card .ecg-chart {
       background: transparent; border: 0; border-radius: 0;
       padding: 10px 12px 6px;
@@ -1535,8 +1539,10 @@
           </li>
         </ul>
       </div>
-      <button class="btn" id="horizonUnlockBtn" data-tier-view="free">Unlock all moments →</button>
-      <button class="btn ghost" data-tier-view="free" style="margin-left: 8px;">See pricing</button>
+      <div class="ecg-cta-row" data-tier-view="free">
+        <button class="btn" id="horizonUnlockBtn">Unlock Fathom</button>
+        <button class="btn ghost" style="margin-left: 8px;">See pricing</button>
+      </div>
     </section>
 
   </main>
@@ -3911,6 +3917,78 @@ GET  /v1/usage               Usage stats`,
       }
     }
 
+    // Free-tier blackout — covers the part of each chart older than the 7-day
+    // memory horizon. Optionally renders a clickable CTA centered in the
+    // blacked-out region (used on the Usage card).
+    function _drawFreeTierBlackout(ctx, ctaText) {
+      const tier = document.documentElement.getAttribute('data-tier');
+      if (tier === 'open') return false;
+      const horizonMs = 7 * 24 * 3600 * 1000;
+      const horizonT = ctx.now - horizonMs;
+      if (horizonT <= ctx.tStart) return false;  // window already within 7 days
+
+      const x1 = ctx.padding.left;
+      const x2 = ctx.xForT(horizonT);
+      if (x2 <= x1 + 4) return false;
+
+      const y = ctx.padding.top;
+      const h = ctx.H - ctx.padding.top - ctx.padding.bottom;
+
+      // Opaque blackout panel
+      ctx.svg.appendChild(ecgSvgNS('rect', {
+        x: x1, y: y, width: x2 - x1, height: h,
+        fill: 'var(--bg-deep, #081519)',
+        'fill-opacity': 0.97,
+      }));
+      // Soft accent edge marking the horizon line
+      ctx.svg.appendChild(ecgSvgNS('line', {
+        x1: x2, x2: x2, y1: y, y2: y + h,
+        stroke: 'var(--accent)', 'stroke-width': 1,
+        'stroke-dasharray': '3 4', opacity: 0.55,
+      }));
+
+      if (ctaText) {
+        const cx = (x1 + x2) / 2;
+        const cy = y + h / 2;
+        const pillW = Math.min(180, x2 - x1 - 24);
+        const pillH = 36;
+        const py = cy - pillH / 2;
+        const px = cx - pillW / 2;
+
+        const pill = ecgSvgNS('rect', {
+          x: px, y: py, width: pillW, height: pillH, rx: 18,
+          fill: 'var(--accent)', 'fill-opacity': 0.95,
+        });
+        pill.style.cursor = 'pointer';
+        ctx.svg.appendChild(pill);
+
+        const lbl = ecgSvgNS('text', {
+          x: cx, y: cy + 5,
+          'text-anchor': 'middle',
+          'font-family': 'var(--sans)', 'font-size': '13px',
+          fill: 'var(--bg-deep, #081519)',
+          'font-weight': '600',
+          'letter-spacing': '0.02em',
+        });
+        lbl.textContent = ctaText;
+        lbl.style.cursor = 'pointer';
+        ctx.svg.appendChild(lbl);
+
+        // Single click target overlay (above pill + label)
+        const click = ecgSvgNS('rect', {
+          x: px, y: py, width: pillW, height: pillH, rx: 18,
+          fill: 'transparent',
+        });
+        click.style.cursor = 'pointer';
+        click.addEventListener('click', () => {
+          const btn = document.getElementById('horizonUnlockBtn');
+          if (btn) btn.click();
+        });
+        ctx.svg.appendChild(click);
+      }
+      return true;
+    }
+
     function renderActivityCard({ usage, usageHist, recallHist, crystalEvents }) {
       const ctx = _chartCtx(svgActivity, 170);
       const ticks = _ecgTicks(ECG_WINDOW_DAYS, ctx.tStart, ctx.now);
@@ -3964,6 +4042,7 @@ GET  /v1/usage               Usage stats`,
       }
 
       _drawCrystalEvents(ctx, crystalEvents.events);
+      _drawFreeTierBlackout(ctx, 'Unlock Fathom');
       _drawXLabels(ctx, ticks);
     }
 
@@ -4031,6 +4110,7 @@ GET  /v1/usage               Usage stats`,
       }
 
       _drawCrystalEvents(ctx, crystalEvents.events);
+      _drawFreeTierBlackout(ctx);
       _drawXLabels(ctx, ticks);
     }
 
@@ -4120,6 +4200,7 @@ GET  /v1/usage               Usage stats`,
         ctx.svg.appendChild(icon);
       }
 
+      _drawFreeTierBlackout(ctx);
       _drawXLabels(ctx, ticks);
     }
 
