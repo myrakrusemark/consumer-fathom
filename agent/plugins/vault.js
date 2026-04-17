@@ -37,6 +37,7 @@ export default {
   name: "Vault",
   icon: "📁",
   type: "watch",
+  description: "Watch markdown directories. Pushes file changes, extracts images.",
 
   start(config, pusher) {
     const allPaths = config.paths || [];
