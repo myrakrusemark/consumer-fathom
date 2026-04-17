@@ -3950,43 +3950,32 @@ GET  /v1/usage               Usage stats`,
       }));
 
       if (ctaText) {
-        const cx = (x1 + x2) / 2;
-        const cy = y + h / 2;
-        const pillW = Math.min(180, x2 - x1 - 24);
-        const pillH = 36;
-        const py = cy - pillH / 2;
-        const px = cx - pillW / 2;
+        // Use the standard .btn via foreignObject so it's pixel-identical
+        // to the section's bottom Unlock button (same padding, radius,
+        // hover state, etc.) — not a bespoke SVG pill.
+        const boxW = Math.min(200, x2 - x1 - 16);
+        const boxH = 44;
+        const foX = (x1 + x2) / 2 - boxW / 2;
+        const foY = y + h / 2 - boxH / 2;
 
-        const pill = ecgSvgNS('rect', {
-          x: px, y: py, width: pillW, height: pillH, rx: 18,
-          fill: 'var(--accent)', 'fill-opacity': 0.95,
-        });
-        pill.style.cursor = 'pointer';
-        ctx.svg.appendChild(pill);
+        const fo = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
+        fo.setAttribute('x', foX);
+        fo.setAttribute('y', foY);
+        fo.setAttribute('width', boxW);
+        fo.setAttribute('height', boxH);
 
-        const lbl = ecgSvgNS('text', {
-          x: cx, y: cy + 5,
-          'text-anchor': 'middle',
-          'font-family': 'var(--sans)', 'font-size': '13px',
-          fill: 'var(--bg-deep, #081519)',
-          'font-weight': '600',
-          'letter-spacing': '0.02em',
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'width:100%;height:100%;display:flex;align-items:center;justify-content:center;';
+        const btn = document.createElement('button');
+        btn.className = 'btn';
+        btn.textContent = ctaText;
+        btn.addEventListener('click', () => {
+          const trigger = document.getElementById('horizonUnlockBtn');
+          if (trigger) trigger.click();
         });
-        lbl.textContent = ctaText;
-        lbl.style.cursor = 'pointer';
-        ctx.svg.appendChild(lbl);
-
-        // Single click target overlay (above pill + label)
-        const click = ecgSvgNS('rect', {
-          x: px, y: py, width: pillW, height: pillH, rx: 18,
-          fill: 'transparent',
-        });
-        click.style.cursor = 'pointer';
-        click.addEventListener('click', () => {
-          const btn = document.getElementById('horizonUnlockBtn');
-          if (btn) btn.click();
-        });
-        ctx.svg.appendChild(click);
+        wrap.appendChild(btn);
+        fo.appendChild(wrap);
+        ctx.svg.appendChild(fo);
       }
       return true;
     }
