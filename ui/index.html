@@ -1414,8 +1414,7 @@
         <span class="legend-item"><span class="dot" style="background:#f0a060;"></span>pressure</span>
         <span class="legend-item"><span class="dot" style="background:#7fcca0;"></span>drift</span>
         <span class="legend-item"><span class="dot" style="background:#b08cff;"></span>mood</span>
-        <span class="legend-item"><span class="ev crystal">◆</span>crystal</span>
-        <span class="legend-item"><span class="ev mood">▮</span>mood-change</span>
+        <span class="legend-item"><span class="ev crystal">◆</span>crystal generated</span>
       </div>
       <p class="ecg-copy" id="ecgCopy">Live signal of how I'm running. Each track is a vital — usage is volume, pressure is what's been building since I last checked in, drift is how far the crystal has wandered from the lake's centroid, mood is the colored band of how it's all landing.</p>
       <button class="btn" id="horizonUnlockBtn" data-tier-view="free">Unlock the lake →</button>
@@ -3522,16 +3521,15 @@ GET  /v1/usage               Usage stats`,
     const ecgMeta = document.getElementById('ecgMeta');
 
     const ECG_WINDOW_DAYS = 12;
-    const ECG_HEIGHT = 320;
-    const ECG_PADDING = { left: 52, right: 12, top: 10, bottom: 22 };
+    const ECG_HEIGHT = 280;
+    const ECG_PADDING = { left: 16, right: 12, top: 14, bottom: 26 };
 
-    // Track layout (normalized 0-1 within the plot area, top=0 bottom=1)
-    const ECG_TRACKS = {
-      usage:    { y0: 0.00, y1: 0.22, label: 'USAGE',    cls: 'ecg-line-usage' },
-      pressure: { y0: 0.24, y1: 0.46, label: 'PRESSURE', cls: 'ecg-line-pressure' },
-      drift:    { y0: 0.48, y1: 0.70, label: 'DRIFT',    cls: 'ecg-line-drift' },
-      mood:     { y0: 0.72, y1: 0.86, label: 'MOOD',     cls: '' },
-      events:   { y0: 0.88, y1: 1.00, label: 'EVENTS',   cls: '' },
+    // One shared plot zone for all the line tracks (they overlap like a real
+    // ECG), one thin colored strip for the mood band underneath. Crystal
+    // events render as full-height verticals across both zones.
+    const ECG_ZONES = {
+      lines: { y0: 0.00, y1: 0.84 },
+      mood:  { y0: 0.88, y1: 1.00 },
     };
 
     const FEELING_COLORS = {
@@ -3629,7 +3627,6 @@ GET  /v1/usage               Usage stats`,
     }
 
     function renderECG({ usage, pressureHist, driftHist, moodHist, crystalEvents }) {
-      // Clear
       while (ecgSvg.firstChild) ecgSvg.removeChild(ecgSvg.firstChild);
 
       const W = ecgSvg.clientWidth || 800;
@@ -3645,30 +3642,21 @@ GET  /v1/usage               Usage stats`,
       const tStart = now - windowMs;
 
       const xForT = (t) => ECG_PADDING.left + ((t - tStart) / windowMs) * plotW;
-      const yForTrack = (track, v01) => {
-        const t = ECG_TRACKS[track];
-        const top = ECG_PADDING.top + t.y0 * plotH;
-        const bot = ECG_PADDING.top + t.y1 * plotH;
-        return bot - Math.max(0, Math.min(1, v01)) * (bot - top);
-      };
 
-      // Track backgrounds + labels
-      for (const [key, t] of Object.entries(ECG_TRACKS)) {
-        const top = ECG_PADDING.top + t.y0 * plotH;
-        const bot = ECG_PADDING.top + t.y1 * plotH;
-        ecgSvg.appendChild(ecgSvgNS('rect', {
-          class: 'ecg-track-bg',
-          x: ECG_PADDING.left, y: top,
-          width: plotW, height: bot - top,
-          rx: 3,
-        }));
-        const label = ecgSvgNS('text', {
-          class: 'ecg-track-label',
-          x: 8, y: top + (bot - top) / 2 + 3,
-        });
-        label.textContent = t.label;
-        ecgSvg.appendChild(label);
-      }
+      const linesTop = ECG_PADDING.top + ECG_ZONES.lines.y0 * plotH;
+      const linesBot = ECG_PADDING.top + ECG_ZONES.lines.y1 * plotH;
+      const yForLine = (v01) =>
+        linesBot - Math.max(0, Math.min(1, v01)) * (linesBot - linesTop);
+
+      const moodTop = ECG_PADDING.top + ECG_ZONES.mood.y0 * plotH;
+      const moodBot = ECG_PADDING.top + ECG_ZONES.mood.y1 * plotH;
+
+      // Faint baseline of the line zone so the chart still has shape when sparse
+      ecgSvg.appendChild(ecgSvgNS('line', {
+        x1: ECG_PADDING.left, x2: W - ECG_PADDING.right,
+        y1: linesBot, y2: linesBot,
+        stroke: 'var(--rule-soft, #d8d6d2)', 'stroke-width': 0.5, opacity: 0.5,
+      }));
 
       // Vertical day gridlines
       for (let d = 0; d <= ECG_WINDOW_DAYS; d++) {
@@ -3680,49 +3668,45 @@ GET  /v1/usage               Usage stats`,
         }));
       }
 
-      // ── Usage line ─────────────────────────────
+      // Helper: render one normalized line on the shared zone
+      function drawLine(points, cls) {
+        if (!points.length) return;
+        const path = points.map((p, i) => (i === 0 ? 'M' : 'L') + p[0] + ' ' + p[1]).join(' ');
+        ecgSvg.appendChild(ecgSvgNS('path', { class: 'ecg-line ' + cls, d: path }));
+      }
+
+      // ── Usage line (normalized to its own max) ─
       const days = usage.days || [];
       if (days.length) {
-        const maxCount = Math.max(1, ...days.map(d => d.count));
-        const pts = days.map(d => {
-          const t = new Date(d.date + 'T12:00:00Z').getTime();
-          const v = d.count / maxCount;
-          return [xForT(t), yForTrack('usage', v)];
-        });
-        const path = pts.map((p, i) => (i === 0 ? 'M' : 'L') + p[0] + ' ' + p[1]).join(' ');
-        ecgSvg.appendChild(ecgSvgNS('path', { class: 'ecg-line ecg-line-usage', d: path }));
+        const maxC = Math.max(1, ...days.map(d => d.count));
+        drawLine(
+          days.map(d => [xForT(new Date(d.date + 'T12:00:00Z').getTime()), yForLine(d.count / maxC)]),
+          'ecg-line-usage'
+        );
       }
 
       // ── Pressure line ──────────────────────────
       const pHist = (pressureHist.history || []).filter(e => new Date(e.t).getTime() >= tStart);
       if (pHist.length) {
         const maxP = Math.max(0.5, ...pHist.map(e => e.v));
-        const pts = pHist.map(e => {
-          const t = new Date(e.t).getTime();
-          return [xForT(t), yForTrack('pressure', e.v / maxP)];
-        });
-        const path = pts.map((p, i) => (i === 0 ? 'M' : 'L') + p[0] + ' ' + p[1]).join(' ');
-        ecgSvg.appendChild(ecgSvgNS('path', { class: 'ecg-line ecg-line-pressure', d: path }));
+        drawLine(
+          pHist.map(e => [xForT(new Date(e.t).getTime()), yForLine(e.v / maxP)]),
+          'ecg-line-pressure'
+        );
       }
 
       // ── Drift line ─────────────────────────────
       const dHist = (driftHist.history || []).filter(e => new Date(e.t).getTime() >= tStart);
       if (dHist.length) {
-        // Drift is cosine distance (0-2). Plot relative to max seen.
         const maxD = Math.max(0.05, ...dHist.map(e => e.v));
-        const pts = dHist.map(e => {
-          const t = new Date(e.t).getTime();
-          return [xForT(t), yForTrack('drift', e.v / maxD)];
-        });
-        const path = pts.map((p, i) => (i === 0 ? 'M' : 'L') + p[0] + ' ' + p[1]).join(' ');
-        ecgSvg.appendChild(ecgSvgNS('path', { class: 'ecg-line ecg-line-drift', d: path }));
+        drawLine(
+          dHist.map(e => [xForT(new Date(e.t).getTime()), yForLine(e.v / maxD)]),
+          'ecg-line-drift'
+        );
       }
 
-      // ── Mood colored band + state-change ticks ─
+      // ── Mood band (thin colored strip) + state labels ─
       const mood = (moodHist.history || []).filter(e => new Date(e.synthesized_at).getTime() >= tStart);
-      const moodTop = ECG_PADDING.top + ECG_TRACKS.mood.y0 * plotH;
-      const moodBot = ECG_PADDING.top + ECG_TRACKS.mood.y1 * plotH;
-      const moodH = moodBot - moodTop;
       for (let i = 0; i < mood.length; i++) {
         const entry = mood[i];
         const tStartSeg = new Date(entry.synthesized_at).getTime();
@@ -3732,30 +3716,19 @@ GET  /v1/usage               Usage stats`,
         const x1 = xForT(tStartSeg);
         const x2 = xForT(tEndSeg);
         if (x2 <= ECG_PADDING.left || x1 >= W - ECG_PADDING.right) continue;
-        const clippedX1 = Math.max(x1, ECG_PADDING.left);
-        const clippedX2 = Math.min(x2, W - ECG_PADDING.right);
+        const cx1 = Math.max(x1, ECG_PADDING.left);
+        const cx2 = Math.min(x2, W - ECG_PADDING.right);
         ecgSvg.appendChild(ecgSvgNS('rect', {
-          x: clippedX1, y: moodTop,
-          width: Math.max(1, clippedX2 - clippedX1), height: moodH,
+          x: cx1, y: moodTop,
+          width: Math.max(1, cx2 - cx1), height: moodBot - moodTop,
           fill: moodColor(entry.state),
-          opacity: 0.75, rx: 2,
+          opacity: 0.85, rx: 2,
         }));
-        // State change tick + label at segment start
-        if (i > 0 && mood[i - 1].state !== entry.state) {
-          ecgSvg.appendChild(ecgSvgNS('line', {
-            x1: x1, x2: x1, y1: moodTop - 2, y2: moodBot + 2,
-            stroke: moodColor(entry.state), 'stroke-width': 1.5,
-          }));
+        const showLabel = i === 0 || mood[i - 1].state !== entry.state;
+        if (showLabel) {
           const lbl = ecgSvgNS('text', {
             class: 'ecg-mood-tick',
-            x: x1 + 3, y: moodTop - 4,
-          });
-          lbl.textContent = entry.state;
-          ecgSvg.appendChild(lbl);
-        } else if (i === 0) {
-          const lbl = ecgSvgNS('text', {
-            class: 'ecg-mood-tick',
-            x: Math.max(clippedX1 + 3, ECG_PADDING.left + 3),
+            x: Math.max(cx1 + 4, ECG_PADDING.left + 4),
             y: moodTop - 4,
           });
           lbl.textContent = entry.state;
@@ -3763,9 +3736,7 @@ GET  /v1/usage               Usage stats`,
         }
       }
 
-      // ── Crystal events: full-height dashed line + diamond icon ─
-      const eventsTop = ECG_PADDING.top + ECG_TRACKS.events.y0 * plotH;
-      const eventsBot = ECG_PADDING.top + ECG_TRACKS.events.y1 * plotH;
+      // ── Crystal events: full-height dashed line + ◆ at top ─
       for (const ev of (crystalEvents.events || [])) {
         const t = ev.timestamp ? new Date(ev.timestamp).getTime() : 0;
         if (!t || t < tStart || t > now) continue;
@@ -3777,7 +3748,7 @@ GET  /v1/usage               Usage stats`,
         }));
         const icon = ecgSvgNS('text', {
           class: 'ecg-event-icon',
-          x: x, y: eventsTop + (eventsBot - eventsTop) / 2 + 4,
+          x: x, y: ECG_PADDING.top + 10,
           'text-anchor': 'middle',
         });
         icon.textContent = '◆';
@@ -3787,7 +3758,7 @@ GET  /v1/usage               Usage stats`,
         ecgSvg.appendChild(icon);
       }
 
-      // ── X-axis ticks: day labels ───────────────
+      // ── X-axis day labels ──────────────────────
       for (let d = 0; d <= ECG_WINDOW_DAYS; d += 2) {
         const t = tStart + d * 24 * 3600 * 1000;
         const dt = new Date(t);
