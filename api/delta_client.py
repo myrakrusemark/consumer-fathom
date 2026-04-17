@@ -117,6 +117,17 @@ async def stats() -> dict:
     return r.json()
 
 
+async def retrievals_history(since_seconds: int, buckets: int = 60) -> list[dict]:
+    """Fetch bucketed delta-retrieval timeline from the lake."""
+    c = await _get()
+    r = await c.get(
+        "/stats/retrievals/history",
+        params={"since_seconds": since_seconds, "buckets": buckets},
+    )
+    r.raise_for_status()
+    return r.json().get("history", [])
+
+
 async def upload_media(
     file_bytes: bytes,
     filename: str,

@@ -223,18 +223,11 @@ async def search(
 
     ``threshold`` (shallow only) drops results whose distance > threshold.
 
-    Logs a recall event so the Stats Activity card can plot retrievals
-    alongside captures (sibling to write-side usage).
+    Retrieval counting lives at the delta-store (see delta-store's
+    retrievals.py) so the Stats Activity card catches every client.
     """
     if not text or not text.strip():
         return _empty_result()
-
-    # Lazy import to keep the dep one-way (recall doesn't import search).
-    try:
-        from . import recall as _recall
-        _recall.fire_and_forget()
-    except Exception:
-        pass
 
     if depth == "shallow":
         return await _shallow(text, limit=limit, threshold=threshold)
