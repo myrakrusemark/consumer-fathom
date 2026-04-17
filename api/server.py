@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import auth, db, delta_client, mood, pressure
+from . import auth, db, delta_client, drift, mood, pressure
 from .prompt import (
     CRYSTAL_DIRECTIVE,
     FEED_DIRECTIVE,
@@ -657,6 +657,51 @@ async def force_mood_synthesis():
     if not fresh:
         raise HTTPException(503, "Mood synthesis failed — see logs")
     return fresh
+
+
+@app.get("/v1/moods/history")
+async def get_mood_history(limit: int = 200):
+    """Mood timeline for the ECG colored band + state-change events."""
+    timeline = await mood.mood_history(limit=limit)
+    return {"history": timeline}
+
+
+@app.get("/v1/pressure/history")
+async def get_pressure_history(since_seconds: int | None = None):
+    """Rolling pressure samples for the ECG pressure track."""
+    items = await pressure.history(since_seconds=since_seconds)
+    return {"history": items}
+
+
+@app.get("/v1/drift")
+async def get_drift():
+    """Sample current crystal drift and return latest snapshot."""
+    return await drift.sample()
+
+
+@app.get("/v1/drift/history")
+async def get_drift_history(since_seconds: int | None = None):
+    """Drift samples accumulated from prior /v1/drift calls."""
+    items = await drift.history(since_seconds=since_seconds)
+    return {"history": items}
+
+
+@app.get("/v1/crystal/events")
+async def get_crystal_events(limit: int = 50):
+    """List historical crystal-generation events for the ECG event markers."""
+    try:
+        results = await delta_client.query(tags_include=["identity-crystal"], limit=limit)
+    except Exception:
+        return {"events": []}
+    events: list[dict] = []
+    for d in results:
+        events.append({
+            "id": d.get("id"),
+            "timestamp": d.get("timestamp"),
+            "preview": (d.get("content") or "")[:140],
+        })
+    events.sort(key=lambda e: e.get("timestamp") or "")
+    return {"events": events}
 
 
 @app.get("/v1/usage")

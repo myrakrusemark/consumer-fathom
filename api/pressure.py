@@ -34,6 +34,9 @@ SOURCE_WEIGHTS: dict[str, float] = {
 USER_TAG_BOOST: float = 0.5   # any delta tagged "user" gets an extra bump
 DEFAULT_WEIGHT: float = 0.3   # unknown source
 
+# Rolling pressure history kept inside the same JSON file (small, bounded).
+HISTORY_LIMIT: int = 1000
+
 _lock = asyncio.Lock()
 
 
@@ -79,7 +82,17 @@ def _empty_state() -> dict:
         "last_wake_at": None,
         "last_synthesis_at": None,
         "updated_at": now_iso,
+        "history": [],
     }
+
+
+def _push_history(state: dict, value: float, when: datetime) -> None:
+    """Append a sample to the rolling history, trimming to HISTORY_LIMIT."""
+    history = state.get("history") or []
+    history.append({"t": _iso(when), "v": round(value, 4)})
+    if len(history) > HISTORY_LIMIT:
+        history = history[-HISTORY_LIMIT:]
+    state["history"] = history
 
 
 def _load_raw() -> dict:
@@ -118,8 +131,10 @@ async def add_delta(delta: dict) -> None:
         now = _now()
         last = _parse(state.get("updated_at")) or now
         decayed = _decay(state.get("volume_pressure", 0.0), last, now)
-        state["volume_pressure"] = decayed + weight
+        new_value = decayed + weight
+        state["volume_pressure"] = new_value
         state["updated_at"] = _iso(now)
+        _push_history(state, new_value, now)
         _save_raw(state)
 
 
@@ -176,4 +191,21 @@ async def mark_synthesis() -> None:
         state["volume_pressure"] = 0.0
         state["last_synthesis_at"] = _iso(now)
         state["updated_at"] = _iso(now)
+        _push_history(state, 0.0, now)
         _save_raw(state)
+
+
+async def history(since_seconds: int | None = None) -> list[dict]:
+    """Return rolling pressure history. Optionally filter to last N seconds."""
+    async with _lock:
+        state = _load_raw()
+        history = list(state.get("history") or [])
+    if since_seconds is None:
+        return history
+    cutoff = _now().timestamp() - since_seconds
+    out: list[dict] = []
+    for entry in history:
+        ts = _parse(entry.get("t"))
+        if ts and ts.timestamp() >= cutoff:
+            out.append(entry)
+    return out

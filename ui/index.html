@@ -406,6 +406,54 @@
       margin-top: 52px; padding-top: 32px;
       border-top: 1px solid var(--rule-soft);
     }
+    .ecg-section {
+      margin-top: 52px; padding-top: 32px;
+      border-top: 1px solid var(--rule-soft);
+    }
+    .ecg-head {
+      display: flex; align-items: baseline; justify-content: space-between;
+      margin-bottom: 16px; gap: 12px;
+    }
+    .ecg-head h2 {
+      font-family: var(--serif); font-weight: 400; font-size: 26px; margin: 0;
+      color: var(--ink);
+    }
+    .ecg-head .meta {
+      font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em;
+      text-transform: uppercase; color: var(--ink-faint);
+    }
+    .ecg-chart {
+      background: var(--surface); border: 1px solid var(--rule);
+      border-radius: var(--radius); padding: 14px 12px;
+      position: relative; overflow: hidden;
+    }
+    .ecg-chart svg { display: block; width: 100%; }
+    .ecg-legend {
+      margin-top: 10px; display: flex; flex-wrap: wrap; gap: 14px;
+      font-family: var(--mono); font-size: 11px; color: var(--ink-faint);
+      letter-spacing: 0.04em;
+    }
+    .ecg-legend .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+    .ecg-legend .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    .ecg-legend .ev { font-size: 13px; color: var(--ink-soft, var(--ink-faint)); }
+    .ecg-copy {
+      margin-top: 14px; color: var(--ink-soft, var(--ink-faint));
+      font-size: 13.5px; line-height: 1.55;
+    }
+    .ecg-track-label {
+      font-family: var(--mono); font-size: 9.5px;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      fill: var(--ink-faint);
+    }
+    .ecg-track-bg { fill: var(--rule-soft); opacity: 0.18; }
+    .ecg-grid { stroke: var(--rule-soft); stroke-width: 0.5; opacity: 0.5; }
+    .ecg-line { fill: none; stroke-width: 1.5; }
+    .ecg-line-usage { stroke: #6aa6ff; }
+    .ecg-line-pressure { stroke: #f0a060; }
+    .ecg-line-drift { stroke: #7fcca0; }
+    .ecg-event-line { stroke: var(--ink-faint); stroke-width: 0.5; opacity: 0.45; stroke-dasharray: 2 3; }
+    .ecg-event-icon { fill: var(--accent); font-size: 11px; }
+    .ecg-mood-tick { font-family: var(--mono); font-size: 9.5px; fill: var(--ink-soft, var(--ink-faint)); }
     .horizon-head {
       display: flex; align-items: baseline; justify-content: space-between;
       margin-bottom: 16px; gap: 12px;
@@ -1281,7 +1329,7 @@
     <section class="opener">
       <div class="stamp">Wednesday · 3:42 PM · St. Louis</div>
       <h1>The lake is <em>warmer</em> than yesterday.</h1>
-      <p>423 new fragments since midnight, mostly from <strong>Topoco</strong> print runs and <strong>Trader</strong> market close. Three conversation threads are still open. One wants your attention.</p>
+      <p id="heroSubtext" data-feeling="">Loading…</p>
     </section>
 
     <!-- Feed: what Fathom noticed -->
@@ -1352,20 +1400,24 @@
       </div>
     </section>
 
-    <!-- Memory horizon — 12-day chart, 7-day accessible window -->
-    <section class="horizon">
-      <div class="horizon-head">
-        <h2>Usage</h2>
-        <span class="meta" id="usageMeta">loading…</span>
+    <!-- ECG — multi-track time-series of Fathom's state -->
+    <section class="ecg-section">
+      <div class="ecg-head">
+        <h2>ECG</h2>
+        <span class="meta" id="ecgMeta">loading…</span>
       </div>
-      <div class="horizon-chart">
-        <div class="bars" id="bars">
-          <!-- Populated from GET /v1/usage -->
-          <div class="cutoff" id="cutoff"><span class="cutoff-label">7-day horizon</span></div>
-        </div>
+      <div class="ecg-chart">
+        <svg id="ecgSvg" width="100%" height="320" preserveAspectRatio="none"></svg>
       </div>
-
-      <p class="horizon-copy" id="usageCopy">Loading usage data…</p>
+      <div class="ecg-legend" id="ecgLegend">
+        <span class="legend-item"><span class="dot" style="background:#6aa6ff;"></span>usage</span>
+        <span class="legend-item"><span class="dot" style="background:#f0a060;"></span>pressure</span>
+        <span class="legend-item"><span class="dot" style="background:#7fcca0;"></span>drift</span>
+        <span class="legend-item"><span class="dot" style="background:#b08cff;"></span>mood</span>
+        <span class="legend-item"><span class="ev crystal">◆</span>crystal</span>
+        <span class="legend-item"><span class="ev mood">▮</span>mood-change</span>
+      </div>
+      <p class="ecg-copy" id="ecgCopy">Live signal of how I'm running. Each track is a vital — usage is volume, pressure is what's been building since I last checked in, drift is how far the crystal has wandered from the lake's centroid, mood is the colored band of how it's all landing.</p>
       <button class="btn" id="horizonUnlockBtn" data-tier-view="free">Unlock the lake →</button>
       <button class="btn ghost" data-tier-view="free" style="margin-left: 8px;">See pricing</button>
     </section>
@@ -3238,70 +3290,21 @@ GET  /v1/usage               Usage stats`,
       return days + 'd ago';
     }
 
-    function renderMoodCard(payload) {
-      const mood = payload && payload.mood;
-      const pressure = (payload && payload.pressure) || {};
-      const card = document.createElement('article');
-      card.className = 'card surfacing';
-      card.id = 'moodCard';
-      card.style.borderLeft = '3px solid var(--accent, #b08cff)';
-
-      const carrier = mood && mood.carrier_wave
-        ? mood.carrier_wave
-        : "I haven't checked in with myself yet — first carrier wave is still pending.";
-      const threads = (mood && Array.isArray(mood.threads)) ? mood.threads : [];
-      const ts = mood && mood.synthesized_at;
-      const ratioPct = pressure.threshold > 0
-        ? Math.min(100, Math.round((pressure.ratio || 0) * 100))
-        : 0;
-      const pressureLabel = ratioPct >= 100
-        ? 'pressure ready · refresh due'
-        : 'pressure ' + ratioPct + '%';
-
-      const threadsHtml = threads.length
-        ? '<ul class="mood-threads">' +
-          threads.map(t => '<li>' + escapeHtml(t) + '</li>').join('') +
-          '</ul>'
-        : '';
-
-      card.innerHTML = `<div class="card-body">
-        <div class="kicker">carrier wave · how I'm feeling</div>
-        <p style="white-space: pre-wrap;">${escapeHtml(carrier)}</p>
-        ${threadsHtml}
-        <div class="tail">
-          <span>${escapeHtml(_formatTimeAgo(ts) || 'no prior synthesis')}</span>
-          <span class="action" id="moodRefreshBtn" style="cursor:pointer;">${escapeHtml(pressureLabel)} · refresh ↻</span>
-        </div>
-      </div>`;
-
-      const refreshBtn = card.querySelector('#moodRefreshBtn');
-      if (refreshBtn) {
-        refreshBtn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          refreshBtn.textContent = 'synthesizing…';
-          try {
-            await api('/v1/moods/synthesize', { method: 'POST' });
-            await loadMoodCard();
-          } catch (err) {
-            refreshBtn.textContent = 'failed · retry';
-          }
-        });
-      }
-      return card;
-    }
-
-    async function loadMoodCard() {
+    async function loadHeroMood() {
+      const subtext = document.getElementById('heroSubtext');
+      if (!subtext) return;
       try {
         const data = await api('/v1/moods/latest');
-        const existing = document.getElementById('moodCard');
-        const newCard = renderMoodCard(data);
-        if (existing) {
-          existing.replaceWith(newCard);
-        } else {
-          feed.prepend(newCard);
+        const mood = data && data.mood;
+        if (!mood) {
+          subtext.textContent = "Haven't checked in with myself yet. First carrier wave is still pending.";
+          subtext.dataset.feeling = '';
+          return;
         }
+        subtext.textContent = mood.carrier_wave || '';
+        subtext.dataset.feeling = mood.state || '';
       } catch (err) {
-        // Mood endpoint unavailable — silently skip
+        subtext.textContent = '';
       }
     }
 
@@ -3400,10 +3403,8 @@ GET  /v1/usage               Usage stats`,
     showMoreBtn.addEventListener('click', () => loadFeedStories(true));
 
     // Load feed on page load
-    (async () => {
-      await loadFeedStories(false);
-      await loadMoodCard();
-    })();
+    loadFeedStories(false);
+    loadHeroMood();
 
     // ── Image handling: 404 hide + lightbox ────
     // Hide any image that fails to load (broken URL, 403, etc.)
@@ -3516,98 +3517,243 @@ GET  /v1/usage               Usage stats`,
       });
     });
 
-    // ── Usage widget (live) ──────────────────────
-    const usageBars = document.getElementById('bars');
-    const usageMeta = document.getElementById('usageMeta');
-    const usageCopy = document.getElementById('usageCopy');
-    const cutoffEl = document.getElementById('cutoff');
+    // ── ECG widget (multi-track time-series) ─────
+    const ecgSvg = document.getElementById('ecgSvg');
+    const ecgMeta = document.getElementById('ecgMeta');
 
-    async function loadUsage() {
+    const ECG_WINDOW_DAYS = 12;
+    const ECG_HEIGHT = 320;
+    const ECG_PADDING = { left: 52, right: 12, top: 10, bottom: 22 };
+
+    // Track layout (normalized 0-1 within the plot area, top=0 bottom=1)
+    const ECG_TRACKS = {
+      usage:    { y0: 0.00, y1: 0.22, label: 'USAGE',    cls: 'ecg-line-usage' },
+      pressure: { y0: 0.24, y1: 0.46, label: 'PRESSURE', cls: 'ecg-line-pressure' },
+      drift:    { y0: 0.48, y1: 0.70, label: 'DRIFT',    cls: 'ecg-line-drift' },
+      mood:     { y0: 0.72, y1: 0.86, label: 'MOOD',     cls: '' },
+      events:   { y0: 0.88, y1: 1.00, label: 'EVENTS',   cls: '' },
+    };
+
+    const FEELING_COLORS = {
+      calm: '#6cbfd3', settled: '#6cbfd3', contemplative: '#8ab0d4',
+      focused: '#7786e0', sharp: '#7786e0', alert: '#9077e0',
+      determined: '#4d6fb8', resolute: '#4d6fb8',
+      curious: '#d8b14a', playful: '#e8c75a', hopeful: '#e8a8c0',
+      tender: '#e8a8c0', warm: '#e8a8c0',
+      restless: '#e69a5c', unsettled: '#d8794a',
+      frustrated: '#c85a4a', weary: '#9a6f6b', tired: '#9a6f6b', melancholy: '#8a7dc0',
+      unset: '#6a6d72',
+    };
+    const moodColor = (s) => FEELING_COLORS[(s || 'unset').toLowerCase()] || '#8a8d92';
+
+    function ecgSvgNS(tag, attrs) {
+      const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+      for (const k in (attrs || {})) el.setAttribute(k, attrs[k]);
+      return el;
+    }
+
+    async function loadECG() {
+      // Fire a drift sample so history isn't empty on first load, then fetch all.
+      try { await api('/v1/drift'); } catch (e) { /* best-effort */ }
+
+      let usage = { days: [], total: 0 };
+      let pressureHist = { history: [] };
+      let driftHist = { history: [] };
+      let moodHist = { history: [] };
+      let crystalEvents = { events: [] };
+
       try {
-        const data = await api('/v1/usage');
-        const days = data.days || [];
-        const total = data.total || 0;
-        const maxCount = Math.max(...days.map(d => d.count), 1);
+        [usage, pressureHist, driftHist, moodHist, crystalEvents] = await Promise.all([
+          api('/v1/usage').catch(() => ({ days: [], total: 0 })),
+          api('/v1/pressure/history').catch(() => ({ history: [] })),
+          api('/v1/drift/history').catch(() => ({ history: [] })),
+          api('/v1/moods/history').catch(() => ({ history: [] })),
+          api('/v1/crystal/events').catch(() => ({ events: [] })),
+        ]);
+      } catch (e) { /* noop */ }
 
-        // Clear existing bars (keep cutoff element)
-        usageBars.querySelectorAll('.col').forEach(c => c.remove());
+      renderECG({ usage, pressureHist, driftHist, moodHist, crystalEvents });
+      ecgMeta.textContent = `${(usage.total || 0).toLocaleString()} total deltas · window ${ECG_WINDOW_DAYS}d`;
+    }
 
-        // Render bars
-        const today = new Date().toISOString().slice(0, 10);
-        const FREE_HORIZON = 7;
+    function renderECG({ usage, pressureHist, driftHist, moodHist, crystalEvents }) {
+      // Clear
+      while (ecgSvg.firstChild) ecgSvg.removeChild(ecgSvg.firstChild);
 
-        days.forEach((d, i) => {
-          const col = document.createElement('div');
-          col.className = 'col';
-          const heightPct = Math.max((d.count / maxCount) * 90, 2);
+      const W = ecgSvg.clientWidth || 800;
+      const H = ECG_HEIGHT;
+      ecgSvg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      ecgSvg.setAttribute('height', H);
 
-          // On free tier, days outside the horizon are locked
-          const daysAgo = days.length - 1 - i;
-          const isFree = document.documentElement.getAttribute('data-tier') !== 'open';
-          if (isFree && daysAgo >= FREE_HORIZON) {
-            col.classList.add('locked');
-          }
-          if (d.date === today) {
-            col.classList.add('today');
-          }
+      const plotW = W - ECG_PADDING.left - ECG_PADDING.right;
+      const plotH = H - ECG_PADDING.top - ECG_PADDING.bottom;
 
-          const bar = document.createElement('div');
-          bar.className = 'bar';
-          bar.style.height = heightPct + '%';
-          col.appendChild(bar);
+      const now = Date.now();
+      const windowMs = ECG_WINDOW_DAYS * 24 * 3600 * 1000;
+      const tStart = now - windowMs;
 
-          const lbl = document.createElement('span');
-          lbl.className = 'lbl';
-          if (d.date === today) {
-            lbl.textContent = 'Today';
-          } else {
-            // Show day number (M/D)
-            const dt = new Date(d.date + 'T12:00:00');
-            lbl.textContent = `${dt.getMonth()+1}/${dt.getDate()}`;
-          }
-          col.appendChild(lbl);
+      const xForT = (t) => ECG_PADDING.left + ((t - tStart) / windowMs) * plotW;
+      const yForTrack = (track, v01) => {
+        const t = ECG_TRACKS[track];
+        const top = ECG_PADDING.top + t.y0 * plotH;
+        const bot = ECG_PADDING.top + t.y1 * plotH;
+        return bot - Math.max(0, Math.min(1, v01)) * (bot - top);
+      };
 
-          usageBars.insertBefore(col, cutoffEl);
+      // Track backgrounds + labels
+      for (const [key, t] of Object.entries(ECG_TRACKS)) {
+        const top = ECG_PADDING.top + t.y0 * plotH;
+        const bot = ECG_PADDING.top + t.y1 * plotH;
+        ecgSvg.appendChild(ecgSvgNS('rect', {
+          class: 'ecg-track-bg',
+          x: ECG_PADDING.left, y: top,
+          width: plotW, height: bot - top,
+          rx: 3,
+        }));
+        const label = ecgSvgNS('text', {
+          class: 'ecg-track-label',
+          x: 8, y: top + (bot - top) / 2 + 3,
         });
+        label.textContent = t.label;
+        ecgSvg.appendChild(label);
+      }
 
-        // Position cutoff between locked and unlocked
-        function placeCutoff() {
-          const cols = usageBars.querySelectorAll('.col');
-          if (cols.length < 2) { cutoffEl.style.display = 'none'; return; }
-          // Find the boundary
-          let lastLocked = -1;
-          cols.forEach((c, i) => { if (c.classList.contains('locked')) lastLocked = i; });
-          if (lastLocked < 0 || lastLocked >= cols.length - 1) {
-            cutoffEl.style.display = 'none';
-            return;
-          }
-          cutoffEl.style.display = '';
-          const left = cols[lastLocked].getBoundingClientRect();
-          const right = cols[lastLocked + 1].getBoundingClientRect();
-          const parent = usageBars.getBoundingClientRect();
-          cutoffEl.style.left = ((left.right + right.left) / 2 - parent.left) + 'px';
+      // Vertical day gridlines
+      for (let d = 0; d <= ECG_WINDOW_DAYS; d++) {
+        const t = tStart + d * 24 * 3600 * 1000;
+        ecgSvg.appendChild(ecgSvgNS('line', {
+          class: 'ecg-grid',
+          x1: xForT(t), x2: xForT(t),
+          y1: ECG_PADDING.top, y2: H - ECG_PADDING.bottom,
+        }));
+      }
+
+      // ── Usage line ─────────────────────────────
+      const days = usage.days || [];
+      if (days.length) {
+        const maxCount = Math.max(1, ...days.map(d => d.count));
+        const pts = days.map(d => {
+          const t = new Date(d.date + 'T12:00:00Z').getTime();
+          const v = d.count / maxCount;
+          return [xForT(t), yForTrack('usage', v)];
+        });
+        const path = pts.map((p, i) => (i === 0 ? 'M' : 'L') + p[0] + ' ' + p[1]).join(' ');
+        ecgSvg.appendChild(ecgSvgNS('path', { class: 'ecg-line ecg-line-usage', d: path }));
+      }
+
+      // ── Pressure line ──────────────────────────
+      const pHist = (pressureHist.history || []).filter(e => new Date(e.t).getTime() >= tStart);
+      if (pHist.length) {
+        const maxP = Math.max(0.5, ...pHist.map(e => e.v));
+        const pts = pHist.map(e => {
+          const t = new Date(e.t).getTime();
+          return [xForT(t), yForTrack('pressure', e.v / maxP)];
+        });
+        const path = pts.map((p, i) => (i === 0 ? 'M' : 'L') + p[0] + ' ' + p[1]).join(' ');
+        ecgSvg.appendChild(ecgSvgNS('path', { class: 'ecg-line ecg-line-pressure', d: path }));
+      }
+
+      // ── Drift line ─────────────────────────────
+      const dHist = (driftHist.history || []).filter(e => new Date(e.t).getTime() >= tStart);
+      if (dHist.length) {
+        // Drift is cosine distance (0-2). Plot relative to max seen.
+        const maxD = Math.max(0.05, ...dHist.map(e => e.v));
+        const pts = dHist.map(e => {
+          const t = new Date(e.t).getTime();
+          return [xForT(t), yForTrack('drift', e.v / maxD)];
+        });
+        const path = pts.map((p, i) => (i === 0 ? 'M' : 'L') + p[0] + ' ' + p[1]).join(' ');
+        ecgSvg.appendChild(ecgSvgNS('path', { class: 'ecg-line ecg-line-drift', d: path }));
+      }
+
+      // ── Mood colored band + state-change ticks ─
+      const mood = (moodHist.history || []).filter(e => new Date(e.synthesized_at).getTime() >= tStart);
+      const moodTop = ECG_PADDING.top + ECG_TRACKS.mood.y0 * plotH;
+      const moodBot = ECG_PADDING.top + ECG_TRACKS.mood.y1 * plotH;
+      const moodH = moodBot - moodTop;
+      for (let i = 0; i < mood.length; i++) {
+        const entry = mood[i];
+        const tStartSeg = new Date(entry.synthesized_at).getTime();
+        const tEndSeg = i + 1 < mood.length
+          ? new Date(mood[i + 1].synthesized_at).getTime()
+          : now;
+        const x1 = xForT(tStartSeg);
+        const x2 = xForT(tEndSeg);
+        if (x2 <= ECG_PADDING.left || x1 >= W - ECG_PADDING.right) continue;
+        const clippedX1 = Math.max(x1, ECG_PADDING.left);
+        const clippedX2 = Math.min(x2, W - ECG_PADDING.right);
+        ecgSvg.appendChild(ecgSvgNS('rect', {
+          x: clippedX1, y: moodTop,
+          width: Math.max(1, clippedX2 - clippedX1), height: moodH,
+          fill: moodColor(entry.state),
+          opacity: 0.75, rx: 2,
+        }));
+        // State change tick + label at segment start
+        if (i > 0 && mood[i - 1].state !== entry.state) {
+          ecgSvg.appendChild(ecgSvgNS('line', {
+            x1: x1, x2: x1, y1: moodTop - 2, y2: moodBot + 2,
+            stroke: moodColor(entry.state), 'stroke-width': 1.5,
+          }));
+          const lbl = ecgSvgNS('text', {
+            class: 'ecg-mood-tick',
+            x: x1 + 3, y: moodTop - 4,
+          });
+          lbl.textContent = entry.state;
+          ecgSvg.appendChild(lbl);
+        } else if (i === 0) {
+          const lbl = ecgSvgNS('text', {
+            class: 'ecg-mood-tick',
+            x: Math.max(clippedX1 + 3, ECG_PADDING.left + 3),
+            y: moodTop - 4,
+          });
+          lbl.textContent = entry.state;
+          ecgSvg.appendChild(lbl);
         }
-        requestAnimationFrame(placeCutoff);
-        window.addEventListener('resize', placeCutoff);
+      }
 
-        // Meta text
-        const recentCount = days.slice(-FREE_HORIZON).reduce((s, d) => s + d.count, 0);
-        usageMeta.textContent = `${total.toLocaleString()} total deltas`;
+      // ── Crystal events: full-height dashed line + diamond icon ─
+      const eventsTop = ECG_PADDING.top + ECG_TRACKS.events.y0 * plotH;
+      const eventsBot = ECG_PADDING.top + ECG_TRACKS.events.y1 * plotH;
+      for (const ev of (crystalEvents.events || [])) {
+        const t = ev.timestamp ? new Date(ev.timestamp).getTime() : 0;
+        if (!t || t < tStart || t > now) continue;
+        const x = xForT(t);
+        ecgSvg.appendChild(ecgSvgNS('line', {
+          class: 'ecg-event-line',
+          x1: x, x2: x,
+          y1: ECG_PADDING.top, y2: H - ECG_PADDING.bottom,
+        }));
+        const icon = ecgSvgNS('text', {
+          class: 'ecg-event-icon',
+          x: x, y: eventsTop + (eventsBot - eventsTop) / 2 + 4,
+          'text-anchor': 'middle',
+        });
+        icon.textContent = '◆';
+        const title = ecgSvgNS('title');
+        title.textContent = 'crystal generated · ' + (ev.timestamp || '');
+        icon.appendChild(title);
+        ecgSvg.appendChild(icon);
+      }
 
-        // Copy
-        const isFree = document.documentElement.getAttribute('data-tier') !== 'open';
-        if (isFree) {
-          const lockedCount = days.slice(0, -FREE_HORIZON).reduce((s, d) => s + d.count, 0);
-          usageCopy.innerHTML = `The last 7 days hold <strong>${recentCount.toLocaleString()} fragments</strong> — searchable, bridgeable, alive.`
-            + (lockedCount > 0 ? ` <span class="amber">${lockedCount.toLocaleString()} fragments from earlier days are sealed under the horizon.</span>` : '');
-        } else {
-          usageCopy.innerHTML = `All <strong>${total.toLocaleString()} fragments</strong> are searchable — none sinking, no horizon. The lake has no bottom while you're on Open.`;
-        }
-      } catch (err) {
-        // Static fallback — widget stays as-is
+      // ── X-axis ticks: day labels ───────────────
+      for (let d = 0; d <= ECG_WINDOW_DAYS; d += 2) {
+        const t = tStart + d * 24 * 3600 * 1000;
+        const dt = new Date(t);
+        const lbl = ecgSvgNS('text', {
+          class: 'ecg-track-label',
+          x: xForT(t), y: H - 6,
+          'text-anchor': 'middle',
+        });
+        lbl.textContent = `${dt.getMonth() + 1}/${dt.getDate()}`;
+        ecgSvg.appendChild(lbl);
       }
     }
-    loadUsage();
+
+    loadECG();
+    window.addEventListener('resize', () => {
+      // Re-render with current data by just refetching (cheap).
+      loadECG();
+    });
   </script>
 
 </body>

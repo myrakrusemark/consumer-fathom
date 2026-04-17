@@ -254,9 +254,19 @@ that lingers because the cause persists is information — say so.
 OUTPUT
 Respond with ONLY a JSON object, no markdown fences, no commentary:
 {
+  "state": "one-word emotion or stance (lowercase, no spaces)",
   "carrier_wave": "3-5 sentences of prose, first person, reflective",
   "threads": ["thread name — one phrase about its current state", ...]
 }
+
+The "state" word is the headline — it gets tagged on the delta as \
+feeling:{state} and rendered as a colored band on the dashboard ECG. \
+Use a single grounded word that names the dominant register: \
+calm, focused, restless, curious, determined, tender, frustrated, \
+playful, weary, sharp, settled, unsettled, hopeful, melancholy, \
+alert, contemplative, etc. Pick the truest one. Don't reach for \
+"contemplative" as a default — sometimes the answer is just "tired."
+
 2-4 threads. No more.
 
 Myra will read this. Future-you will read this. It's a feed item. Make it \

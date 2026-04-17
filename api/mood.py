@@ -23,6 +23,14 @@ MOOD_TAGS = ["mood-delta", "carrier-wave"]
 MOOD_SOURCE = "fathom-mood"
 RECENT_ACTIVITY_LIMIT = 50
 
+_STATE_RE = re.compile(r"[^a-z]")
+
+
+def _sanitize_state(raw: str) -> str:
+    """Lowercase, strip non-letters; cap at 24 chars. Empty -> 'unset'."""
+    cleaned = _STATE_RE.sub("", (raw or "").lower())[:24]
+    return cleaned or "unset"
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -47,12 +55,21 @@ def _parse_mood_payload(text: str) -> dict:
         if not isinstance(threads, list):
             threads = []
         threads = [str(t).strip() for t in threads if str(t).strip()][:4]
+        state = _sanitize_state(obj.get("state") or "")
         if not carrier:
             raise ValueError("empty carrier_wave")
-        return {"carrier_wave": carrier, "threads": threads}
+        return {"state": state, "carrier_wave": carrier, "threads": threads}
     except Exception:
         log.warning("mood synthesis returned non-JSON; storing as raw carrier wave")
-        return {"carrier_wave": raw or text.strip(), "threads": []}
+        return {"state": "unset", "carrier_wave": raw or text.strip(), "threads": []}
+
+
+def _state_from_tags(tags: list[str]) -> str:
+    """Pull the feeling:* tag off a delta if present."""
+    for t in tags or []:
+        if isinstance(t, str) and t.startswith("feeling:"):
+            return t.split(":", 1)[1] or "unset"
+    return "unset"
 
 
 def _format_prior_mood(prior: dict | None) -> str:
@@ -74,8 +91,10 @@ def _format_prior_mood(prior: dict | None) -> str:
             age_label = f"({hours:.1f} hours ago — anchor weight: moderate)"
         else:
             age_label = f"({hours:.1f} hours ago — anchor weight: light, mostly faded)"
+    state = _state_from_tags(prior.get("tags") or [])
+    state_label = f" [previous state: {state}]" if state and state != "unset" else ""
     content = (prior.get("content") or "").strip()
-    return f"Prior mood {age_label}:\n{content}"
+    return f"Prior mood {age_label}{state_label}:\n{content}"
 
 
 async def _fetch_prior_mood() -> dict | None:
@@ -96,12 +115,44 @@ async def latest_mood() -> dict | None:
     if not prior:
         return None
     parsed = _parse_mood_payload(prior.get("content") or "")
+    state = parsed["state"]
+    if state == "unset":
+        # Fallback: state may have been written only as a tag on older deltas
+        state = _state_from_tags(prior.get("tags") or [])
     return {
         "id": prior.get("id"),
+        "state": state,
         "carrier_wave": parsed["carrier_wave"],
         "threads": parsed["threads"],
         "synthesized_at": prior.get("timestamp"),
     }
+
+
+async def mood_history(limit: int = 200) -> list[dict]:
+    """Return recent mood deltas as a timeline, oldest-first.
+
+    Each entry: {id, state, carrier_wave, synthesized_at}. The ECG widget
+    uses this to render the colored mood band + state-change event markers.
+    """
+    try:
+        results = await delta_client.query(tags_include=["mood-delta"], limit=limit)
+    except Exception:
+        log.exception("failed to fetch mood history")
+        return []
+    timeline: list[dict] = []
+    for d in results:
+        parsed = _parse_mood_payload(d.get("content") or "")
+        state = parsed["state"]
+        if state == "unset":
+            state = _state_from_tags(d.get("tags") or [])
+        timeline.append({
+            "id": d.get("id"),
+            "state": state,
+            "carrier_wave": parsed["carrier_wave"],
+            "synthesized_at": d.get("timestamp"),
+        })
+    timeline.sort(key=lambda e: e.get("synthesized_at") or "")
+    return timeline
 
 
 async def _fetch_recent_activity(session_slug: str | None) -> str:
@@ -154,11 +205,14 @@ async def synthesize_mood(session_slug: str | None = None) -> dict | None:
         threads_block = "\n\nThreads:\n" + "\n".join(f"- {t}" for t in parsed["threads"])
     delta_content = parsed["carrier_wave"] + threads_block
 
+    state = parsed["state"]
+    delta_tags = MOOD_TAGS + [f"feeling:{state}"]
+
     written = None
     try:
         written = await delta_client.write(
             content=delta_content,
-            tags=MOOD_TAGS,
+            tags=delta_tags,
             source=MOOD_SOURCE,
         )
     except Exception:
@@ -168,6 +222,7 @@ async def synthesize_mood(session_slug: str | None = None) -> dict | None:
 
     return {
         "id": (written or {}).get("id"),
+        "state": state,
         "carrier_wave": parsed["carrier_wave"],
         "threads": parsed["threads"],
         "synthesized_at": _now().isoformat(),
