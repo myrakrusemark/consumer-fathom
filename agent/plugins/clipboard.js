@@ -38,6 +38,9 @@ export default {
 
       lastContent = text;
 
+      const preview = trimmed.slice(0, 60).replace(/\n/g, " ");
+      console.log(`  📋 ${preview}${trimmed.length > 60 ? "…" : ""}`);
+
       pusher.push({
         content: trimmed.slice(0, 4000), // cap at 4k chars
         tags,
