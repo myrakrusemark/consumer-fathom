@@ -310,14 +310,11 @@ async function main() {
     process.exit(0);
   }
 
-  // Test connection
-  const headers = { "Content-Type": "application/json" };
-  if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+  // Test connection (uses /health — public, no scope needed)
   try {
-    const r = await fetch(`${apiUrl}/v1/stats`, { headers });
+    const r = await fetch(`${apiUrl}/health`);
     if (!r.ok) throw new Error(`${r.status}`);
-    const stats = await r.json();
-    console.log(`\nfathom-agent connected — ${stats.total?.toLocaleString()} deltas in the lake`);
+    console.log(`\nfathom-agent connected to ${apiUrl}`);
   } catch (e) {
     console.error(`\nCannot connect to ${apiUrl}: ${e.message}`);
     console.error("Set FATHOM_API_URL and FATHOM_API_KEY, or edit ~/.fathom/agent.json");
