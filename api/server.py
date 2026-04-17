@@ -16,13 +16,12 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import auth, db, delta_client
+from . import auth, auto_regen, crystal, db, delta_client, drift, mood, pressure, recall, usage as usage_module
 from .prompt import (
     CRYSTAL_DIRECTIVE,
     FEED_DIRECTIVE,
     ORIENT_PROMPT,
     build_system_prompt,
-    load_crystal,
     load_feed_directive,
 )
 from .providers import llm
@@ -78,8 +77,12 @@ class SourceUpdate(BaseModel):
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    yield
-    await delta_client.close()
+    auto_regen.start()
+    try:
+        yield
+    finally:
+        await auto_regen.stop()
+        await delta_client.close()
 
 
 app = FastAPI(title="Fathom Consumer API", version="0.1.0", lifespan=lifespan)
@@ -295,7 +298,11 @@ async def fathom_think(
     last entry.
     """
     model = model or settings.resolved_model
-    crystal = load_crystal()
+    crystal_text = await crystal.latest_text()
+
+    # Mood layer — wake-gated synthesis. May trigger a fresh mood, or just
+    # return the most recent one. Failures degrade gracefully (mood = None).
+    current_mood = await mood.maybe_synthesize_on_wake(session_slug=session_slug)
 
     # Resolve tool surface: replace, extend, or default
     resolved_tools = tools if tools is not None else TOOLS
@@ -304,8 +311,10 @@ async def fathom_think(
 
     # 1. Build system prompt — always the full Fathom voice
     system = build_system_prompt(
-        crystal_text=crystal,
+        crystal_text=crystal_text,
         session_slug=session_slug,
+        mood_carrier_wave=(current_mood or {}).get("carrier_wave"),
+        mood_threads=(current_mood or {}).get("threads"),
     )
 
     # Append task-specific directive
@@ -450,23 +459,25 @@ async def chat_completions(req: ChatRequest):
 
 @app.get("/v1/crystal")
 async def get_crystal():
-    """Return the current identity crystal."""
-    crystal = load_crystal()
-    if not crystal:
+    """Return the current identity crystal (lake-backed)."""
+    c = await crystal.latest(force=True)
+    if not c:
         raise HTTPException(404, "No crystal generated yet")
-    p = Path(settings.crystal_path)
-    created_at = None
-    try:
-        data = json.loads(p.read_text())
-        created_at = data.get("created_at")
-    except Exception:
-        pass
-    return {"text": crystal, "created_at": created_at}
+    return {
+        "text": c["text"],
+        "created_at": c["created_at"],
+        "id": c["id"],
+        "source": c["source"],
+    }
 
 
 @app.post("/v1/crystal/refresh")
 async def refresh_crystal():
-    """Regenerate the identity crystal via LLM + delta lake tools."""
+    """Regenerate the identity crystal via LLM + delta lake tools.
+
+    The lake is the source of truth — the regen delta itself becomes the
+    new canonical crystal on the next load. No on-disk file involved.
+    """
     messages = await fathom_think(
         user_message=ORIENT_PROMPT,
         directive=CRYSTAL_DIRECTIVE,
@@ -477,29 +488,19 @@ async def refresh_crystal():
     crystal_text = last.get("content", "")
 
     if crystal_text:
-        crystal_data = {
-            "text": crystal_text,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-        p = Path(settings.crystal_path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(crystal_data, indent=2))
+        await crystal.write(crystal_text, source="consumer-api")
 
-        # Write to lake as a delta
-        await delta_client.write(
-            content=crystal_text,
-            tags=["identity-crystal"],
-            source="consumer-api",
-        )
-
-        # Push facets to delta store
+        # Push facets to delta store for activation hooks (best-effort)
         facets = _split_facets(crystal_text)
         if facets:
-            c = await delta_client._get()
-            await c.post(
-                "/hooks/activation/facets",
-                json={"facets": facets},
-            )
+            try:
+                c = await delta_client._get()
+                await c.post(
+                    "/hooks/activation/facets",
+                    json={"facets": facets},
+                )
+            except Exception:
+                pass
 
     return {"status": "ok", "length": len(crystal_text)}
 
@@ -617,6 +618,87 @@ async def delete_session(session_id: str):
 async def get_feed_stories(limit: int = 20, offset: int = 0):
     """Proxy to delta-store's feed stories endpoint."""
     return await delta_client.feed_stories(limit=limit, offset=offset)
+
+
+@app.get("/v1/moods/latest")
+async def get_latest_mood():
+    """Return the most recent mood (carrier wave) plus current pressure state.
+
+    The UI surfaces this as a feed-style card so Myra can see what Fathom
+    is carrying right now.
+    """
+    latest = await mood.latest_mood()
+    pressure_state = await pressure.read_pressure()
+    pressure_view = {
+        "volume": pressure_state["volume"],
+        "threshold": pressure_state["threshold"],
+        "ratio": (
+            pressure_state["volume"] / pressure_state["threshold"]
+            if pressure_state["threshold"] > 0 else 0.0
+        ),
+        "last_synthesis_at": (
+            pressure_state["last_synthesis_at"].isoformat()
+            if pressure_state["last_synthesis_at"] else None
+        ),
+        "time_since_synthesis_seconds": pressure_state["time_since_synthesis_seconds"],
+    }
+    return {"mood": latest, "pressure": pressure_view}
+
+
+@app.post("/v1/moods/synthesize")
+async def force_mood_synthesis():
+    """Manually trigger a mood synthesis (for testing / UI refresh button)."""
+    fresh = await mood.synthesize_mood()
+    if not fresh:
+        raise HTTPException(503, "Mood synthesis failed — see logs")
+    return fresh
+
+
+@app.get("/v1/moods/history")
+async def get_mood_history(limit: int = 200):
+    """Mood timeline for the ECG colored band + state-change events."""
+    timeline = await mood.mood_history(limit=limit)
+    return {"history": timeline}
+
+
+@app.get("/v1/pressure/history")
+async def get_pressure_history(since_seconds: int | None = None):
+    """Rolling pressure samples for the ECG pressure track."""
+    items = await pressure.history(since_seconds=since_seconds)
+    return {"history": items}
+
+
+@app.get("/v1/usage/history")
+async def get_usage_history(since_seconds: int = 7 * 24 * 3600, buckets: int = 60):
+    """Bucketed write-count timeline (moments arriving)."""
+    items = await usage_module.history(since_seconds=since_seconds, buckets=buckets)
+    return {"history": items}
+
+
+@app.get("/v1/recall/history")
+async def get_recall_history(since_seconds: int = 7 * 24 * 3600, buckets: int = 60):
+    """Bucketed recall-count timeline (moments retrieved)."""
+    items = await recall.history(since_seconds=since_seconds, buckets=buckets)
+    return {"history": items}
+
+
+@app.get("/v1/drift")
+async def get_drift():
+    """Sample current crystal drift and return latest snapshot."""
+    return await drift.sample()
+
+
+@app.get("/v1/drift/history")
+async def get_drift_history(since_seconds: int | None = None):
+    """Drift samples accumulated from prior /v1/drift calls."""
+    items = await drift.history(since_seconds=since_seconds)
+    return {"history": items}
+
+
+@app.get("/v1/crystal/events")
+async def get_crystal_events(limit: int = 50):
+    """Real crystal regeneration events — strict filter (see api/crystal.py)."""
+    return {"events": await crystal.list_events(limit=limit)}
 
 
 @app.get("/v1/usage")

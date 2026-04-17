@@ -151,3 +151,17 @@ async def feed_stories(limit: int = 50, offset: int = 0) -> dict:
     r = await c.get("/feed/stories", params={"limit": limit, "offset": offset})
     r.raise_for_status()
     return r.json()
+
+
+async def drift(text: str, since: str | None = None) -> dict:
+    """Compute crystal drift via the delta-store's /drift endpoint.
+
+    Returns {drift, new_deltas, total_deltas}. Drift is cosine distance
+    (0 = aligned, ~2 = opposite) between the supplied text's embedding
+    and the lake's exponentially-decayed centroid (7-day half-life).
+    """
+    c = await _get()
+    body = {"text": text, "since": since or ""}
+    r = await c.post("/drift", json=body, timeout=20)
+    r.raise_for_status()
+    return r.json()
