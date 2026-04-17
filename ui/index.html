@@ -1485,7 +1485,7 @@
         <ul class="ecg-legend">
           <li class="legend-item">
             <span class="legend-key"><span class="dot" style="background:#6aa6ff;"></span>Usage</span>
-            <span class="legend-desc">How busy the lake is. New fragments arriving over time, like a heartbeat for the mind.</span>
+            <span class="legend-desc">How busy Fathom's mind is. New moments arriving over time, like a heartbeat.</span>
           </li>
           <li class="legend-item">
             <span class="legend-key"><span class="dot" style="background:#f0a060;"></span>Pressure</span>
@@ -1501,7 +1501,7 @@
         <ul class="ecg-legend">
           <li class="legend-item">
             <span class="legend-key"><span class="dot" style="background:#7fcca0;"></span>Drift</span>
-            <span class="legend-desc">How far the lake's center of gravity has wandered from the way Fathom currently describes itself. The dashed line marks the regeneration threshold — a fresh crystal pulls drift back to center.</span>
+            <span class="legend-desc">How far Fathom's mind has wandered from the way it currently describes itself. The dashed line marks the regeneration threshold — a fresh identity crystal pulls drift back to center.</span>
           </li>
           <li class="legend-item">
             <span class="legend-key"><span class="ev crystal">◆</span>Identity Crystal Regeneration</span>
@@ -1521,7 +1521,7 @@
           </li>
         </ul>
       </div>
-      <button class="btn" id="horizonUnlockBtn" data-tier-view="free">Unlock the lake →</button>
+      <button class="btn" id="horizonUnlockBtn" data-tier-view="free">Unlock all moments →</button>
       <button class="btn ghost" data-tier-view="free" style="margin-left: 8px;">See pricing</button>
     </section>
 
@@ -1562,7 +1562,7 @@
               <button class="menu-item freq" data-freq="6h">6 hours</button>
               <button class="menu-item freq" data-freq="daily">Daily</button>
               <div class="menu-sep"></div>
-              <div class="menu-label">Keep deltas</div>
+              <div class="menu-label">Keep moments</div>
               <button class="menu-item expiry" data-expiry="">Forever</button>
               <button class="menu-item expiry" data-expiry="1">1 day</button>
               <button class="menu-item expiry" data-expiry="3">3 days</button>
@@ -1588,10 +1588,10 @@
         </div>
       </section>
 
-      <!-- Recent deltas -->
+      <!-- Recent moments -->
       <section class="section">
         <div class="section-head">
-          <h2>Recent deltas</h2>
+          <h2>Recent moments</h2>
         </div>
         <div class="delta-list" id="detailDeltas">
           <!-- Populated by loadSourceDetail() -->
@@ -1604,7 +1604,7 @@
           <h2>Disconnect</h2>
         </div>
         <p style="font-size: 14px; color: var(--ink-soft); line-height: 1.55; margin: 0 0 14px;">
-          Disconnecting revokes access and stops all new ingestion. Existing deltas stay in the lake until they pass the memory horizon.
+          Disconnecting revokes access and stops new captures. Existing moments stay in Fathom's mind until they pass the memory horizon.
         </p>
         <button class="btn danger">Disconnect Gmail</button>
       </section>
@@ -1628,7 +1628,7 @@
       <section class="wizard-step active" id="addStep1">
         <div class="wizard-stamp">Step 1 · Choose type</div>
         <h1 class="wizard-title">What's feeding you?</h1>
-        <p class="wizard-sub">Pick a source type. Each one polls on a schedule and writes deltas to the lake.</p>
+        <p class="wizard-sub">Pick a source type. Each one polls on a schedule and feeds moments into Fathom's mind.</p>
 
         <div class="type-group">
           <h3>Available sources</h3>
@@ -1646,7 +1646,7 @@
         <div id="addStep2Form"></div>
         <div class="wizard-actions">
           <button class="btn ghost" id="addStep2Back">Back</button>
-          <button class="btn" id="addStep2Save">Add to lake</button>
+          <button class="btn" id="addStep2Save">Add to Fathom</button>
         </div>
       </section>
 
@@ -1656,8 +1656,8 @@
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
         </div>
         <div class="wizard-stamp">Done</div>
-        <h1 class="wizard-title" id="addStep3Title">Added to your lake.</h1>
-        <p class="wizard-sub" id="addStep3Sub">Your new source will start feeding deltas on the next polling cycle.</p>
+        <h1 class="wizard-title" id="addStep3Title">Added to Fathom.</h1>
+        <p class="wizard-sub" id="addStep3Sub">Your new source will start capturing moments on the next polling cycle.</p>
         <div class="wizard-actions">
           <button class="btn" id="addStep3Done">Back to home</button>
         </div>
@@ -1715,10 +1715,10 @@
         <div class="sub-card upgrade" data-tier-view="free">
           <div class="tier-row">
             <span class="tier">Free</span>
-            <span class="price">7-day memory · 5,000 delta cap</span>
+            <span class="price">7-day memory · 5,000 moment cap</span>
           </div>
           <h3>Upgrade to Fathom Open.</h3>
-          <p>Unlimited memory horizon. No delta cap. Cross-device sync always. Priority on new source connectors as they ship.</p>
+          <p>Unlimited memory horizon. No moment cap. Cross-device sync always. Priority on new source connectors as they ship.</p>
           <button class="btn" id="upgradeBtn">Upgrade · $12 / month</button>
           <button class="btn ghost" style="margin-left: 8px;">See pricing</button>
         </div>
@@ -1728,7 +1728,7 @@
             <span class="price">$12 / month · renews May 15, 2026</span>
           </div>
           <h3>You're on Fathom Open.</h3>
-          <p>Unlimited memory, no delta cap, every source connector unlocked. Thanks for betting on Fathom early.</p>
+          <p>Unlimited memory, no moment cap, every source connector unlocked. Thanks for betting on Fathom early.</p>
           <button class="btn ghost">Manage billing</button>
           <button class="btn ghost" id="cancelSubBtn" style="margin-left: 8px;">Cancel subscription</button>
         </div>
@@ -1741,7 +1741,7 @@
           <span class="meta">for CLI, MCP, browser, and API access</span>
         </div>
         <p style="font-size: 14px; color: var(--ink-soft); line-height: 1.55; margin: 0 0 14px;">
-          Tokens authenticate external tools against your lake. Each token works independently. Revoke one without affecting others.
+          Tokens authenticate external tools against your account. Each token works independently. Revoke one without affecting others.
         </p>
         <div id="tokenList" class="danger-list" style="margin-bottom: 14px;">
           <!-- Populated by loadTokens() -->
@@ -1768,14 +1768,14 @@
           <div class="danger-item">
             <div>
               <div class="dz-label">Pause account</div>
-              <div class="dz-sub">Stops all source ingestion. Existing deltas stay searchable. Resume anytime.</div>
+              <div class="dz-sub">Stops all source captures. Existing moments stay searchable. Resume anytime.</div>
             </div>
             <button class="btn ghost">Pause</button>
           </div>
           <div class="danger-item critical">
             <div>
               <div class="dz-label">Delete account</div>
-              <div class="dz-sub">Permanent. Revokes every source connection and wipes your entire lake. Cannot be undone.</div>
+              <div class="dz-sub">Permanent. Revokes every source connection and erases every moment Fathom has captured for you. Cannot be undone.</div>
             </div>
             <button class="btn danger">Delete</button>
           </div>
@@ -1839,7 +1839,7 @@
         <img id="attachThumb" />
         <button class="attach-remove" id="attachRemove" type="button">×</button>
       </div>
-      <textarea rows="1" placeholder="Ask your lake…"></textarea>
+      <textarea rows="1" placeholder="Ask Fathom…"></textarea>
       <div class="tools">
         <button class="send" aria-label="Send">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
@@ -2035,7 +2035,7 @@
         document.getElementById('detailCount7d').textContent = _fmtCount(data.counts.last_7d);
         document.getElementById('detailCountAll').textContent = _fmtCount(data.counts.all_time);
 
-        document.getElementById('detailDeltas').innerHTML = data.deltas.map(_deltaRowHTML).join('') || '<div style="color: var(--ink-faint); padding: 16px 0;">No deltas yet.</div>';
+        document.getElementById('detailDeltas').innerHTML = data.deltas.map(_deltaRowHTML).join('') || '<div style="color: var(--ink-faint); padding: 16px 0;">No moments yet.</div>';
         refreshLightbox();
       } catch (e) {
         console.warn('Failed to load source detail:', e);
@@ -2260,7 +2260,7 @@
 
       stamp.textContent = 'Step 2 · Configure';
       title.textContent = 'Add ' + label;
-      save.textContent = 'Add to lake';
+      save.textContent = 'Add to Fathom';
 
       const authType = type ? type.auth.type : 'none';
 
@@ -2366,8 +2366,8 @@
           title3.textContent = 'Something went wrong.';
           sub3.textContent = err.detail || 'Failed to create source.';
         } else {
-          title3.textContent = 'Added to your lake.';
-          sub3.textContent = (name || sourceType) + ' will start feeding deltas on the next poll cycle.';
+          title3.textContent = 'Added to Fathom.';
+          sub3.textContent = (name || sourceType) + ' will start capturing moments on the next poll cycle.';
           await loadSources();
         }
       } catch (e) {
@@ -2535,7 +2535,7 @@
       'mcp-and-hooks': {
         icon: '⌘',
         name: 'MCP & Hooks',
-        desc: 'Connect Claude Code, Claude Desktop, or Cursor to your lake. MCP gives you tools. Hooks give you automatic memory — crystal injection, recall search, conversation capture.',
+        desc: 'Connect Claude Code, Claude Desktop, or Cursor to Fathom. MCP gives you tools. Hooks give you automatic memory — identity crystal injection, recall search, conversation capture.',
         steps: [
           {
             title: 'Quick setup',
@@ -2581,7 +2581,7 @@ Hooks (Claude Code only):
       'cli': {
         icon: '▸',
         name: 'CLI',
-        desc: 'Search, write, and query your lake from the terminal. Pipe output from other tools directly into Fathom.',
+        desc: 'Search, write, and query Fathom from the terminal. Pipe output from other tools directly in.',
         steps: [
           {
             title: 'Install',
@@ -2736,11 +2736,11 @@ schtasks /run /tn "FathomAgent"`,
       'browser': {
         icon: '◎',
         name: 'Browser',
-        desc: 'Capture pages, highlights, and screenshots directly into your lake from any browser.',
+        desc: 'Capture pages, highlights, and screenshots directly into Fathom from any browser.',
         steps: [
           {
             title: 'Coming soon',
-            body: 'The browser extension is in development. It will let you capture content from any page into your lake with one click.',
+            body: 'The browser extension is in development. It will let you capture content from any page into Fathom with one click.',
             hint: 'Check back here for updates.',
           },
         ],
@@ -3780,7 +3780,7 @@ GET  /v1/usage               Usage stats`,
       if (!enoughRhythm) {
         renderECGEmpty(totalDeltas);
         ecgMeta.textContent = totalDeltas
-          ? `${totalDeltas.toLocaleString()} deltas · warming up`
+          ? `${totalDeltas.toLocaleString()} moments · warming up`
           : 'no signal yet';
         return;
       }
@@ -3792,7 +3792,7 @@ GET  /v1/usage               Usage stats`,
       // Meta line: total + current mood as a colored chip
       ecgMeta.innerHTML = '';
       const totalSpan = document.createElement('span');
-      totalSpan.textContent = `${totalDeltas.toLocaleString()} total deltas`;
+      totalSpan.textContent = `${totalDeltas.toLocaleString()} moments stored`;
       ecgMeta.appendChild(totalSpan);
       const moodList = moodHist.history || [];
       if (moodList.length) {
