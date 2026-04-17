@@ -1,6 +1,6 @@
 {
   "name": "fathom-agent",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Local agent for Fathom — watches files, clipboard, and more, pushes deltas to your lake",
   "bin": {
     "fathom-agent": "index.js"

@@ -120,6 +120,7 @@ export default {
       const images = extractImageRefs(content);
       for (const img of images) {
         const absPath = resolveImagePath(img.src, filepath, paths);
+        if (!absPath) continue;
         const imgKey = "img:" + absPath;
         if (uploadedImages.has(imgKey)) continue;
         console.log(`    📷 ${basename(absPath)}`);
