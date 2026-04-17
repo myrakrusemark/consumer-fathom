@@ -33,8 +33,7 @@ class Settings(BaseSettings):
     # Source runner
     source_runner_url: str = "http://localhost:4260"
 
-    # Paths (container defaults)
-    crystal_path: str = "/data/crystal.json"
+    # Paths (container defaults). Crystal is lake-backed — no file path.
     feed_directive_path: str = "/data/feed-directive.txt"
     tokens_path: str = "/data/tokens.json"
     mood_state_path: str = "/data/mood-state.json"

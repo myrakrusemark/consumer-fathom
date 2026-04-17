@@ -16,13 +16,12 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import auth, db, delta_client, drift, mood, pressure
+from . import auth, crystal, db, delta_client, drift, mood, pressure
 from .prompt import (
     CRYSTAL_DIRECTIVE,
     FEED_DIRECTIVE,
     ORIENT_PROMPT,
     build_system_prompt,
-    load_crystal,
     load_feed_directive,
 )
 from .providers import llm
@@ -295,7 +294,7 @@ async def fathom_think(
     last entry.
     """
     model = model or settings.resolved_model
-    crystal = load_crystal()
+    crystal_text = await crystal.latest_text()
 
     # Mood layer — wake-gated synthesis. May trigger a fresh mood, or just
     # return the most recent one. Failures degrade gracefully (mood = None).
@@ -308,7 +307,7 @@ async def fathom_think(
 
     # 1. Build system prompt — always the full Fathom voice
     system = build_system_prompt(
-        crystal_text=crystal,
+        crystal_text=crystal_text,
         session_slug=session_slug,
         mood_carrier_wave=(current_mood or {}).get("carrier_wave"),
         mood_threads=(current_mood or {}).get("threads"),
@@ -456,23 +455,25 @@ async def chat_completions(req: ChatRequest):
 
 @app.get("/v1/crystal")
 async def get_crystal():
-    """Return the current identity crystal."""
-    crystal = load_crystal()
-    if not crystal:
+    """Return the current identity crystal (lake-backed)."""
+    c = await crystal.latest(force=True)
+    if not c:
         raise HTTPException(404, "No crystal generated yet")
-    p = Path(settings.crystal_path)
-    created_at = None
-    try:
-        data = json.loads(p.read_text())
-        created_at = data.get("created_at")
-    except Exception:
-        pass
-    return {"text": crystal, "created_at": created_at}
+    return {
+        "text": c["text"],
+        "created_at": c["created_at"],
+        "id": c["id"],
+        "source": c["source"],
+    }
 
 
 @app.post("/v1/crystal/refresh")
 async def refresh_crystal():
-    """Regenerate the identity crystal via LLM + delta lake tools."""
+    """Regenerate the identity crystal via LLM + delta lake tools.
+
+    The lake is the source of truth — the regen delta itself becomes the
+    new canonical crystal on the next load. No on-disk file involved.
+    """
     messages = await fathom_think(
         user_message=ORIENT_PROMPT,
         directive=CRYSTAL_DIRECTIVE,
@@ -483,29 +484,19 @@ async def refresh_crystal():
     crystal_text = last.get("content", "")
 
     if crystal_text:
-        crystal_data = {
-            "text": crystal_text,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-        p = Path(settings.crystal_path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(crystal_data, indent=2))
+        await crystal.write(crystal_text, source="consumer-api")
 
-        # Write to lake as a delta
-        await delta_client.write(
-            content=crystal_text,
-            tags=["identity-crystal"],
-            source="consumer-api",
-        )
-
-        # Push facets to delta store
+        # Push facets to delta store for activation hooks (best-effort)
         facets = _split_facets(crystal_text)
         if facets:
-            c = await delta_client._get()
-            await c.post(
-                "/hooks/activation/facets",
-                json={"facets": facets},
-            )
+            try:
+                c = await delta_client._get()
+                await c.post(
+                    "/hooks/activation/facets",
+                    json={"facets": facets},
+                )
+            except Exception:
+                pass
 
     return {"status": "ok", "length": len(crystal_text)}
 
@@ -688,20 +679,8 @@ async def get_drift_history(since_seconds: int | None = None):
 
 @app.get("/v1/crystal/events")
 async def get_crystal_events(limit: int = 50):
-    """List historical crystal-generation events for the ECG event markers."""
-    try:
-        results = await delta_client.query(tags_include=["identity-crystal"], limit=limit)
-    except Exception:
-        return {"events": []}
-    events: list[dict] = []
-    for d in results:
-        events.append({
-            "id": d.get("id"),
-            "timestamp": d.get("timestamp"),
-            "preview": (d.get("content") or "")[:140],
-        })
-    events.sort(key=lambda e: e.get("timestamp") or "")
-    return {"events": events}
+    """Real crystal regeneration events — strict filter (see api/crystal.py)."""
+    return {"events": await crystal.list_events(limit=limit)}
 
 
 @app.get("/v1/usage")

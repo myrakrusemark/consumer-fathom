@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -116,18 +115,6 @@ def build_system_prompt(
         parts.append(f"\n--- Identity Crystal ---\n{crystal_text}\n--- End Crystal ---")
 
     return "\n".join(parts)
-
-
-def load_crystal() -> str | None:
-    """Load identity crystal text from disk."""
-    p = Path(settings.crystal_path)
-    if not p.exists():
-        return None
-    try:
-        data = json.loads(p.read_text())
-        return data.get("text")
-    except Exception:
-        return None
 
 
 SEARCH_PLANNER_PROMPT = """\

@@ -15,8 +15,8 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+from . import crystal as crystal_module
 from . import delta_client
-from .prompt import load_crystal
 from .settings import settings
 
 HISTORY_LIMIT: int = 1000
@@ -70,12 +70,12 @@ async def sample() -> dict:
     If no crystal exists or the delta-store call fails, returns a zero
     sample but still records the timestamp so gaps don't appear in the ECG.
     """
-    crystal_text = load_crystal()
-    if not crystal_text:
+    current = await crystal_module.latest()
+    if not current or not current.get("text"):
         snapshot = {"drift": 0.0, "new_deltas": 0, "total_deltas": 0, "no_crystal": True}
     else:
         try:
-            snapshot = await delta_client.drift(crystal_text)
+            snapshot = await delta_client.drift(current["text"], since=current.get("created_at"))
         except Exception:
             snapshot = {"drift": 0.0, "new_deltas": 0, "total_deltas": 0, "error": True}
 
