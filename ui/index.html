@@ -22,65 +22,11 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/glightbox@3/dist/css/glightbox.min.css" />
   <script src="https://cdn.jsdelivr.net/npm/glightbox@3/dist/js/glightbox.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <!-- Design tokens (colors, typography, radii) + Google Fonts are bundled
+       in fathom-tokens.css so any Fathom-branded surface (local agent UI,
+       partner pages, docs) can import the same system with one link. -->
+  <link rel="stylesheet" href="/ui/fathom-tokens.css" />
   <style>
-    :root {
-      /* ── Deep lake (dark — default) ─────────── */
-      --bg: #0d1f26;           /* deep water */
-      --bg-deep: #081519;       /* trench */
-      --surface: #142a33;       /* card */
-      --surface-2: #1c3a45;     /* hover/elevated */
-      --ink: #f0e9d9;           /* warm cream — the only warm note in the cold column */
-      --ink-soft: #9fb0b5;      /* cool muted */
-      --ink-faint: #5a6d74;     /* very muted */
-      --rule: #1e3a47;
-      --rule-soft: #17303a;
-      --accent: #e8a24e;        /* lantern amber */
-      --accent-bright: #f2b665; /* highlight */
-      --accent-soft: rgba(232, 162, 78, 0.14);
-      --signal: #5ce1c6;        /* phosphorescent teal — active/alive */
-      --signal-dim: #2e7a6f;
-      --danger: #e56a6a;
-
-      --topbar-bg: color-mix(in srgb, var(--bg) 85%, transparent);
-      --img-fade: color-mix(in srgb, var(--surface) 60%, transparent);
-      --composer-shadow: 0 10px 40px -16px rgba(0, 0, 0, 0.6);
-      --dot-glow: rgba(92, 225, 198, 0.7);
-      --body-glow-a: rgba(92, 225, 198, 0.06);
-      --body-glow-b: rgba(232, 162, 78, 0.05);
-      --meta-color: #0d1f26;
-
-      --radius: 14px;
-      --serif: "Instrument Serif", Georgia, serif;
-      --sans: "Inter", system-ui, sans-serif;
-      --mono: "JetBrains Mono", ui-monospace, monospace;
-    }
-
-    [data-theme="light"] {
-      /* ── Shallow water (light) ─────────────── */
-      --bg: #eef2f3;           /* shoreline haze */
-      --bg-deep: #dfe7ea;       /* wet sand */
-      --surface: #ffffff;       /* paper */
-      --surface-2: #f6f9fa;     /* hover */
-      --ink: #0d1f26;           /* deep teal — the dark bg becomes ink */
-      --ink-soft: #4f6269;
-      --ink-faint: #94a4a9;
-      --rule: #dfe5e7;
-      --rule-soft: #e8eced;
-      --accent: #c26a1f;        /* deeper amber — holds contrast on light */
-      --accent-bright: #e28233;
-      --accent-soft: rgba(194, 106, 31, 0.09);
-      --signal: #0d9488;        /* deep teal signal */
-      --signal-dim: #a0d9d0;
-      --danger: #b8433f;
-
-      --composer-shadow: 0 10px 30px -14px rgba(13, 31, 38, 0.18);
-      --dot-glow: rgba(13, 148, 136, 0.35);
-      --body-glow-a: rgba(13, 148, 136, 0.035);
-      --body-glow-b: rgba(194, 106, 31, 0.04);
-      --meta-color: #eef2f3;
-    }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; }
     body {
