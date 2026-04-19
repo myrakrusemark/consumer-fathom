@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * fathom — CLI for the Fathom memory lake.
+ * fathom — CLI for your Fathom memories.
  *
  * Same tools as MCP, from the terminal.
  *
@@ -9,11 +9,12 @@
  *   FATHOM_API_KEY  — bearer token from Settings → API Keys
  *
  * Usage:
- *   fathom search "what happened today"           # deep (plan + DAG)
- *   fathom search "what happened today" --shallow # single similarity search
+ *   fathom remember "what happened today"           # deep (plan + DAG)
+ *   fathom remember "what happened today" --shallow # single similarity search
  *   fathom write "decided to ship v2 Friday" --tags decision,v2
- *   fathom query --tags homeassistant --since 24h
- *   fathom stats
+ *   fathom recall --tags homeassistant --since 24h
+ *   fathom mind                                     # stats overview
+ *   fathom mind tags                                # tag catalogue
  *   fathom chat "summarize my week"
  */
 
@@ -45,13 +46,25 @@ async function api(method, path, body) {
   return r.json();
 }
 
+async function apiRaw(method, path) {
+  const opts = { method, headers: headers(false) };
+  const r = await fetch(`${API_URL}${path}`, opts);
+  if (!r.ok) {
+    const text = await r.text().catch(() => "");
+    console.error(`Error: ${r.status} ${r.statusText}`);
+    if (text) console.error(text);
+    process.exit(1);
+  }
+  return r;
+}
+
 // ── Formatters ───────────────────────────────────
 
-function fmtDeltaList(data) {
+function fmtMomentList(data) {
   const items = data.results || data.deltas || (Array.isArray(data) ? data : []);
-  if (!items.length) { console.log("No results."); return; }
+  if (!items.length) { console.log("No moments surfaced."); return; }
 
-  console.log(`${items.length} results:\n`);
+  console.log(`${items.length} moments:\n`);
   for (const raw of items) {
     const d = raw.delta || raw;
     const ts = (d.timestamp || "").slice(0, 16);
@@ -69,17 +82,17 @@ function fmtDeltaList(data) {
 function fmtRecall(data) {
   const total = data.total_count || 0;
   const tree = data.tree || [];
-  if (!total || !tree.length) { console.log("No results."); return; }
-  console.log(`\x1b[2m${total} memories across ${tree.length} step(s)\x1b[0m\n`);
+  if (!total || !tree.length) { console.log("No moments surfaced."); return; }
+  console.log(`\x1b[2m${total} moments across ${tree.length} step(s)\x1b[0m\n`);
   console.log(data.as_prompt || "");
 }
 
 // ── Commands ─────────────────────────────────────
 
-async function cmdSearch(args) {
+async function cmdRemember(args) {
   const query = args.filter(a => !a.startsWith("--")).join(" ");
   if (!query) {
-    console.error("Usage: fathom search <query> [--limit N] [--shallow]");
+    console.error("Usage: fathom remember <query> [--limit N] [--shallow]");
     process.exit(1);
   }
   const limit = parseInt(flagVal(args, "--limit") || "20", 10);
@@ -116,7 +129,7 @@ async function cmdWrite(args) {
   console.log(`Written. ID: ${data.id || "?"}`);
 }
 
-async function cmdQuery(args) {
+async function cmdRecall(args) {
   const params = {};
   const tags = flagVal(args, "--tags");
   const source = flagVal(args, "--source");
@@ -139,16 +152,76 @@ async function cmdQuery(args) {
   }
 
   const data = await api("GET", "/v1/deltas", params);
-  fmtDeltaList(data);
+  fmtMomentList(data);
 }
 
-async function cmdStats() {
+async function cmdDeepRecall(args) {
+  // Accept JSON plan as single arg, or `-` for stdin
+  let planJson = args.find(a => !a.startsWith("--"));
+  if (planJson === "-") {
+    const chunks = [];
+    for await (const chunk of process.stdin) chunks.push(chunk);
+    planJson = Buffer.concat(chunks).toString().trim();
+  }
+  if (!planJson) {
+    console.error('Usage: fathom deep_recall \'<plan-json>\'  (or pipe plan via stdin: echo \'{"steps":[...]}\' | fathom deep_recall -)');
+    process.exit(1);
+  }
+  let plan;
+  try {
+    plan = JSON.parse(planJson);
+  } catch (e) {
+    console.error(`Invalid JSON plan: ${e.message}`);
+    process.exit(1);
+  }
+  const body = Array.isArray(plan) ? { steps: plan } : plan;
+  const data = await api("POST", "/v1/plan", body);
+  fmtRecall(data);
+}
+
+async function cmdSeeImage(args) {
+  const hash = args.find(a => !a.startsWith("--"));
+  if (!hash) {
+    console.error("Usage: fathom see_image <media_hash>");
+    process.exit(1);
+  }
+  const r = await apiRaw("GET", `/v1/media/${hash}`);
+  const buf = Buffer.from(await r.arrayBuffer());
+  const ctype = r.headers.get("content-type") || "image/webp";
+  const ext = ctype.includes("png") ? "png" : ctype.includes("jpeg") ? "jpg" : "webp";
+  const fs = await import("node:fs/promises");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const outPath = path.join(os.tmpdir(), `fathom-${hash.slice(0, 12)}.${ext}`);
+  await fs.writeFile(outPath, buf);
+  console.log(outPath);
+}
+
+async function cmdMind(args) {
+  // Subcommand: `fathom mind tags`
+  if (args[0] === "tags") {
+    const tags = await api("GET", "/v1/tags");
+    if (typeof tags === "object" && !Array.isArray(tags)) {
+      const sorted = Object.entries(tags).sort((a, b) => b[1] - a[1]);
+      for (const [tag, count] of sorted) {
+        console.log(`  \x1b[33m${tag}\x1b[0m (${count})`);
+      }
+    } else {
+      console.log(JSON.stringify(tags, null, 2));
+    }
+    return;
+  }
+
+  // Default: stats overview
   const [stats, tags] = await Promise.all([
     api("GET", "/v1/stats"),
     api("GET", "/v1/tags"),
   ]);
 
-  console.log(`Lake: ${(stats.total || 0).toLocaleString()} deltas, ${(stats.embedded || 0).toLocaleString()} embedded (${stats.percent || 0}% coverage)\n`);
+  const total = (stats.total || 0).toLocaleString();
+  const embedded = (stats.embedded || 0).toLocaleString();
+  const pct = stats.percent || 0;
+  console.log(`Your mind: ${total} moments, ${embedded} embedded (${pct}% coverage)\n`);
 
   // Top tags
   if (typeof tags === "object" && !Array.isArray(tags)) {
@@ -189,19 +262,27 @@ function flagVal(args, flag) {
 // ── Main ─────────────────────────────────────────
 
 const COMMANDS = {
-  search: { fn: cmdSearch, usage: "fathom search <query> [--limit N]" },
-  write:  { fn: cmdWrite,  usage: "fathom write <content> [--tags a,b] [--source x]" },
-  query:  { fn: cmdQuery,  usage: "fathom query [--tags a,b] [--source x] [--since 24h] [--limit N]" },
-  stats:  { fn: cmdStats,  usage: "fathom stats" },
-  chat:   { fn: cmdChat,   usage: "fathom chat <message> [--session ID]" },
+  remember:    { fn: cmdRemember,   usage: 'fathom remember <query> [--limit N] [--shallow]' },
+  write:       { fn: cmdWrite,      usage: 'fathom write <content> [--tags a,b] [--source x]' },
+  recall:      { fn: cmdRecall,     usage: 'fathom recall [--tags a,b] [--source x] [--since 24h] [--limit N]' },
+  deep_recall: { fn: cmdDeepRecall, usage: "fathom deep_recall '<plan-json>'  (or pipe via stdin with -)" },
+  see_image:   { fn: cmdSeeImage,   usage: 'fathom see_image <media_hash>' },
+  mind:        { fn: cmdMind,       usage: 'fathom mind [tags]' },
+  chat:        { fn: cmdChat,       usage: 'fathom chat <message> [--session ID]' },
+
+  // Silent aliases — old verb names still work, undocumented in help
+  search: { fn: cmdRemember, hidden: true },
+  query:  { fn: cmdRecall,   hidden: true },
+  stats:  { fn: cmdMind,     hidden: true },
 };
 
 const [cmd, ...args] = process.argv.slice(2);
 
 if (!cmd || cmd === "help" || cmd === "--help") {
-  console.log("fathom — CLI for the Fathom memory lake\n");
+  console.log("fathom — CLI for your Fathom memories\n");
   console.log("Commands:");
-  for (const [name, { usage }] of Object.entries(COMMANDS)) {
+  for (const [, { usage, hidden }] of Object.entries(COMMANDS)) {
+    if (hidden || !usage) continue;
     console.log(`  ${usage}`);
   }
   console.log("\nPipe stdin:  echo 'notes' | fathom write - --tags meeting");

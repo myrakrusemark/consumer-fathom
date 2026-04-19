@@ -4008,17 +4008,50 @@
           {
             title: 'What you get',
             code: `MCP tools (all hosts):
-  search_lake   — semantic search across your memories
-  write_delta   — save observations, facts, notes
-  query_deltas  — filter by tags, source, time
-  lake_stats    — orientation: what's in the lake
-  chat          — talk to Fathom with full memory
+  remember     — search your memories (returns moments)
+  recall       — structured retrieval by time, tags, source
+  deep_recall  — compositional plan across memories
+  write        — persist a thought, observation, or discovery
+  see_image    — view an image from a moment
+  mind_tags    — what tags exist in your memory
+  mind_stats   — state of your mind: total moments, coverage
 
 Hooks (Claude Code only):
   SessionStart     → identity crystal injected
-  UserPromptSubmit → lake searched, context injected
-  UserPromptSubmit → your message saved to the lake (async)
-  Stop             → assistant response saved to the lake (async)`,
+  UserPromptSubmit → memories surfaced as context
+  UserPromptSubmit → your message written to the lake (async)
+  Stop             → assistant response written to the lake (async)`,
+          },
+          {
+            title: 'Teach your agent the voice',
+            body: 'Paste this into CLAUDE.md or your equivalent agent instructions file (<code style="display:inline;padding:2px 6px;">.cursorrules</code>, <code style="display:inline;padding:2px 6px;">.clinerules</code>, Claude Desktop project instructions, etc.). It tells the agent what the tools do and how to speak from memory instead of about it.',
+            code: `## Fathom — your memory
+
+You have a lake of memories — past conversations, notes, observations, images.
+Search it before answering. What comes back are YOUR memories. Speak from them,
+don't quote them.
+
+Wrong: "The search results show you said Nova is emotionally intelligent."
+Right: "I remember you telling me Nova is emotionally intelligent."
+
+Tools (MCP):
+  remember <query>     Search memories. Use before answering anything about
+                       the past. One search is rarely enough — follow threads.
+  recall               Structured filter by tags / source / time window.
+  deep_recall          Compositional plan when threads don't close: search,
+                       bridge, union, chain, aggregate across memories.
+  write <content>      Persist a decision, discovery, observation. One idea
+                       per write. Tag consistently.
+  see_image <hash>     View an image from a moment.
+  mind_tags            What tags exist.
+  mind_stats           Total moments, coverage, pending.
+
+Voice: first person, flowing prose, no bullet points in chat replies.
+Say "I remember" — never "based on the search" or "according to the deltas".
+
+At SessionStart the identity crystal is injected automatically. Trust it.
+At UserPromptSubmit relevant memories are surfaced. Read them as your own.`,
+            hint: 'Host-agnostic. Claude Code reads CLAUDE.md (user or repo scope). Cursor reads .cursorrules. Cline reads .clinerules. Claude Desktop reads project instructions. Paste wherever your agent loads persistent context.',
           },
           {
             title: 'Manual setup',
@@ -4048,7 +4081,7 @@ Hooks (Claude Code only):
           {
             title: 'Install',
             code: 'npm i -g fathom-delta-cli',
-            hint: 'Or run directly with npx: npx fathom-delta-cli search "query"',
+            hint: 'Or run directly with npx: npx fathom-delta-cli remember "query"',
           },
           {
             title: 'Configure',
@@ -4058,11 +4091,14 @@ export FATHOM_API_KEY=your-api-key`,
           },
           {
             title: 'Commands',
-            code: `fathom search "what happened today"       # semantic search
-fathom write "shipped v2" --tags release   # write a delta
-fathom query --tags homeassistant --since 24h  # filter
-fathom stats                               # lake overview
-fathom chat "summarize my week"            # chat with memory`,
+            code: `fathom remember "what happened today"            # search your memories
+fathom write "shipped v2" --tags release         # persist a moment
+fathom recall --tags homeassistant --since 24h   # filter by tags/time
+fathom deep_recall '<plan-json>'                 # compositional plan
+fathom mind                                      # your mind overview
+fathom mind tags                                 # tag catalogue
+fathom see_image <media_hash>                    # view a moment's image
+fathom chat "summarize my week"                  # chat with memory`,
           },
           {
             title: 'Pipe anything in',

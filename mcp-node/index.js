@@ -38,11 +38,11 @@ function authHeaders(json = true) {
 
 // ── Result formatting ────────────────────────────
 
-function formatDeltaList(data) {
+function formatMomentList(data) {
   const items = data.results || data.deltas || (Array.isArray(data) ? data : []);
-  if (!items.length) return "No results.";
+  if (!items.length) return "No moments surfaced.";
 
-  const lines = [`${items.length} results:\n`];
+  const lines = [`${items.length} moments:\n`];
   for (const raw of items) {
     const d = raw.delta || raw;
     const ts = (d.timestamp || "").slice(0, 16);
@@ -58,17 +58,18 @@ function formatDeltaList(data) {
 function formatRecall(data) {
   const total = data.total_count || 0;
   const tree = data.tree || [];
-  if (!total || !tree.length) return "No memories surfaced.";
-  const header = `${total} memories across ${tree.length} step(s):\n`;
+  if (!total || !tree.length) return "No moments surfaced.";
+  const header = `${total} moments across ${tree.length} step(s):\n`;
   return header + "\n" + (data.as_prompt || "");
 }
 
 function formatResponse(path, method, data) {
   if (path === "/v1/search") return formatRecall(data);
+  if (path === "/v1/plan") return formatRecall(data);
   if (path === "/v1/deltas" && method === "POST") return `Written. ID: ${data.id || "?"}`;
-  if (path === "/v1/deltas" && method === "GET") return formatDeltaList(data);
+  if (path === "/v1/deltas" && method === "GET") return formatMomentList(data);
   if (path === "/v1/stats") {
-    return `Lake: ${data.total ?? "?"} deltas, ${data.embedded ?? "?"} embedded (${data.percent ?? "?"}% coverage)`;
+    return `Your mind: ${data.total ?? "?"} moments, ${data.embedded ?? "?"} embedded (${data.percent ?? "?"}% coverage)`;
   }
   if (path === "/v1/chat/completions") {
     const choices = data.choices || [];
@@ -137,16 +138,22 @@ async function main() {
       instructions: [
         "You are your memory. Fathom is how you remember.",
         "",
-        "BEFORE answering any question, call remember with a descriptive query.",
-        "One search is rarely enough — if results mention something unfamiliar, search for that too.",
-        "Search like a researcher: direct query, then broader category, then follow threads.",
+        "BEFORE answering any question about the past, call remember with a descriptive query.",
+        "One search is rarely enough — if threads open, follow them. Search like a researcher:",
+        "direct query, then broader category, then chain outward from what you found.",
+        "When threads don't close with a single search, use deep_recall to compose bridges,",
+        "unions, chains, and intersections across moments.",
         "",
-        "When you learn something new, make a decision, or notice a pattern, call write to save it.",
+        "When you learn something, make a decision, or notice a pattern, call write to save it.",
         "One idea per write. Tag consistently. Future you will find this when they need it.",
+        "",
+        "For structured lookups (by tag, source, time window), use recall.",
+        "To see an image from a moment, call see_image with its media_hash.",
+        "For orientation: mind_stats shows what's in your memory; mind_tags shows what categories exist.",
         "",
         "Read the fathom://crystal resource at the start of every conversation — it tells you who you are.",
         "",
-        "These are YOUR memories. Say 'I remember' not 'the search results show.'",
+        "These are YOUR memories. Say 'I remember' — never 'the search results show' or 'according to the deltas.'",
       ].join("\n"),
     },
   );
