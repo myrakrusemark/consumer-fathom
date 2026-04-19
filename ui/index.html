@@ -2323,10 +2323,12 @@
     }
 
     // Source types hidden from the cloud Sources section because they're
-    // better handled by the local fathom-agent (e.g. `vault` is a watcher
-    // plugin, not a cloud-polled source). The source-runner may still list
-    // them, but the dashboard pretends it doesn't see them.
-    const AGENT_OWNED_SOURCE_TYPES = new Set(['vault']);
+    // better handled by the local fathom-agent. `vault` watches local files;
+    // `homeassistant` polls a LAN-local instance the cloud API can't see.
+    // The source-runner may still list them (so existing configs keep
+    // polling until migrated), but the dashboard pretends it doesn't see
+    // them so new configurations go through the agent side only.
+    const AGENT_OWNED_SOURCE_TYPES = new Set(['vault', 'homeassistant']);
 
     async function loadSources() {
       try {
@@ -2847,16 +2849,18 @@
     //   role=runtime   → plugin is an executor/infrastructure, render in Agent
     //   role=infra     → plugin is internal (heartbeat), not usually shown
     const PLUGIN_META = {
-      heartbeat: { label: 'Heartbeat', role: 'infra' },
-      sysinfo:   { label: 'Sysinfo',   role: 'source' },
-      vault:     { label: 'Vault',     role: 'source' },
-      clipboard: { label: 'Clipboard', role: 'source' },
-      kitty:     { label: 'Kitty',     role: 'runtime' },
+      heartbeat:     { label: 'Heartbeat',      role: 'infra' },
+      sysinfo:       { label: 'Sysinfo',        role: 'source' },
+      vault:         { label: 'Vault',          role: 'source' },
+      clipboard:     { label: 'Clipboard',      role: 'source' },
+      homeassistant: { label: 'Home Assistant', role: 'source' },
+      kitty:         { label: 'Kitty',          role: 'runtime' },
     };
 
     function _pluginExtra(name, p) {
       if (name === 'kitty' && p.allowed_permission_modes) return `modes: ${p.allowed_permission_modes.join(', ')}`;
       if (name === 'vault' && typeof p.path_count === 'number') return `${p.path_count} path${p.path_count === 1 ? '' : 's'}`;
+      if (name === 'homeassistant' && Array.isArray(p.instances)) return `${p.instances.length} instance${p.instances.length === 1 ? '' : 's'}`;
       if (name === 'sysinfo' && p.interval) return `every ${Math.round(p.interval / 1000)}s`;
       return '';
     }
