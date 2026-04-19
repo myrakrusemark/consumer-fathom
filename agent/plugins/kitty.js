@@ -282,7 +282,7 @@ export default {
   name: "Kitty",
   category: "runtime",
   icon: "🐈",
-  description: "Spawn kitty windows with claude when routine-fire deltas appear.",
+  description: "Spawn kitty windows with claude when routines fire.",
   defaults: {
     delta_store_url: "http://localhost:4246",
     workspace_root: join(homedir(), "Dropbox", "Work"),
