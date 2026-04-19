@@ -19,6 +19,9 @@
       --serif: Georgia, serif;
       --sans: system-ui, sans-serif;
       --mono: ui-monospace, monospace;
+      --text-xs: 10px; --text-sm: 11px; --text-md: 13px; --text-base: 14px;
+      --text-lg: 16px; --text-xl: 20px; --text-2xl: 26px; --text-3xl: 28px;
+      --tracking-tight: 0.01em; --tracking-wide: 0.06em; --tracking-wider: 0.09em;
     }
   </style>
   <!-- Shared Fathom design tokens + components, versioned. v1 is
@@ -32,24 +35,24 @@
     html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; }
     main { max-width: 780px; margin: 0 auto; padding: 40px 28px 140px; }
     header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 32px; border-bottom: 1px solid var(--rule); padding-bottom: 14px; }
-    header .fth-brand { font-size: 28px; }
-    header .host { font-family: var(--mono); font-size: 13px; color: var(--ink-soft); }
-    h2 { font-family: var(--serif); font-weight: 400; font-size: 20px; margin: 32px 0 6px; }
+    header .fth-brand { font-size: var(--text-3xl); }
+    header .host { font-family: var(--mono); font-size: var(--text-md); color: var(--ink-soft); }
+    h2 { font-family: var(--serif); font-weight: 400; font-size: var(--text-xl); margin: 32px 0 6px; }
     /* Prose note — help text / section descriptions. Inherits sans from body. */
-    .readonly { font-size: 13px; line-height: 1.5; color: var(--ink-soft); margin-top: 8px; }
-    code { font-family: var(--mono); font-size: 11px; color: var(--accent); background: var(--accent-soft); padding: 1px 5px; border-radius: 3px; }
+    .readonly { font-size: var(--text-md); line-height: 1.5; color: var(--ink-soft); margin-top: 8px; }
+    code { font-family: var(--mono); font-size: var(--text-sm); color: var(--accent); background: var(--accent-soft); padding: 1px 5px; border-radius: 3px; }
 
     /* Plugin card layout — fth-card + fth-card-body give the surface; this adds margin and inner-flex. */
     .plugin { margin: 16px 0; }
     .plugin-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-    .plugin-head .name { font-weight: 500; font-size: 16px; }
-    .plugin-head .cap { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
-    .plugin-head .toggle { margin-left: auto; display: inline-flex; gap: 6px; align-items: center; cursor: pointer; font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); }
+    .plugin-head .name { font-weight: 500; font-size: var(--text-lg); }
+    .plugin-head .cap { font-family: var(--mono); font-size: var(--text-sm); color: var(--ink-faint); }
+    .plugin-head .toggle { margin-left: auto; display: inline-flex; gap: 6px; align-items: center; cursor: pointer; font-family: var(--mono); font-size: var(--text-sm); letter-spacing: var(--tracking-wide); text-transform: uppercase; color: var(--ink-soft); }
     .plugin[data-enabled="false"] { opacity: 0.7; }
     .plugin[data-enabled="false"] .fth-dot { background: var(--ink-faint); box-shadow: none; }
     .instances { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
-    .instance .name { font-weight: 500; font-size: 14px; }
-    .instance .detail { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
+    .instance .name { font-weight: 500; font-size: var(--text-base); }
+    .instance .detail { font-family: var(--mono); font-size: var(--text-sm); color: var(--ink-faint); }
     .instance .actions { margin-left: auto; display: flex; gap: 6px; }
     .instance { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .add-instance { margin-top: 12px; }
