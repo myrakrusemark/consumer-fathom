@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     feed_directive_path: str = "/data/feed-directive.txt"
     tokens_path: str = "/data/tokens.json"
     mood_state_path: str = "/data/mood-state.json"
+    pair_codes_path: str = "/data/pair-codes.json"
 
     # Mood layer (carrier wave) — pressure thresholds
     # Threshold tuned against a real lake. With ~50 deltas/hour, pressure

@@ -10,10 +10,11 @@
  * Env: FATHOM_API_URL, FATHOM_API_KEY (override config)
  */
 
-import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync } from "fs";
-import { homedir } from "os";
+import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync, copyFileSync } from "fs";
+import { homedir, hostname } from "os";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { createInterface } from "readline";
 import { Pusher } from "./pusher.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -209,6 +210,147 @@ function uninstallService() {
   }
 }
 
+// ── Onboarding (init) ────────────────────────────
+//
+// `init` is the agent's onboarding entry point. It expects:
+//   --api-url    Dashboard/consumer API base URL
+//   --pair-code  Short-lived admission token from the dashboard
+//
+// Both can be omitted; init falls back to interactive prompts. The pair
+// code is exchanged for a real API token via POST /v1/pair/redeem, then
+// written into agent.json.
+//
+// Existing config detection: if agent.json exists, init offers three
+// branches — keep plugin config and only update url/key (the rotation
+// case), overwrite with a fresh default (with timestamped backup), or
+// quit. --yes takes the "keep" branch non-interactively.
+
+function prompt(question, defaultValue) {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    const hint = defaultValue ? ` [${defaultValue}]` : "";
+    rl.question(`${question}${hint}: `, (answer) => {
+      rl.close();
+      resolve((answer || "").trim() || defaultValue || "");
+    });
+  });
+}
+
+function promptChoice(question, choices, defaultKey) {
+  const labels = choices.map((c) => (c.key === defaultKey ? `[${c.key.toUpperCase()}]${c.label}` : `${c.key}${c.label}`)).join(" / ");
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question(`${question} (${labels}): `, (answer) => {
+      rl.close();
+      const a = (answer || "").trim().toLowerCase();
+      const match = choices.find((c) => c.key.toLowerCase() === a);
+      resolve(match ? match.key : defaultKey);
+    });
+  });
+}
+
+function freshConfigFromPlugins(plugins, apiUrl, apiKey) {
+  const out = { api_url: apiUrl, api_key: apiKey, plugins: {} };
+  for (const [name, p] of plugins) {
+    out.plugins[name] = {
+      enabled: false,
+      ...(p.defaults || {}),
+      _comment: p.description || `${p.name} plugin`,
+    };
+  }
+  return out;
+}
+
+async function redeemPairCode(apiUrl, code, host) {
+  const base = apiUrl.replace(/\/$/, "");
+  const r = await fetch(`${base}/v1/pair/redeem`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code, host }),
+  });
+  if (!r.ok) {
+    const body = await r.text().catch(() => "");
+    let detail = body;
+    try { detail = JSON.parse(body).detail || body; } catch {}
+    throw new Error(`HTTP ${r.status}: ${detail}`);
+  }
+  return r.json();
+}
+
+async function runInit(cliArgs, plugins, existingConfig) {
+  const overrides = cliArgs.overrides || {};
+  const yes = !!(overrides.yes || overrides.y);
+  let apiUrl = overrides["api-url"] || overrides.url || process.env.FATHOM_API_URL || existingConfig.api_url || "http://localhost:8201";
+  const pairCode = overrides["pair-code"] || overrides.code || "";
+  const host = overrides.host || hostname();
+
+  const configExists = existsSync(CONFIG_PATH);
+  let branch = "fresh";
+  if (configExists) {
+    const keyPreview = existingConfig.api_key ? existingConfig.api_key.slice(0, 8) + "…" : "(none)";
+    const pluginCount = Object.keys(existingConfig.plugins || {}).length;
+    console.log(`\nExisting config: ${CONFIG_PATH}`);
+    console.log(`  url:     ${existingConfig.api_url || "(none)"}`);
+    console.log(`  key:     ${keyPreview}`);
+    console.log(`  plugins: ${pluginCount} configured\n`);
+
+    if (yes) {
+      branch = "keep";
+    } else {
+      branch = await promptChoice(
+        "(K)eep plugins & update url/key only, (O)verwrite with defaults (backup saved), or (Q)uit?",
+        [{ key: "k", label: "eep" }, { key: "o", label: "verwrite" }, { key: "q", label: "uit" }],
+        "k",
+      );
+      if (branch === "q") { console.log("No changes written."); return; }
+    }
+  }
+
+  // Ask for URL/pair code if not provided.
+  if (!pairCode) {
+    if (!cliArgs.overrides["api-url"] && !overrides.url) {
+      apiUrl = await prompt("Fathom dashboard URL", apiUrl);
+    }
+    var code = await prompt("Pair code from your dashboard (starts with 'pair_')", "");
+    if (!code) { console.error("Pair code is required to register this agent."); process.exit(1); }
+  } else {
+    code = pairCode;
+  }
+
+  console.log(`\nRedeeming pair code against ${apiUrl}…`);
+  let redemption;
+  try {
+    redemption = await redeemPairCode(apiUrl, code, host);
+  } catch (e) {
+    console.error(`\nPairing failed: ${e.message}`);
+    console.error("Ask for a fresh code in the dashboard and try again.");
+    process.exit(1);
+  }
+
+  const apiKey = redemption.token;
+  let nextConfig;
+  if (branch === "keep") {
+    nextConfig = { ...existingConfig, api_url: apiUrl, api_key: apiKey };
+  } else if (branch === "overwrite" && configExists) {
+    const bak = `${CONFIG_PATH}.bak-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+    copyFileSync(CONFIG_PATH, bak);
+    console.log(`Backed up existing config to ${bak}`);
+    nextConfig = freshConfigFromPlugins(plugins, apiUrl, apiKey);
+  } else {
+    nextConfig = freshConfigFromPlugins(plugins, apiUrl, apiKey);
+  }
+
+  saveConfig(nextConfig);
+  console.log(`\n✓ Paired as '${host}'`);
+  console.log(`  token id: ${redemption.token_id}`);
+  console.log(`  scopes:   ${(redemption.scopes || []).join(", ")}`);
+  console.log(`  config:   ${CONFIG_PATH}\n`);
+  console.log("Start the agent:");
+  console.log("  fathom-agent run\n");
+  console.log("Or install as a background service:");
+  console.log("  fathom-agent install\n");
+}
+
 // ── Main ─────────────────────────────────────────
 
 async function main() {
@@ -227,19 +369,7 @@ async function main() {
   if (cliArgs.command === "uninstall") { uninstallService(); process.exit(0); }
 
   if (cliArgs.command === "init") {
-    config.api_url = apiUrl;
-    config.api_key = apiKey;
-    config.plugins = {};
-    for (const [name, p] of plugins) {
-      config.plugins[name] = {
-        enabled: false,
-        ...(p.defaults || {}),
-        _comment: p.description || `${p.name} plugin`,
-      };
-    }
-    saveConfig(config);
-    console.log(`Config written to ${CONFIG_PATH}`);
-    console.log(`Enable plugins and adjust settings, then run 'fathom-agent run'.`);
+    await runInit(cliArgs, plugins, config);
     process.exit(0);
   }
 

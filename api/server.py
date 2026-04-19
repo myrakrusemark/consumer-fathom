@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import auth, auto_regen, crystal, db, delta_client, drift, mood, pressure, recall, routines as routines_mod, usage as usage_module
+from . import auth, auto_regen, crystal, db, delta_client, drift, mood, pairing, pressure, recall, routines as routines_mod, usage as usage_module
 from .prompt import (
     CRYSTAL_DIRECTIVE,
     FEED_DIRECTIVE,
@@ -1087,6 +1087,51 @@ async def delete_token(token_id: str):
     if not deleted:
         raise HTTPException(404, "Token not found")
     return {"deleted": True}
+
+
+# ── Pair-code onboarding ─────────────────────────
+#
+# POST /v1/pair         → mint a short-lived single-use admission code
+# GET  /v1/pair         → list currently-active (unredeemed, unexpired) codes
+# POST /v1/pair/redeem  → exchange a code for a real API token (public)
+#
+# See api/pairing.py for the flow and rationale. The redeem endpoint is in
+# PUBLIC_PATHS because the agent has no token yet when it calls it.
+
+
+class PairCreate(BaseModel):
+    note: str = ""
+    ttl_seconds: int = 600
+
+
+@app.post("/v1/pair")
+async def pair_create(body: PairCreate):
+    return pairing.create_pair_code(ttl_seconds=body.ttl_seconds, note=body.note)
+
+
+@app.get("/v1/pair")
+async def pair_list():
+    return {"codes": pairing.list_active_codes()}
+
+
+class PairRedeem(BaseModel):
+    code: str
+    host: str = ""
+
+
+@app.post("/v1/pair/redeem")
+async def pair_redeem(body: PairRedeem):
+    try:
+        return pairing.redeem_pair_code(body.code, body.host)
+    except ValueError as e:
+        reason = str(e)
+        # Map reason → HTTP status so the agent can show a useful message
+        status = {
+            "unknown_code": 404,
+            "already_redeemed": 410,
+            "expired": 410,
+        }.get(reason, 400)
+        raise HTTPException(status, detail=reason) from e
 
 
 # ── Tool definitions (served to all clients) ─────

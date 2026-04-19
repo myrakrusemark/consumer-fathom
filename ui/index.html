@@ -1467,6 +1467,55 @@
     .agent-plugin-inline .pname { color: var(--ink-soft); }
     .agent-plugin-inline .pextra { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
 
+    /* Pairing modal — shown when a user clicks an install tile. */
+    .pair-modal {
+      position: fixed; inset: 0; z-index: 50;
+      display: flex; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .pair-modal[hidden] { display: none; }
+    .pair-backdrop {
+      position: absolute; inset: 0; background: rgba(0,0,0,0.55);
+      backdrop-filter: blur(2px);
+    }
+    .pair-dialog {
+      position: relative; z-index: 1;
+      width: min(640px, 100%);
+      background: var(--surface); border: 1px solid var(--rule);
+      border-radius: 14px; padding: 22px 26px;
+      box-shadow: 0 30px 80px -30px rgba(0,0,0,0.5);
+    }
+    .pair-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .pair-head h2 { font-family: var(--serif); font-weight: 400; font-size: 22px; margin: 0; }
+    .pair-close {
+      background: transparent; border: 0; color: var(--ink-soft);
+      font-size: 24px; line-height: 1; cursor: pointer; padding: 4px 8px;
+    }
+    .pair-close:hover { color: var(--ink); }
+    .pair-lead { font-size: 14px; color: var(--ink-soft); margin: 4px 0 14px; line-height: 1.5; }
+    .pair-cmd-wrap { display: flex; gap: 8px; align-items: stretch; margin-bottom: 12px; }
+    .pair-cmd {
+      flex: 1; margin: 0; padding: 12px 14px;
+      background: var(--bg); border: 1px solid var(--rule); border-radius: 8px;
+      font-family: var(--mono); font-size: 12px; color: var(--ink);
+      white-space: pre-wrap; word-break: break-all; overflow-wrap: break-word;
+      max-height: 140px; overflow-y: auto;
+    }
+    .pair-status {
+      font-family: var(--mono); font-size: 11px; letter-spacing: 0.05em;
+      text-transform: uppercase; color: var(--ink-faint);
+      padding: 10px 0;
+    }
+    .pair-status[data-state="connected"] { color: var(--signal); }
+    .pair-status[data-state="expired"] { color: var(--danger); }
+    .pair-details { margin-top: 8px; font-size: 13px; color: var(--ink-soft); }
+    .pair-details summary { cursor: pointer; color: var(--ink-soft); list-style: none; }
+    .pair-details summary::-webkit-details-marker { display: none; }
+    .pair-details summary::before { content: "▸ "; color: var(--ink-faint); }
+    .pair-details[open] summary::before { content: "▾ "; }
+    .pair-details ol { padding-left: 22px; margin-top: 10px; }
+    .pair-details li { margin: 6px 0; line-height: 1.5; }
+
     /* Label above the install tiles when an agent is already connected —
        signals the tiles are "add another" rather than "install your first". */
     .agent-add-another {
@@ -1723,6 +1772,37 @@
     </section>
 
   </main>
+
+  <!-- Pairing modal — opened when a user clicks an install tile. Mints a
+       fresh pair-code, shows the pre-filled install command, counts down
+       the 10-minute window, and closes automatically when the dashboard
+       sees a new agent heartbeat. -->
+  <div class="pair-modal" id="pairModal" hidden>
+    <div class="pair-backdrop" data-pair-dismiss></div>
+    <div class="pair-dialog">
+      <div class="pair-head">
+        <h2 id="pairTitle">Add machine</h2>
+        <button class="pair-close" data-pair-dismiss aria-label="Close">×</button>
+      </div>
+      <div class="pair-body">
+        <p class="pair-lead">Copy this command and run it on the machine you want to connect. The code is single-use and expires in <span id="pairCountdown">—</span>.</p>
+        <div class="pair-cmd-wrap">
+          <pre class="pair-cmd" id="pairCmd">generating…</pre>
+          <button class="btn" id="pairCopyBtn">Copy</button>
+        </div>
+        <div class="pair-status" id="pairStatus">Waiting for the agent's first heartbeat…</div>
+        <details class="pair-details">
+          <summary>How this works</summary>
+          <ol>
+            <li>The command installs the fathom-agent on that machine (via npx).</li>
+            <li>It redeems this pair code to get a long-lived API key, written to <code>~/.fathom/agent.json</code>.</li>
+            <li>The agent starts heartbeating; this dashboard detects it and closes this dialog.</li>
+            <li>Need to run on a different machine later? Re-open this dialog, get a new code. Re-pairing rotates the key automatically.</li>
+          </ol>
+        </details>
+      </div>
+    </div>
+  </div>
 
   </div><!-- /view-main -->
 
@@ -3528,6 +3608,123 @@
     }
 
     addRoutineBackBtn.addEventListener('click', closeAddRoutine);
+
+    // ── Pairing modal ───────────────────────────────
+    // Click any install tile (data-surface="agent-*") → mint a pair code,
+    // show the pre-filled install command, count down the window, close on
+    // new-agent detection. Re-pairing an existing machine is the rotation
+    // path — same command, new code, server revokes the old token.
+    const pairModal = document.getElementById('pairModal');
+    const pairCmdEl = document.getElementById('pairCmd');
+    const pairStatus = document.getElementById('pairStatus');
+    const pairCountdown = document.getElementById('pairCountdown');
+    const pairTitle = document.getElementById('pairTitle');
+    const pairCopyBtn = document.getElementById('pairCopyBtn');
+
+    let _pairTimers = [];
+    const _pairCancelAll = () => { _pairTimers.forEach(clearTimeout); _pairTimers.forEach(clearInterval); _pairTimers = []; };
+
+    function closePairModal() {
+      pairModal.hidden = true;
+      _pairCancelAll();
+    }
+
+    function _formatSecs(s) {
+      if (s <= 0) return '0:00';
+      const m = Math.floor(s / 60);
+      const rem = s % 60;
+      return `${m}:${String(rem).padStart(2, '0')}`;
+    }
+
+    async function openPairModal(surface) {
+      const os = (surface || '').replace(/^agent-/, '') || 'your machine';
+      const labels = { linux: 'Linux', mac: 'Mac', windows: 'Windows' };
+      pairTitle.textContent = `Add ${labels[os] || os} machine`;
+      pairCmdEl.textContent = 'generating pair code…';
+      pairStatus.textContent = 'Minting a pair code…';
+      pairStatus.dataset.state = '';
+      pairCountdown.textContent = '—';
+      pairModal.hidden = false;
+
+      let code;
+      try {
+        const r = await fetch(API_BASE + '/v1/pair', {
+          method: 'POST', headers: authHeaders(),
+          body: JSON.stringify({ note: `install on ${os}`, ttl_seconds: 600 }),
+        });
+        if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
+        code = await r.json();
+      } catch (e) {
+        pairCmdEl.textContent = `Failed to mint pair code: ${e.message}`;
+        pairStatus.textContent = 'Error';
+        pairStatus.dataset.state = 'expired';
+        return;
+      }
+
+      // API_BASE is empty when the dashboard is served same-origin — fine
+      // for relative fetches but useless as a shell command arg. Fall back
+      // to the browser's location.origin so the install line is copy-pastable
+      // onto another machine verbatim.
+      const urlForAgent = (API_BASE || location.origin).replace(/\/$/, '');
+      const cmd = `npx -y fathom-agent@latest init --api-url ${urlForAgent} --pair-code ${code.code}`;
+      pairCmdEl.textContent = cmd;
+
+      // Snapshot current agents so we can detect the new one.
+      const existingHosts = new Set((_agentStatus.agents || []).map((a) => a.host));
+
+      // Countdown timer.
+      const tick = () => {
+        const remaining = Math.max(0, code.expires_at - Math.floor(Date.now() / 1000));
+        pairCountdown.textContent = _formatSecs(remaining);
+        if (remaining <= 0) {
+          pairStatus.textContent = 'Pair code expired. Close this dialog and open it again for a new one.';
+          pairStatus.dataset.state = 'expired';
+          _pairCancelAll();
+        }
+      };
+      tick();
+      _pairTimers.push(setInterval(tick, 1000));
+
+      // Poll for new agent arrivals. loadAgentStatus() refreshes _agentStatus
+      // so we just re-read it. Stop once we see a new host or the modal closes.
+      pairStatus.textContent = 'Waiting for the agent\'s first heartbeat…';
+      const poll = async () => {
+        try {
+          await loadAgentStatus();
+        } catch {}
+        const currentHosts = (_agentStatus.agents || []).map((a) => a.host);
+        const newHost = currentHosts.find((h) => !existingHosts.has(h));
+        if (newHost) {
+          pairStatus.textContent = `✓ ${newHost} connected`;
+          pairStatus.dataset.state = 'connected';
+          _pairCancelAll();
+          _pairTimers.push(setTimeout(closePairModal, 2000));
+          // Refresh dashboard so the new machine appears.
+          loadRoutines();
+        }
+      };
+      _pairTimers.push(setInterval(poll, 3000));
+    }
+
+    pairCopyBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(pairCmdEl.textContent);
+        const old = pairCopyBtn.textContent;
+        pairCopyBtn.textContent = 'Copied ✓';
+        setTimeout(() => { pairCopyBtn.textContent = old; }, 1500);
+      } catch {}
+    });
+
+    document.querySelectorAll('[data-pair-dismiss]').forEach(el =>
+      el.addEventListener('click', closePairModal)
+    );
+
+    // Any click on an install tile (in the Agent section or anywhere else)
+    // with surface="agent-<os>" opens the pairing modal.
+    document.body.addEventListener('click', (ev) => {
+      const tile = ev.target.closest('.extend[data-surface^="agent-"]');
+      if (tile) openPairModal(tile.dataset.surface);
+    });
 
     // Load on startup
     loadRoutines();

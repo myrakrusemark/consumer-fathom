@@ -53,6 +53,10 @@ ROUTE_SCOPES: list[tuple[str, str, str]] = [
     ("GET", "/v1/tokens", "tokens:manage"),
     ("POST", "/v1/tokens", "tokens:manage"),
     ("DELETE", "/v1/tokens", "tokens:manage"),
+    # Minting pair codes needs the same scope as minting tokens — it's an
+    # admission-token flow that will mint a real token on redemption.
+    ("POST", "/v1/pair", "tokens:manage"),
+    ("GET", "/v1/pair", "tokens:manage"),
     ("POST", "/v1/chat", "chat"),
     ("GET", "/v1/sessions", "chat"),
     ("POST", "/v1/sessions", "chat"),
@@ -84,6 +88,10 @@ PUBLIC_PATHS = frozenset({
     "/v1/models",
     "/v1/tools",
     "/v1/scopes",
+    # Pair-code redemption is the agent's path to its first token, so it
+    # can't require one. Mint (POST /v1/pair) is NOT public — that still
+    # requires tokens:manage.
+    "/v1/pair/redeem",
 })
 
 PUBLIC_PREFIXES = (
