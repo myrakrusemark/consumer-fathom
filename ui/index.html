@@ -1215,6 +1215,48 @@
       padding: 2px 0 0;
     }
 
+    /* Agent message: card with a distinct left border marking the host,
+       mono prefix for machine identity. Reads as "another voice in the
+       room", neither user nor Fathom. */
+    .msg-agent .msg-body {
+      background: var(--surface);
+      border: 1px solid var(--rule);
+      border-left: 3px solid rgba(120,160,200,0.55);
+      border-radius: 4px 12px 12px 4px;
+      padding: 13px 16px;
+      font-family: var(--mono); font-size: 12.5px;
+      white-space: pre-wrap;
+    }
+    .msg-agent .host-prefix {
+      display: inline-block; margin-right: 8px;
+      padding: 1px 6px; border-radius: 4px;
+      background: rgba(120,160,200,0.12);
+      font-size: 10.5px; letter-spacing: 0.04em; text-transform: uppercase;
+      color: var(--ink-soft);
+    }
+
+    /* Signoff: soft italic line, system-y, not a message card. */
+    .msg-signoff {
+      align-self: center;
+      font-family: var(--serif); font-style: italic; font-size: 12.5px;
+      color: var(--ink-faint);
+      padding: 6px 0;
+      letter-spacing: 0.02em;
+    }
+
+    /* Routing delta from Fathom — shown inline as a soft hand-off line
+       under Fathom's normal reply. Not a separate message card. */
+    .msg-routing {
+      align-self: flex-start;
+      display: inline-flex; align-items: center; gap: 8px;
+      font-family: var(--mono); font-size: 11px;
+      color: var(--ink-soft);
+      padding: 4px 10px; border-radius: 999px;
+      background: rgba(120,160,200,0.08);
+      border: 1px dashed rgba(120,160,200,0.3);
+    }
+    .msg-routing .arrow { opacity: 0.6; }
+
     /* Tool activity strip */
     .tool-strip {
       align-self: flex-start;
@@ -4690,6 +4732,27 @@ GET  /v1/usage               Usage stats`,
         el.innerHTML = `<div class="msg-meta">Fathom · ${turn.time}</div><div class="msg-body">${body}</div>`;
         return el;
       }
+      if (turn.role === 'agent') {
+        // Agent signoff lands as a soft italic system line, not a message.
+        if (turn.signoff) {
+          const el = document.createElement('div');
+          el.className = 'msg-signoff';
+          el.textContent = `agent ${turn.host || 'unknown'} signed off — ${(turn.text || '').trim()}`;
+          return el;
+        }
+        const el = document.createElement('div');
+        el.className = 'msg msg-agent';
+        const host = turn.host || 'agent';
+        el.innerHTML = `<div class="msg-meta">${_esc(host)} · ${turn.time}</div><div class="msg-body"><span class="host-prefix">${_esc(host)}</span>${_esc(turn.text || '')}</div>`;
+        return el;
+      }
+      if (turn.role === 'routing') {
+        const el = document.createElement('div');
+        el.className = 'msg-routing';
+        el.innerHTML = `<span>Fathom</span><span class="arrow">→</span><span>${_esc(turn.to_host || 'agent')}</span>`;
+        if (turn.text) el.title = turn.text;
+        return el;
+      }
       if (turn.role === 'tool') {
         const el = document.createElement('div');
         el.className = 'tool-strip';
@@ -4765,16 +4828,37 @@ GET  /v1/usage               Usage stats`,
           if (m.role === 'user') {
             el = renderTurn({ role: 'user', time, text: m.content || '' });
           } else if (m.role === 'assistant') {
+            // A Fathom message can also carry routing metadata — render the
+            // hand-off chip inline after the normal reply.
             el = renderTurn({
               role: 'fathom', time,
               html: renderMd(m.content || ''),
+            });
+            if (el && m.routing) {
+              const chip = renderTurn({ role: 'routing', to_host: m.to_host, text: m.content || '' });
+              if (chip) {
+                // Wrap fathom reply + routing chip in a tight group
+                const wrap = document.createElement('div');
+                wrap.className = 'msg-group';
+                wrap.appendChild(el);
+                wrap.appendChild(chip);
+                el = wrap;
+              }
+            }
+          } else if (m.role === 'agent') {
+            el = renderTurn({
+              role: 'agent', time,
+              text: m.content || '',
+              host: m.host,
+              signoff: !!m.signoff,
             });
           }
           if (el && m.media_hash) {
             const img = document.createElement('img');
             img.className = 'msg-thumb';
             img.src = `${API_BASE}/v1/media/${m.media_hash}`;
-            el.querySelector('.msg-body').appendChild(img);
+            const body = el.querySelector ? el.querySelector('.msg-body') : null;
+            if (body) body.appendChild(img);
           }
           if (el) chatStream.appendChild(el);
         }

@@ -179,9 +179,19 @@ async def add_message(
 
 
 async def get_messages(session_id: str, limit: int = 200) -> list[dict]:
-    """Load session history from the lake."""
+    """Load session history from the lake.
+
+    Includes deltas from all participants: the human (participant:user or
+    tag 'user'), Fathom (participant:fathom or tag 'assistant'), and local
+    agents (participant:agent:<host>). Agent deltas are surfaced with
+    role='agent' and host extracted from their participant tag so the UI
+    can render them distinctly.
+    """
+    # Query by session tag alone — the chat:<slug> tag is unique to chat and
+    # catches agent outputs and routing deltas in addition to user/fathom
+    # messages. Historical Fathom+user deltas also have fathom-chat tag.
     results = await delta_client.query(
-        tags_include=[LAKE_CHAT_TAG, f"chat:{session_id}"],
+        tags_include=[f"chat:{session_id}"],
         limit=limit,
     )
     # Newest-first from API, reverse for chronological
@@ -189,18 +199,51 @@ async def get_messages(session_id: str, limit: int = 200) -> list[dict]:
     messages = []
     for d in results:
         tags = d.get("tags", [])
-        # Skip non-message deltas (chat-name, chat-deleted)
+        # Skip session metadata deltas.
         if "chat-name" in tags or "chat-deleted" in tags:
             continue
-        role = "user" if "user" in tags else "assistant" if "assistant" in tags else None
-        if not role:
+
+        # Derive role. Prefer participant:* tag (new convention). Fall back
+        # to legacy role tags (user/assistant) for older sessions.
+        role = None
+        host = None
+        for t in tags:
+            if t.startswith("participant:agent:"):
+                role = "agent"
+                host = t[len("participant:agent:"):]
+                break
+            if t == "participant:user":
+                role = "user"
+                break
+            if t == "participant:fathom":
+                role = "assistant"
+                break
+        if role is None:
+            if "user" in tags:
+                role = "user"
+            elif "assistant" in tags:
+                role = "assistant"
+        if role is None:
             continue
+
         msg = {
             "id": d.get("id"),
             "role": role,
             "content": d.get("content"),
             "created_at": d.get("timestamp"),
         }
+        if host:
+            msg["host"] = host
+        if "signoff" in tags:
+            msg["signoff"] = True
+        if any(t.startswith("to:agent:") for t in tags):
+            # Fathom's delegation message — surface it so the UI can render
+            # "Fathom → agent" inline in the conversation.
+            msg["routing"] = True
+            msg["to_host"] = next(
+                (t[len("to:agent:"):] for t in tags if t.startswith("to:agent:")),
+                None,
+            )
         if d.get("media_hash"):
             msg["media_hash"] = d["media_hash"]
         messages.append(msg)

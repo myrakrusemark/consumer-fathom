@@ -52,7 +52,11 @@ services:
     networks:
       - fathom
     ports:
+      # Dual-stack loopback — same reason as the api service: Node's fetch
+      # resolves localhost to ::1 first on dual-stack systems, so v4-only
+      # binding breaks agents running via npx.
       - "127.0.0.1:4246:8000"
+      - "[::1]:4246:8000"
     volumes:
       - ./data/deltas:/data
       - ./data/backups:/backups

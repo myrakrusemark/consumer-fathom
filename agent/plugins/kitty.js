@@ -135,6 +135,94 @@ function closeWindow(socket) {
   });
 }
 
+// ── Public helpers (used by chat-router + any future engagement plugin) ──
+
+/**
+ * Spawn a detached kitty window running `claude` in the given workspace and
+ * schedule a prompt injection once the TUI is input-ready.
+ *
+ * Returns { socket, title, spawnedAt } so callers can inject more text later
+ * (via kittySendText) or close the window (via runKitten close-window).
+ * Does NOT track state — caller owns the lifecycle map.
+ */
+export function spawnClaudeInKitty({
+  workspaceCwd,
+  prompt,
+  permissionMode = "auto",
+  sessionLabel,                       // e.g. "chat-bubbly-brown-beaver"
+  claudeBin = "claude",
+  kittyBin = "kitty",
+  kittyBackground = "#17303a",
+  autoSubmit = true,
+  injectDelayMs = 3000,
+  pusher,                             // optional — for logging a launch receipt
+}) {
+  const stamp = Date.now();
+  const title = `fathom-${sessionLabel}-${stamp}`;
+  const socket = join(SOCKET_DIR, `kitty-${title}`);
+
+  const claudeArgs = claudeArgsForMode(permissionMode);
+  const args = [
+    "--listen-on", `unix:${socket}`,
+    "-o", "allow_remote_control=yes",
+    "-o", `background=${kittyBackground}`,
+    "--title", title,
+    "--directory", workspaceCwd,
+    "--detach",
+    claudeBin, ...claudeArgs,
+  ];
+  const child = spawn(kittyBin, args, { stdio: "ignore", detached: true });
+  child.unref();
+  child.on("error", (e) => console.error(`  kitty spawn failed: ${e.message}`));
+
+  setTimeout(
+    () => injectPrompt(socket, prompt, sessionLabel, null, pusher, autoSubmit),
+    injectDelayMs,
+  );
+
+  return { socket, title, spawnedAt: stamp };
+}
+
+/**
+ * Send text into an already-running kitty session at `socket`. No enter key —
+ * just types the text. Use this for mid-engagement message delivery where the
+ * agent's claude-code sees it like the user typed it.
+ *
+ * Returns a promise resolving to true on success.
+ */
+export function kittySendText(socket, text, { submit = true } = {}) {
+  return new Promise((resolve) => {
+    if (!existsSync(socket)) {
+      console.error(`  kitty: socket ${socket} not found — window may have closed`);
+      resolve(false);
+      return;
+    }
+    runKitten(["@", "--to", `unix:${socket}`, "send-text", text], (code, err) => {
+      if (code !== 0) {
+        console.error(`  ✗ send-text failed (${code}): ${err.trim()}`);
+        resolve(false);
+        return;
+      }
+      if (!submit) { resolve(true); return; }
+      setTimeout(() => {
+        runKitten(["@", "--to", `unix:${socket}`, "send-key", "enter"], (code2, err2) => {
+          if (code2 !== 0) {
+            console.error(`  ✗ send-key enter failed (${code2}): ${err2.trim()}`);
+            resolve(false);
+          } else {
+            resolve(true);
+          }
+        });
+      }, 800);
+    });
+  });
+}
+
+/** True if the kitty window at this socket is still alive. */
+export function kittySocketAlive(socket) {
+  return existsSync(socket);
+}
+
 // Map a permission-mode tag value → claude-code CLI args.
 // `auto`   → classifier auto-approves safe actions, blocks risky ones
 // `normal` → no flag (claude prompts for each tool — user approves in kitty)
@@ -189,48 +277,28 @@ function fire(delta, config, pusher) {
   ].join("\n");
   const prompt = `${body}\n${footer}`;
 
-  const fireStamp = Date.now();
-  const title = `fathom-${routineId}-${fireStamp}`;
-  const socket = join(SOCKET_DIR, `kitty-${title}`);
+  console.log(`  🐈 fire ${routineId} (ws: ${workspace || "default"}, mode: ${requestedMode})`);
 
-  console.log(`  🐈 fire ${routineId} (ws: ${workspace || "default"}, mode: ${requestedMode}) → ${title}`);
+  const { socket, spawnedAt } = spawnClaudeInKitty({
+    workspaceCwd: cwd,
+    prompt,
+    permissionMode: requestedMode,
+    sessionLabel: routineId,
+    claudeBin: config.claude_command,
+    kittyBin: config.kitty_command,
+    kittyBackground: config.kitty_background,
+    autoSubmit: config.auto_submit !== false,
+    injectDelayMs: config.inject_delay_ms,
+    pusher,
+  });
 
   // Track the open window so a matching routine-summary delta can close it.
   openFires.set(delta.id, {
     socket,
     routineId,
-    launched_at: fireStamp,
-    launched_iso: new Date(fireStamp).toISOString(),
+    launched_at: spawnedAt,
+    launched_iso: new Date(spawnedAt).toISOString(),
   });
-
-  // Step 1: spawn standalone kitty with remote-control enabled, running claude.
-  // Args derive from the fire's permission-mode tag; `config.claude_args` can
-  // still override for power users who want a specific flag set.
-  // `kitty_background` tints the window so routine-spawned shells are visually
-  // distinguishable from normal kitty sessions on the desktop.
-  const claudeBin = config.claude_command || "claude";
-  const claudeArgs = config.claude_args || claudeArgsForMode(requestedMode);
-  const args = [
-    "--listen-on", `unix:${socket}`,
-    "-o", "allow_remote_control=yes",
-    "-o", `background=${config.kitty_background || "#17303a"}`,
-    "--title", title,
-    "--directory", cwd,
-    "--detach",
-    claudeBin, ...claudeArgs,
-  ];
-  const child = spawn(config.kitty_command || "kitty", args, {
-    stdio: "ignore",
-    detached: true,
-  });
-  child.unref();
-  child.on("error", (e) => console.error(`  kitty spawn failed: ${e.message}`));
-
-  // Step 2: wait for claude-code TUI to be input-ready, then inject prompt
-  setTimeout(
-    () => injectPrompt(socket, prompt, routineId, delta.id, pusher, config.auto_submit !== false),
-    config.inject_delay_ms || 3000,
-  );
 }
 
 function injectPrompt(socket, prompt, routineId, fireDeltaId, pusher, autoSubmit = true) {
@@ -261,11 +329,16 @@ function injectPrompt(socket, prompt, routineId, fireDeltaId, pusher, autoSubmit
           return;
         }
         console.log(`  ✓ injected + submitted ${prompt.length}-char prompt → ${routineId}`);
-        pusher?.push?.({
-          content: `[kitty-fire] routine ${routineId} launched. Prompt: ${prompt.slice(0, 200)}${prompt.length > 200 ? "…" : ""}`,
-          tags: ["kitty-fire-receipt", `routine-id:${routineId}`, `fire-delta:${fireDeltaId}`],
-          source: "kitty",
-        });
+        // Receipt only makes sense for routine-fire-driven spawns; chat-router
+        // spawns pass fireDeltaId=null and shouldn't pollute the lake with a
+        // fake fire-delta: tag.
+        if (fireDeltaId && pusher?.push) {
+          pusher.push({
+            content: `[kitty-fire] routine ${routineId} launched. Prompt: ${prompt.slice(0, 200)}${prompt.length > 200 ? "…" : ""}`,
+            tags: ["kitty-fire-receipt", `routine-id:${routineId}`, `fire-delta:${fireDeltaId}`],
+            source: "kitty",
+          });
+        }
       });
     }, 800);
   });

@@ -53,7 +53,19 @@ if the topic is already obvious), you MUST call delta_write with a short \
 descriptive name (3-6 words, lowercase) as the content, and tags \
 ["fathom-chat", "chat:SESSION_SLUG", "chat-name"]. This is not optional \
 — every session needs a real name. Don't mention the naming in your \
-reply. Don't rename unless the topic genuinely drifted."""
+reply. Don't rename unless the topic genuinely drifted.
+
+Routing to local agents: when the user asks for something that needs a \
+local machine — running shell commands, reading or editing files on their \
+computer, checking system state, touching hardware — use the route_to_agent \
+tool. Pass the hostname of the connected machine (check with \
+explain(topic=agent) if you're not sure what's connected), a natural-language \
+description of the task, and the current session_slug. The agent spawns \
+claude-code on that machine and its outputs land back in this same \
+conversation as new messages. Keep talking to the user normally while the \
+agent works — you'll see its responses come through tagged \
+participant:agent:HOST. Don't use route_to_agent for things you can answer \
+yourself, and don't use it for scheduled things (that's routines)."""
 
 ORIENT_PROMPT = """\
 You have memory. The lake is how you remember. Past crystals are in the lake \

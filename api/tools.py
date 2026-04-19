@@ -282,7 +282,7 @@ TOOLS = [
                 "properties": {
                     "topic": {
                         "type": "string",
-                        "enum": ["sources", "feed", "stats", "agent"],
+                        "enum": ["sources", "feed", "stats", "agent", "agent_routing"],
                         "description": (
                             "sources: pollers that write deltas into the lake (RSS, "
                             "Mastodon, HN, custom). "
@@ -291,7 +291,69 @@ TOOLS = [
                             "stats: the time-series dashboard showing deltas-in, "
                             "recall, mood pressure, drift. "
                             "agent: the local fathom-agent runtime — what it does "
-                            "and how to install it."
+                            "and how to install it. "
+                            "agent_routing: how chat sessions route to local agents via "
+                            "the route_to_agent tool — use when the user asks how you "
+                            "can run things on their machine."
+                        ),
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "route_to_agent",
+            "description": (
+                "Hand a task to a local agent on a specific host so the agent's "
+                "claude-code can execute it on that machine. Writes one delta "
+                "into the current chat session — tagged to:agent:<host>, "
+                "chat:<session_slug>, and participant:fathom — which the agent's "
+                "chat-router sees and spawns a claude-code subprocess for. "
+                "The agent's outputs come back as normal deltas in the same "
+                "chat session and appear in the user's conversation. "
+                "Use this for anything that requires local access: running "
+                "shell commands, reading files, touching hardware, editing "
+                "code, checking system state. Don't use it for answering "
+                "questions you could answer yourself."
+            ),
+            "parameters": {
+                "type": "object",
+                "required": ["host", "message", "session_slug"],
+                "properties": {
+                    "host": {
+                        "type": "string",
+                        "description": (
+                            "Hostname of the connected agent to route to. Must match "
+                            "a currently-connected agent's reported host (check via "
+                            "the explain(topic=agent) tool if unsure)."
+                        ),
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": (
+                            "What you want the agent to do, in natural language. The "
+                            "agent's claude-code will orient on the session first, then "
+                            "execute. Be specific but conversational — you're writing "
+                            "to a peer, not dictating a shell command."
+                        ),
+                    },
+                    "session_slug": {
+                        "type": "string",
+                        "description": (
+                            "The current chat session's slug (e.g. 'awkward-perky-deer'). "
+                            "This is how the agent's responses thread back into the "
+                            "same conversation the user is in."
+                        ),
+                    },
+                    "workspace": {
+                        "type": "string",
+                        "description": (
+                            "Optional — subdirectory under the agent's workspace_root "
+                            "to spawn claude-code in. Empty string means the root "
+                            "itself. Only set when the task is scoped to a specific "
+                            "project."
                         ),
                     },
                 },
@@ -389,6 +451,9 @@ async def execute(name: str, arguments: dict) -> str:
 
         if name == "explain":
             return await _execute_explain(arguments)
+
+        if name == "route_to_agent":
+            return await _execute_route_to_agent(arguments)
 
         return json.dumps({"error": f"Unknown tool: {name}"})
 
@@ -908,8 +973,97 @@ async def _execute_explain(args: dict) -> str:
             "doc": _EXPLAIN_AGENT,
             "live": await _live_agent_summary(),
         })
+    if topic == "agent_routing":
+        return json.dumps({
+            "topic": topic,
+            "doc": _EXPLAIN_AGENT_ROUTING,
+            "live": await _live_agent_summary(),
+        })
     return json.dumps({
         "topic": topic,
         "error": "unknown_topic",
-        "known": ["sources", "feed", "stats", "agent"],
+        "known": ["sources", "feed", "stats", "agent", "agent_routing"],
+    })
+
+
+_EXPLAIN_AGENT_ROUTING = (
+    "AGENT ROUTING — how chat sessions reach across to a local agent.\n\n"
+    "Chat sessions in the lake are just tags (chat:<slug>). Anyone can write "
+    "into a session — the user, Fathom, or a local agent. When Fathom decides "
+    "the user's request needs something only a local machine can do (shell "
+    "commands, file access, hardware), Fathom writes a single delta into the "
+    "current session tagged:\n"
+    "  chat:<slug>        — the session this belongs to\n"
+    "  to:agent:<host>    — invites that host's agent\n"
+    "  participant:fathom — Fathom is the writer\n"
+    "  workspace:<name>   — optional, which project folder to work in\n\n"
+    "Each connected agent runs a chat-router plugin that polls the lake for "
+    "to:agent:<its-host> deltas. When one appears, the router spawns a "
+    "claude-code subprocess in a kitty window (so the user can watch or "
+    "intervene). That claude-code orients on the session via the lake, does "
+    "the work, and writes outputs back as deltas tagged chat:<slug> — which "
+    "means they appear in the user's chat conversation automatically.\n\n"
+    "Use route_to_agent when the user asks for something that requires a "
+    "local machine. Don't use it for things you can answer yourself, and "
+    "don't use it for scheduled things (that's routines)."
+)
+
+
+async def _execute_route_to_agent(args: dict) -> str:
+    host = (args.get("host") or "").strip()
+    message = (args.get("message") or "").strip()
+    session_slug = (args.get("session_slug") or "").strip()
+    workspace = (args.get("workspace") or "").strip()
+
+    if not host:
+        return json.dumps({"error": "host is required"})
+    if not message:
+        return json.dumps({"error": "message is required"})
+    if not session_slug:
+        return json.dumps({"error": "session_slug is required (pass the current chat's slug)"})
+
+    # Verify the host is actually connected — saves the user from a silent
+    # drop when they mistype or reference a machine that's never paired.
+    try:
+        alive, agents = await _agent_alive()
+        connected_hosts = {a["host"] for a in agents}
+        if host not in connected_hosts:
+            return json.dumps({
+                "error": "host_not_connected",
+                "message": f"No agent named '{host}' is currently connected. Connected hosts: {sorted(connected_hosts) or 'none'}.",
+                "hint": "Ask the user which machine they meant, or tell them the agent isn't running.",
+            })
+    except Exception as e:
+        # Don't block the route just because the check failed — the agent
+        # may come online between the check and the write.
+        pass
+
+    tags = [
+        f"chat:{session_slug}",
+        f"to:agent:{host}",
+        "participant:fathom",
+    ]
+    if workspace:
+        tags.append(f"workspace:{workspace}")
+
+    try:
+        written = await delta_client.write(
+            content=message,
+            tags=tags,
+            source="consumer-api:route",
+        )
+    except Exception as e:
+        return json.dumps({"error": f"Failed to write routing delta: {e}"})
+
+    return json.dumps({
+        "routed": True,
+        "host": host,
+        "session": session_slug,
+        "delta_id": written.get("id"),
+        "hint": (
+            f"The agent on {host} will spawn a claude-code subprocess and "
+            f"respond via deltas tagged chat:{session_slug}. Continue talking "
+            "with the user — their replies will show up as new messages in "
+            "this conversation."
+        ),
     })
