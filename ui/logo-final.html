@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fathom logo — final candidate</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0d1f26; --bg-deep: #081519; --surface: #142a33; --surface-2: #1c3a45;
+      --ink: #f0e9d9; --ink-soft: #9fb0b5; --ink-faint: #5a6d74;
+      --rule: #1e3a47; --rule-soft: #17303a;
+      --accent: #e8a24e; --accent-bright: #f2b665; --accent-soft: rgba(232, 162, 78, 0.14);
+      --signal: #5ce1c6;
+      --serif: "Instrument Serif", Georgia, serif;
+      --sans: "Inter", system-ui, sans-serif;
+      --mono: "JetBrains Mono", ui-monospace, monospace;
+    }
+    [data-theme="light"] {
+      --bg: #eef2f3; --bg-deep: #dfe7ea; --surface: #ffffff; --surface-2: #f6f9fa;
+      --ink: #0d1f26; --ink-soft: #4f6269; --ink-faint: #94a4a9;
+      --rule: #dfe5e7; --rule-soft: #e8eced;
+      --accent: #c26a1f; --accent-bright: #e28233; --accent-soft: rgba(194, 106, 31, 0.09);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); }
+    body { min-height: 100dvh; background: radial-gradient(ellipse at 20% -10%, rgba(92,225,198,0.06), transparent 55%), radial-gradient(ellipse at 80% 110%, rgba(232,162,78,0.05), transparent 50%), var(--bg); }
+
+    header { padding: 40px 40px 16px; display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; border-bottom: 1px solid var(--rule-soft); }
+    h1 { font-family: var(--serif); font-weight: 400; font-size: 32px; margin: 0 0 4px; }
+    h1 em { color: var(--accent); }
+    .lede { color: var(--ink-soft); font-size: 14px; max-width: 640px; line-height: 1.5; }
+    .controls { display: flex; gap: 8px; flex-wrap: wrap; }
+    button { background: var(--surface); border: 1px solid var(--rule); color: var(--ink); padding: 9px 14px; border-radius: 10px; font-family: var(--sans); font-size: 13px; cursor: pointer; }
+    button:hover { border-color: var(--ink-faint); }
+    .group { display: inline-flex; border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; }
+    .group button { border: 0; border-radius: 0; border-right: 1px solid var(--rule); }
+    .group button:last-child { border-right: 0; }
+    .group button.active { background: var(--accent-soft); color: var(--accent-bright); }
+
+    section { padding: 24px 40px 40px; }
+    .section-title { font-family: var(--serif); font-size: 22px; color: var(--ink-soft); margin: 0 0 6px; }
+    .section-sub { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); margin: 0 0 20px; }
+
+    .hero { background: var(--surface); border: 1px solid var(--accent); border-radius: 16px; padding: 48px; display: grid; place-items: center; }
+    .hero svg { width: 320px; height: auto; overflow: visible; }
+
+    .twopanel { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .panel { border-radius: 14px; padding: 24px; border: 1px solid var(--rule); }
+    .panel-dark { background: var(--bg); }
+    .panel-light { background: #eef2f3; color: #0d1f26; border-color: #dfe5e7; }
+    .panel h3 { font-family: var(--serif); font-weight: 400; font-size: 18px; margin: 0 0 16px; }
+    .panel-light h3 { color: #0d1f26; }
+
+    .size-row { display: flex; align-items: end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+    .size-slot { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    .size-slot svg { overflow: visible; }
+    .size-slot span { font-family: var(--mono); font-size: 10px; color: var(--ink-faint); }
+    .panel-light .size-slot span { color: #94a4a9; }
+
+    .context-row { padding-top: 16px; border-top: 1px solid var(--rule); display: flex; flex-direction: column; gap: 18px; }
+    .panel-light .context-row { border-top-color: #dfe5e7; }
+    .brand { display: inline-flex; align-items: baseline; gap: 6px; font-family: var(--serif); font-size: 26px; }
+    .brand .mark { color: var(--accent); display: inline-flex; }
+    .panel-light .brand .mark { color: #c26a1f; }
+    .brand .mark svg { height: 16px; width: auto; overflow: visible; }
+    .brand-sm { font-size: 18px; }
+    .brand-sm .mark svg { height: 12px; }
+    .brand-xs { font-size: 14px; }
+    .brand-xs .mark svg { height: 10px; }
+
+    .params { background: var(--surface-2); border-radius: 10px; padding: 16px 18px; font-family: var(--mono); font-size: 12px; color: var(--ink-soft); line-height: 1.7; white-space: pre; margin: 20px 0; }
+    .footer { padding: 16px 40px 40px; color: var(--ink-faint); font-family: var(--mono); font-size: 11px; }
+    .callout { background: var(--accent-soft); border-left: 3px solid var(--accent); padding: 14px 18px; border-radius: 8px; font-size: 13px; color: var(--ink); margin: 20px 0; line-height: 1.5; }
+    .callout strong { color: var(--accent-bright); }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>final <em>candidate</em></h1>
+      <div class="lede">Cascade 0° at step 41px — horizontal right fan. Rotations approved (+20.4° / −17.2° / +0.4°), all around centroid (128, 150). The mark is now <strong>wider than tall</strong> — size gauntlet and in-context previews below tell you whether that works.</div>
+    </div>
+    <div class="controls">
+      <div class="group">
+        <button id="btnOutline" class="active">outlined</button>
+        <button id="btnFill">filled</button>
+        <button id="btnMixed">mixed</button>
+      </div>
+    </div>
+  </header>
+
+  <section>
+    <h2 class="section-title">hero</h2>
+    <p class="section-sub">the mark at full size — its natural aspect ratio</p>
+    <div class="hero" id="hero"></div>
+    <div class="params" id="params"></div>
+    <div class="callout" id="aspectNote"></div>
+  </section>
+
+  <section>
+    <h2 class="section-title">size gauntlet</h2>
+    <p class="section-sub">real header + UI sizes · 48 / 32 / 24 / 20 / 16 / 15 / 12 / 10 px</p>
+    <div class="twopanel">
+      <div class="panel panel-dark">
+        <h3>dark (topbar)</h3>
+        <div class="size-row" id="gauntletDark"></div>
+        <div class="context-row" id="contextDark"></div>
+      </div>
+      <div class="panel panel-light">
+        <h3>light (shallow water)</h3>
+        <div class="size-row" id="gauntletLight"></div>
+        <div class="context-row" id="contextLight"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="section-title">svg snippet</h2>
+    <p class="section-sub">drop-in replacement for the current <code>PH_TRIANGLE</code></p>
+    <pre class="params" id="snippet"></pre>
+  </section>
+
+  <div class="footer">
+    viewBox auto-expanded to the right to accommodate the cascade. bounding box printed above.
+  </div>
+
+  <script>
+    const TRI_OUTLINE = "M236.8,188.09,149.35,36.22a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19A23.51,23.51,0,0,0,236.8,188.09ZM222.93,203.8a8.5,8.5,0,0,1-7.48,4.2H40.55a8.5,8.5,0,0,1-7.48-4.2,7.59,7.59,0,0,1,0-7.72L120.52,44.21a8.75,8.75,0,0,1,15,0l87.45,151.87A7.59,7.59,0,0,1,222.93,203.8Z";
+    const TRI_FILL    = "M149.35,36.22a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19,23.51,23.51,0,0,0,0-23.72Z";
+
+    const ANGLES = [20.4, -17.2, 0.4];
+    const OFFSETS = [[0, 0], [41, 0], [82, 0]];
+    const OPACITIES = [0.28, 0.58, 1.0];
+    const PIVOT_X = 128, PIVOT_Y = 150;
+
+    // Expanded viewBox to fit cascade (front layer pushed +82 right)
+    // Original 0 0 256 256; extend width to 256+82=338, plus a little breathing room
+    const VB_W = 340, VB_H = 256;
+
+    let fillMode = "outline";
+    const pickPath = i => fillMode === "outline" ? TRI_OUTLINE : fillMode === "fill" ? TRI_FILL : (i === 2 ? TRI_FILL : TRI_OUTLINE);
+
+    function svgBody() {
+      return OFFSETS.map(([dx, dy], i) =>
+        `<g transform="translate(${dx} ${dy}) rotate(${ANGLES[i]} ${PIVOT_X} ${PIVOT_Y})" opacity="${OPACITIES[i]}"><path d="${pickPath(i)}" fill="currentColor"/></g>`
+      ).join("");
+    }
+    function svg(attrs = "") {
+      return `<svg viewBox="0 0 ${VB_W} ${VB_H}" ${attrs} xmlns="http://www.w3.org/2000/svg">${svgBody()}</svg>`;
+    }
+    function svgAtHeight(h) {
+      // preserve aspect, scale by height
+      const w = Math.round((VB_W / VB_H) * h);
+      return svg(`width="${w}" height="${h}"`);
+    }
+
+    function renderHero() {
+      const hero = document.getElementById("hero");
+      hero.innerHTML = `<div style="color: var(--accent);">${svg()}</div>`;
+    }
+
+    function renderParams() {
+      const p = document.getElementById("params");
+      p.textContent =
+`rotations   L0 +20.40°   L1 -17.20°   L2 +0.40°   (pivot 128, 150)
+offsets     L0 (0, 0)    L1 (41, 0)    L2 (82, 0)   (cascade right)
+opacity     L0 0.28      L1 0.58       L2 1.00
+viewBox     0 0 ${VB_W} ${VB_H}
+aspect      ${(VB_W / VB_H).toFixed(3)} : 1  (≈ 1.33 wider than tall)`;
+    }
+
+    function renderAspectNote() {
+      const el = document.getElementById("aspectNote");
+      const ratio = (VB_W / VB_H).toFixed(2);
+      el.innerHTML = `<strong>Aspect ratio note:</strong> the original Phosphor triangle was 1:1 (16×16 in the header). The cascade makes the mark ${ratio}:1 — at 16px tall, it now occupies about ${Math.round(16 * VB_W / VB_H)}px wide. That's ~7px more horizontal space next to "fathom". Check the in-context brand marks below to see if the proportion still feels right.`;
+    }
+
+    function renderGauntlet() {
+      const sizes = [48, 32, 24, 20, 16, 15, 12, 10];
+      for (const id of ["gauntletDark", "gauntletLight"]) {
+        const el = document.getElementById(id);
+        el.innerHTML = sizes.map(sz => `
+          <div class="size-slot" style="color: ${id === 'gauntletDark' ? 'var(--accent)' : '#c26a1f'};">
+            ${svgAtHeight(sz)}
+            <span>${sz}px</span>
+          </div>`).join("");
+      }
+
+      // Brand marks at three scales
+      const brand = (cls = "") => `
+        <div class="brand ${cls}">
+          fathom<span class="mark">${svg()}</span>
+        </div>`;
+      const ctx = brand() + brand("brand-sm") + brand("brand-xs");
+      document.getElementById("contextDark").innerHTML = ctx;
+      document.getElementById("contextLight").innerHTML = ctx;
+    }
+
+    function renderSnippet() {
+      const s = `const PH_TRIANGLE = '<svg class="ph-triangle" viewBox="0 0 ${VB_W} ${VB_H}" fill="currentColor">` +
+        OFFSETS.map(([dx, dy], i) =>
+          `<g transform="translate(${dx} ${dy}) rotate(${ANGLES[i]} ${PIVOT_X} ${PIVOT_Y})" opacity="${OPACITIES[i]}"><path d="${pickPath(i)}"/></g>`
+        ).join("") +
+        `</svg>';
+
+/* CSS update — width no longer equals height */
+.brand-mark .ph-triangle   { height: 16px; width: auto; vertical-align: -2px; }
+.sidebar-brand .ph-triangle { height: 15px; width: auto; vertical-align: -2px; }
+.tool-strip .tool-meta .ph-triangle { height: 11px; width: auto; }`;
+      document.getElementById("snippet").textContent = s;
+    }
+
+    function renderAll() {
+      renderHero();
+      renderParams();
+      renderAspectNote();
+      renderGauntlet();
+      renderSnippet();
+    }
+
+    const fillGroup = ["btnOutline", "btnFill", "btnMixed"];
+    const setActive = (id) => fillGroup.forEach(x => document.getElementById(x).classList.toggle("active", x === id));
+    document.getElementById("btnOutline").onclick = () => { fillMode = "outline"; setActive("btnOutline"); renderAll(); };
+    document.getElementById("btnFill").onclick    = () => { fillMode = "fill";    setActive("btnFill");    renderAll(); };
+    document.getElementById("btnMixed").onclick   = () => { fillMode = "mixed";   setActive("btnMixed");   renderAll(); };
+
+    renderAll();
+  </script>
+</body>
+</html>

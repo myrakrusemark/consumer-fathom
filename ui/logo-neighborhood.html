@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fathom logo — neighborhood + size gauntlet</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0d1f26; --bg-deep: #081519; --surface: #142a33; --surface-2: #1c3a45;
+      --ink: #f0e9d9; --ink-soft: #9fb0b5; --ink-faint: #5a6d74;
+      --rule: #1e3a47; --rule-soft: #17303a;
+      --accent: #e8a24e; --accent-bright: #f2b665; --accent-soft: rgba(232, 162, 78, 0.14);
+      --signal: #5ce1c6;
+      --serif: "Instrument Serif", Georgia, serif;
+      --sans: "Inter", system-ui, sans-serif;
+      --mono: "JetBrains Mono", ui-monospace, monospace;
+    }
+    [data-theme="light"] {
+      --bg: #eef2f3; --bg-deep: #dfe7ea; --surface: #ffffff; --surface-2: #f6f9fa;
+      --ink: #0d1f26; --ink-soft: #4f6269; --ink-faint: #94a4a9;
+      --rule: #dfe5e7; --rule-soft: #e8eced;
+      --accent: #c26a1f; --accent-bright: #e28233; --accent-soft: rgba(194, 106, 31, 0.09);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; }
+    body {
+      min-height: 100dvh;
+      background:
+        radial-gradient(ellipse at 20% -10%, rgba(92, 225, 198, 0.06), transparent 55%),
+        radial-gradient(ellipse at 80% 110%, rgba(232, 162, 78, 0.05), transparent 50%),
+        var(--bg);
+    }
+
+    header { padding: 40px 40px 16px; display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; border-bottom: 1px solid var(--rule-soft); }
+    h1 { font-family: var(--serif); font-weight: 400; font-size: 32px; margin: 0 0 4px; letter-spacing: 0.01em; }
+    h1 em { color: var(--accent); }
+    .lede { color: var(--ink-soft); font-size: 14px; max-width: 620px; line-height: 1.5; }
+    .controls { display: flex; gap: 8px; flex-wrap: wrap; }
+    button { background: var(--surface); border: 1px solid var(--rule); color: var(--ink); padding: 9px 14px; border-radius: 10px; font-family: var(--sans); font-size: 13px; cursor: pointer; transition: border-color 120ms, color 120ms, background 120ms; }
+    button:hover { border-color: var(--ink-faint); }
+    button.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-bright); }
+    .group { display: inline-flex; gap: 0; border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; }
+    .group button { border: 0; border-radius: 0; border-right: 1px solid var(--rule); }
+    .group button:last-child { border-right: 0; }
+    .group button.active { background: var(--accent-soft); color: var(--accent-bright); }
+
+    section { padding: 24px 40px 48px; }
+    .section-title { font-family: var(--serif); font-size: 22px; color: var(--ink-soft); margin: 0 0 6px; }
+    .section-sub { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); margin: 0 0 20px; }
+
+    /* Anchor block */
+    .anchor-row { display: grid; grid-template-columns: 280px 1fr; gap: 32px; align-items: start; background: var(--surface); border: 1px solid var(--accent); border-radius: 16px; padding: 24px; }
+    .anchor-stage { width: 220px; height: 220px; }
+    .anchor-stage svg { width: 100%; height: 100%; overflow: visible; }
+    .anchor-meta { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); line-height: 1.7; white-space: pre; }
+    .anchor-label { font-family: var(--serif); font-size: 18px; color: var(--accent-bright); margin-bottom: 8px; }
+
+    /* Neighborhood grid */
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 20px; }
+    .card { background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; padding: 22px 18px 14px; text-align: center; cursor: pointer; transition: border-color 120ms, transform 120ms; }
+    .card:hover { border-color: var(--accent); }
+    .card.pinned { border-color: var(--signal); box-shadow: 0 0 0 1px var(--signal); }
+    .stage { width: 140px; height: 140px; margin: 0 auto 8px; display: grid; place-items: center; }
+    .stage svg { width: 100%; height: 100%; overflow: visible; }
+    .mini-row { display: flex; justify-content: center; gap: 14px; align-items: end; margin: 8px 0 10px; padding: 8px 0; border-top: 1px dashed var(--rule); border-bottom: 1px dashed var(--rule); }
+    .mini { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+    .mini svg { overflow: visible; }
+    .mini span { font-family: var(--mono); font-size: 9px; color: var(--ink-faint); }
+    .card-title { font-family: var(--serif); font-size: 15px; color: var(--ink); margin-top: 6px; }
+    .card-meta { font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); margin-top: 6px; line-height: 1.55; white-space: pre; }
+
+    /* Size gauntlet */
+    .gauntlet {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+    }
+    .gauntlet-panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; padding: 24px; }
+    .gauntlet-panel.light-panel { background: #f6f9fa; color: #0d1f26; border-color: #dfe5e7; }
+    .gauntlet-panel h3 { font-family: var(--serif); font-weight: 400; font-size: 18px; margin: 0 0 18px; }
+    .gauntlet-panel.light-panel h3 { color: #0d1f26; }
+    .size-row { display: flex; align-items: end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .size-slot { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    .size-slot svg { overflow: visible; }
+    .size-slot span { font-family: var(--mono); font-size: 10px; color: var(--ink-faint); }
+    .light-panel .size-slot span { color: #94a4a9; }
+
+    /* In-context preview — fake brand mark */
+    .context-row { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--rule); display: flex; flex-direction: column; gap: 14px; }
+    .light-panel .context-row { border-top-color: #dfe5e7; }
+    .brand { display: inline-flex; align-items: baseline; gap: 4px; font-family: var(--serif); font-size: 26px; letter-spacing: 0.01em; }
+    .brand .mark { color: var(--accent); display: inline-flex; }
+    .light-panel .brand .mark { color: #c26a1f; }
+    .brand .mark svg { width: 16px; height: 16px; overflow: visible; }
+    .brand-sm { font-size: 18px; }
+    .brand-sm .mark svg { width: 12px; height: 12px; }
+
+    .footer { padding: 16px 40px 40px; color: var(--ink-faint); font-family: var(--mono); font-size: 11px; }
+    a { color: var(--accent-bright); }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>neighborhood <em>+</em> size gauntlet</h1>
+      <div class="lede">Anchor is the turbulent variant you liked. Twelve neighbors below it with ±2° angle jitter and ±1.5px offset jitter per layer. Click any card to promote it to the anchor and resample around it. Size gauntlet at the bottom shows the anchor at real header sizes on dark and light.</div>
+    </div>
+    <div class="controls">
+      <div class="group" aria-label="Fill style">
+        <button id="btnOutline" class="active">outlined</button>
+        <button id="btnFill">filled</button>
+        <button id="btnMixed">mixed</button>
+      </div>
+      <div class="group" aria-label="Jitter radius">
+        <button id="btnTight">tight (±1°/±1px)</button>
+        <button id="btnMed" class="active">medium (±2°/±1.5px)</button>
+        <button id="btnWide">wide (±4°/±3px)</button>
+      </div>
+      <button id="btnTheme">toggle theme</button>
+      <button id="btnRegen">regenerate</button>
+    </div>
+  </header>
+
+  <section>
+    <h2 class="section-title">anchor</h2>
+    <p class="section-sub">the variant you approved — L0 +20.4° (-0.3, +6.6) · L1 -17.2° (-5.8, +8.4) · L2 +0.4° (+2.1, +9.8)</p>
+    <div class="anchor-row">
+      <div class="anchor-stage" id="anchorStage"></div>
+      <div>
+        <div class="anchor-label" id="anchorLabel">origin</div>
+        <div class="anchor-meta" id="anchorMeta"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="section-title">neighborhood</h2>
+    <p class="section-sub">click a card to promote it as the new anchor — the others resample around it</p>
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <section>
+    <h2 class="section-title">size gauntlet</h2>
+    <p class="section-sub">anchor rendered at real sizes — 48 / 32 / 24 / 20 / 16 / 15 / 12 px — over dark and light surfaces, plus in-context brand marks</p>
+    <div class="gauntlet">
+      <div class="gauntlet-panel">
+        <h3>dark (topbar)</h3>
+        <div class="size-row" id="gauntletDark"></div>
+        <div class="context-row" id="contextDark"></div>
+      </div>
+      <div class="gauntlet-panel light-panel">
+        <h3>light (shallow water)</h3>
+        <div class="size-row" id="gauntletLight"></div>
+        <div class="context-row" id="contextLight"></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="footer">
+    anchor state is held in-memory — reload resets to the seed variant. pivot (128, 150).
+  </div>
+
+  <script>
+    const TRI_OUTLINE = "M236.8,188.09,149.35,36.22a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19A23.51,23.51,0,0,0,236.8,188.09ZM222.93,203.8a8.5,8.5,0,0,1-7.48,4.2H40.55a8.5,8.5,0,0,1-7.48-4.2,7.59,7.59,0,0,1,0-7.72L120.52,44.21a8.75,8.75,0,0,1,15,0l87.45,151.87A7.59,7.59,0,0,1,222.93,203.8Z";
+    const TRI_FILL    = "M149.35,36.22a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19,23.51,23.51,0,0,0,0-23.72Z";
+
+    // The variant Myra approved
+    const SEED_ANCHOR = [
+      { angle: 20.4, dx: -0.3, dy: 6.6 },
+      { angle: -17.2, dx: -5.8, dy: 8.4 },
+      { angle: 0.4, dx: 2.1, dy: 9.8 },
+    ];
+
+    let anchor = SEED_ANCHOR.map(l => ({...l}));
+    let fillMode = "outline";
+    let jitterMode = "med"; // tight | med | wide
+    let seedBase = Math.floor(Math.random() * 1e9);
+
+    const JITTER = {
+      tight: { angle: 1.0, offset: 1.0 },
+      med:   { angle: 2.0, offset: 1.5 },
+      wide:  { angle: 4.0, offset: 3.0 },
+    };
+
+    function mulberry32(seed){ return function(){ let t = seed += 0x6D2B79F5; t = Math.imul(t ^ (t>>>15), t|1); t ^= t + Math.imul(t ^ (t>>>7), t|61); return ((t ^ (t>>>14))>>>0)/4294967296; } }
+    const rand = (r, a, b) => a + r()*(b-a);
+
+    function pickPath(layerIdx){
+      if (fillMode === "outline") return TRI_OUTLINE;
+      if (fillMode === "fill") return TRI_FILL;
+      return layerIdx === 2 ? TRI_FILL : TRI_OUTLINE;
+    }
+    // mono amber, opacity ramp for depth
+    const OPACITIES = [0.28, 0.58, 1.0];
+
+    function svgFromLayers(layers, opts = {}) {
+      const { colorOverride } = opts;
+      const parts = layers.map((L, i) => {
+        const op = OPACITIES[i];
+        const fill = colorOverride || "var(--accent)";
+        return `<g transform="translate(${L.dx.toFixed(2)} ${L.dy.toFixed(2)}) rotate(${L.angle.toFixed(2)} 128 150)" opacity="${op}"><path d="${pickPath(i)}" fill="${fill}"/></g>`;
+      }).join("");
+      return `<svg viewBox="0 0 256 256">${parts}</svg>`;
+    }
+
+    function jitterLayers(base, seed){
+      const r = mulberry32(seed);
+      const j = JITTER[jitterMode];
+      return base.map(L => ({
+        angle: L.angle + rand(r, -j.angle, j.angle),
+        dx:    L.dx    + rand(r, -j.offset, j.offset),
+        dy:    L.dy    + rand(r, -j.offset, j.offset),
+      }));
+    }
+
+    function fmtLayer(L, i){
+      const s = n => (n >= 0 ? "+" : "") + n.toFixed(1);
+      return `L${i}  ${s(L.angle)}°  (${s(L.dx)}, ${s(L.dy)})`;
+    }
+
+    function renderAnchor() {
+      document.getElementById("anchorStage").innerHTML = svgFromLayers(anchor);
+      document.getElementById("anchorMeta").textContent = anchor.map(fmtLayer).join("\n");
+    }
+
+    function renderNeighborhood() {
+      const grid = document.getElementById("grid");
+      grid.innerHTML = "";
+      for (let i = 0; i < 12; i++) {
+        const seed = seedBase + i * 7919;
+        const layers = jitterLayers(anchor, seed);
+        const card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `
+          <div class="stage">${svgFromLayers(layers)}</div>
+          <div class="mini-row">
+            <div class="mini">${svgFromMini(layers, 32)}<span>32</span></div>
+            <div class="mini">${svgFromMini(layers, 20)}<span>20</span></div>
+            <div class="mini">${svgFromMini(layers, 16)}<span>16</span></div>
+            <div class="mini">${svgFromMini(layers, 12)}<span>12</span></div>
+          </div>
+          <div class="card-title">n.${String(i + 1).padStart(2, "0")}</div>
+          <div class="card-meta">${layers.map(fmtLayer).join("\n")}</div>`;
+        card.addEventListener("click", () => {
+          anchor = layers;
+          seedBase = Math.floor(Math.random() * 1e9);
+          renderAll();
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        });
+        grid.appendChild(card);
+      }
+    }
+
+    function svgFromMini(layers, size) {
+      const s = svgFromLayers(layers);
+      return s.replace("<svg ", `<svg width="${size}" height="${size}" `);
+    }
+
+    function renderGauntlet() {
+      const sizes = [48, 32, 24, 20, 16, 15, 12];
+      for (const targetId of ["gauntletDark", "gauntletLight"]) {
+        const row = document.getElementById(targetId);
+        row.innerHTML = sizes.map(sz => `
+          <div class="size-slot">
+            ${svgFromMini(anchor, sz)}
+            <span>${sz}px</span>
+          </div>`).join("");
+      }
+      // In-context brand marks
+      const brandHTML = (cls = "") => `
+        <div class="brand ${cls}">
+          fathom<span class="mark">${svgFromLayers(anchor)}</span>
+        </div>`;
+      document.getElementById("contextDark").innerHTML = brandHTML() + brandHTML("brand-sm");
+      document.getElementById("contextLight").innerHTML = brandHTML() + brandHTML("brand-sm");
+    }
+
+    function renderAll() {
+      renderAnchor();
+      renderNeighborhood();
+      renderGauntlet();
+    }
+
+    // Controls
+    const setActive = (id, group) => group.forEach(x => document.getElementById(x).classList.toggle("active", x === id));
+    const fillGroup = ["btnOutline", "btnFill", "btnMixed"];
+    const jitterGroup = ["btnTight", "btnMed", "btnWide"];
+
+    document.getElementById("btnOutline").onclick = () => { fillMode = "outline"; setActive("btnOutline", fillGroup); renderAll(); };
+    document.getElementById("btnFill").onclick    = () => { fillMode = "fill";    setActive("btnFill", fillGroup);    renderAll(); };
+    document.getElementById("btnMixed").onclick   = () => { fillMode = "mixed";   setActive("btnMixed", fillGroup);   renderAll(); };
+    document.getElementById("btnTight").onclick = () => { jitterMode = "tight"; setActive("btnTight", jitterGroup); renderNeighborhood(); };
+    document.getElementById("btnMed").onclick   = () => { jitterMode = "med";   setActive("btnMed",   jitterGroup); renderNeighborhood(); };
+    document.getElementById("btnWide").onclick  = () => { jitterMode = "wide";  setActive("btnWide",  jitterGroup); renderNeighborhood(); };
+    document.getElementById("btnRegen").onclick = () => { seedBase = Math.floor(Math.random() * 1e9); renderNeighborhood(); };
+    document.getElementById("btnTheme").onclick = () => {
+      const isLight = document.documentElement.getAttribute("data-theme") === "light";
+      document.documentElement.setAttribute("data-theme", isLight ? "dark" : "light");
+    };
+
+    renderAll();
+  </script>
+</body>
+</html>

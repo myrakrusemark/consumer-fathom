@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fathom logo — stack explorations</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0d1f26;
+      --bg-deep: #081519;
+      --surface: #142a33;
+      --surface-2: #1c3a45;
+      --ink: #f0e9d9;
+      --ink-soft: #9fb0b5;
+      --ink-faint: #5a6d74;
+      --rule: #1e3a47;
+      --rule-soft: #17303a;
+      --accent: #e8a24e;
+      --accent-bright: #f2b665;
+      --accent-soft: rgba(232, 162, 78, 0.14);
+      --signal: #5ce1c6;
+      --serif: "Instrument Serif", Georgia, serif;
+      --sans: "Inter", system-ui, sans-serif;
+      --mono: "JetBrains Mono", ui-monospace, monospace;
+    }
+    [data-theme="light"] {
+      --bg: #eef2f3;
+      --bg-deep: #dfe7ea;
+      --surface: #ffffff;
+      --surface-2: #f6f9fa;
+      --ink: #0d1f26;
+      --ink-soft: #4f6269;
+      --ink-faint: #94a4a9;
+      --rule: #dfe5e7;
+      --rule-soft: #e8eced;
+      --accent: #c26a1f;
+      --accent-bright: #e28233;
+      --accent-soft: rgba(194, 106, 31, 0.09);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; }
+    body {
+      min-height: 100dvh;
+      background:
+        radial-gradient(ellipse at 20% -10%, rgba(92, 225, 198, 0.06), transparent 55%),
+        radial-gradient(ellipse at 80% 110%, rgba(232, 162, 78, 0.05), transparent 50%),
+        var(--bg);
+    }
+
+    header {
+      padding: 40px 40px 8px;
+      display: flex; align-items: flex-end; justify-content: space-between;
+      gap: 24px; flex-wrap: wrap;
+      border-bottom: 1px solid var(--rule-soft);
+    }
+    h1 { font-family: var(--serif); font-weight: 400; font-size: 32px; margin: 0 0 4px; letter-spacing: 0.01em; }
+    h1 em { color: var(--accent); }
+    .lede { color: var(--ink-soft); font-size: 14px; max-width: 560px; line-height: 1.5; }
+    .controls { display: flex; gap: 8px; flex-wrap: wrap; }
+    button {
+      background: var(--surface); border: 1px solid var(--rule); color: var(--ink);
+      padding: 9px 14px; border-radius: 10px; font-family: var(--sans); font-size: 13px; cursor: pointer;
+      transition: border-color 120ms, color 120ms, background 120ms;
+    }
+    button:hover { border-color: var(--ink-faint); }
+    button.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-bright); }
+    .group { display: inline-flex; gap: 0; border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; }
+    .group button { border: 0; border-radius: 0; border-right: 1px solid var(--rule); }
+    .group button:last-child { border-right: 0; }
+    .group button.active { background: var(--accent-soft); color: var(--accent-bright); }
+
+    .grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 20px; padding: 28px 40px 80px;
+    }
+    .card {
+      background: var(--surface); border: 1px solid var(--rule); border-radius: 14px;
+      padding: 28px 18px 14px; text-align: center;
+      transition: border-color 120ms, transform 120ms;
+    }
+    .card:hover { border-color: var(--accent); }
+    .stage {
+      width: 140px; height: 140px; margin: 0 auto 14px;
+      display: grid; place-items: center;
+    }
+    .stage svg { width: 100%; height: 100%; overflow: visible; }
+    .title { font-family: var(--serif); font-size: 15px; color: var(--ink); }
+    .meta { font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); margin-top: 8px; line-height: 1.55; white-space: pre; }
+
+    .row-header {
+      padding: 24px 40px 8px; font-family: var(--serif); font-size: 20px; color: var(--ink-soft);
+      border-top: 1px solid var(--rule-soft);
+    }
+    .row-header:first-of-type { border-top: 0; }
+    .row-header small { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); margin-left: 10px; }
+
+    .footer {
+      padding: 16px 40px 40px; color: var(--ink-faint); font-family: var(--mono); font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>stack <em>explorations</em></h1>
+      <div class="lede">Three Phosphor triangles, layered. Random offsets and angles per layer — a stack of deltas seen from above. Each row uses a different jitter range.</div>
+    </div>
+    <div class="controls">
+      <div class="group" role="tablist" aria-label="Fill style">
+        <button id="btnOutline" class="active">outlined</button>
+        <button id="btnFill">filled</button>
+        <button id="btnMixed">mixed</button>
+      </div>
+      <div class="group" role="tablist" aria-label="Color mode">
+        <button id="btnMono" class="active">mono amber</button>
+        <button id="btnSediment">sediment</button>
+      </div>
+      <button id="btnTheme">toggle theme</button>
+      <button id="btnRegen">regenerate</button>
+    </div>
+  </header>
+
+  <div id="rows"></div>
+
+  <div class="footer">
+    seeds are deterministic per-tile until you regenerate. rotation pivots at (128, 150) — the triangle's visual center. viewBox 0 0 256 256.
+  </div>
+
+  <script>
+    // Phosphor outlined triangle (compound path — outer + inner for hollow look)
+    const TRI_OUTLINE = "M236.8,188.09,149.35,36.22a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19A23.51,23.51,0,0,0,236.8,188.09ZM222.93,203.8a8.5,8.5,0,0,1-7.48,4.2H40.55a8.5,8.5,0,0,1-7.48-4.2,7.59,7.59,0,0,1,0-7.72L120.52,44.21a8.75,8.75,0,0,1,15,0l87.45,151.87A7.59,7.59,0,0,1,222.93,203.8Z";
+    // Filled triangle, rounded corners (same silhouette, solid interior)
+    const TRI_FILL = "M149.35,36.22a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19,23.51,23.51,0,0,0,0-23.72Z";
+
+    // Mulberry32 seeded PRNG — deterministic per seed
+    function mulberry32(seed) {
+      return function () {
+        let t = (seed += 0x6d2b79f5);
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+    const rand = (r, a, b) => a + r() * (b - a);
+
+    // Rows: each describes a "jitter regime"
+    const ROWS = [
+      { title: "whisper",    subtitle: "±4° · ±3px",  angle: 4,  offset: 3,  count: 6 },
+      { title: "settled",    subtitle: "±8° · ±6px",  angle: 8,  offset: 6,  count: 6 },
+      { title: "drifted",    subtitle: "±14° · ±10px", angle: 14, offset: 10, count: 6 },
+      { title: "turbulent",  subtitle: "±22° · ±16px", angle: 22, offset: 16, count: 6 },
+    ];
+
+    let fillMode = "outline";   // outline | fill | mixed
+    let colorMode = "mono";      // mono | sediment
+    let seedBase = Math.floor(Math.random() * 1e9);
+
+    function pickPath(layerIdx, fillMode, r) {
+      if (fillMode === "outline") return TRI_OUTLINE;
+      if (fillMode === "fill") return TRI_FILL;
+      // mixed: top (layer 2) filled, back layers outlined
+      return layerIdx === 2 ? TRI_FILL : TRI_OUTLINE;
+    }
+    function pickColor(layerIdx, colorMode) {
+      if (colorMode === "mono") {
+        // same amber, descending opacity for depth
+        const opacities = [0.28, 0.58, 1.0];
+        return { fill: "var(--accent)", opacity: opacities[layerIdx] };
+      }
+      // sediment: back=muted cool, middle=warm dim, front=amber
+      const palette = [
+        { fill: "var(--ink-faint)", opacity: 0.85 },
+        { fill: "var(--ink-soft)",  opacity: 0.9  },
+        { fill: "var(--accent)",    opacity: 1.0  },
+      ];
+      return palette[layerIdx];
+    }
+
+    function svgFor(seed, angleRange, offsetRange) {
+      const r = mulberry32(seed);
+      const layers = [];
+      for (let i = 0; i < 3; i++) {
+        layers.push({
+          angle: rand(r, -angleRange, angleRange),
+          dx: rand(r, -offsetRange, offsetRange),
+          dy: rand(r, -offsetRange, offsetRange),
+        });
+      }
+      // Sort back-to-front by |offset| — larger offset sinks lower in stack (optional)
+      // Keeping index order so randomness is visible.
+      const parts = layers.map((L, i) => {
+        const { fill, opacity } = pickColor(i, colorMode);
+        const path = pickPath(i, fillMode, r);
+        const tx = L.dx.toFixed(2);
+        const ty = L.dy.toFixed(2);
+        const ang = L.angle.toFixed(2);
+        return `<g transform="translate(${tx} ${ty}) rotate(${ang} 128 150)" opacity="${opacity}"><path d="${path}" fill="${fill}"/></g>`;
+      }).join("");
+      return { svg: `<svg viewBox="0 0 256 256">${parts}</svg>`, layers };
+    }
+
+    function fmtLayer(L) {
+      const sign = (n) => (n >= 0 ? "+" : "") + n.toFixed(1);
+      return `${sign(L.angle)}° (${sign(L.dx)}, ${sign(L.dy)})`;
+    }
+
+    function render() {
+      const rowsEl = document.getElementById("rows");
+      rowsEl.innerHTML = "";
+      ROWS.forEach((row, rowIdx) => {
+        const header = document.createElement("div");
+        header.className = "row-header";
+        header.innerHTML = `${row.title} <small>${row.subtitle}</small>`;
+        rowsEl.appendChild(header);
+
+        const grid = document.createElement("div");
+        grid.className = "grid";
+        for (let i = 0; i < row.count; i++) {
+          const seed = seedBase + rowIdx * 104729 + i * 7919;
+          const { svg, layers } = svgFor(seed, row.angle, row.offset);
+          const card = document.createElement("div");
+          card.className = "card";
+          card.innerHTML = `
+            <div class="stage">${svg}</div>
+            <div class="title">${row.title}.${String(i + 1).padStart(2, "0")}</div>
+            <div class="meta">${layers.map((L, j) => `L${j}  ${fmtLayer(L)}`).join("\n")}</div>`;
+          grid.appendChild(card);
+        }
+        rowsEl.appendChild(grid);
+      });
+    }
+
+    // Controls
+    const setActive = (activeId, group) => {
+      group.forEach((id) => document.getElementById(id).classList.toggle("active", id === activeId));
+    };
+    const fillGroup = ["btnOutline", "btnFill", "btnMixed"];
+    const colorGroup = ["btnMono", "btnSediment"];
+
+    document.getElementById("btnOutline").onclick = () => { fillMode = "outline"; setActive("btnOutline", fillGroup); render(); };
+    document.getElementById("btnFill").onclick    = () => { fillMode = "fill";    setActive("btnFill", fillGroup);    render(); };
+    document.getElementById("btnMixed").onclick   = () => { fillMode = "mixed";   setActive("btnMixed", fillGroup);   render(); };
+    document.getElementById("btnMono").onclick     = () => { colorMode = "mono";     setActive("btnMono", colorGroup);     render(); };
+    document.getElementById("btnSediment").onclick = () => { colorMode = "sediment"; setActive("btnSediment", colorGroup); render(); };
+    document.getElementById("btnRegen").onclick   = () => { seedBase = Math.floor(Math.random() * 1e9); render(); };
+    document.getElementById("btnTheme").onclick   = () => {
+      const isLight = document.documentElement.getAttribute("data-theme") === "light";
+      document.documentElement.setAttribute("data-theme", isLight ? "dark" : "light");
+    };
+
+    render();
+  </script>
+</body>
+</html>

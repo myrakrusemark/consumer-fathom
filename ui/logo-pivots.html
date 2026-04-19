@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fathom logo — pivot explorer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0d1f26; --bg-deep: #081519; --surface: #142a33; --surface-2: #1c3a45;
+      --ink: #f0e9d9; --ink-soft: #9fb0b5; --ink-faint: #5a6d74;
+      --rule: #1e3a47; --rule-soft: #17303a;
+      --accent: #e8a24e; --accent-bright: #f2b665; --accent-soft: rgba(232, 162, 78, 0.14);
+      --signal: #5ce1c6;
+      --serif: "Instrument Serif", Georgia, serif;
+      --sans: "Inter", system-ui, sans-serif;
+      --mono: "JetBrains Mono", ui-monospace, monospace;
+    }
+    [data-theme="light"] {
+      --bg: #eef2f3; --bg-deep: #dfe7ea; --surface: #ffffff; --surface-2: #f6f9fa;
+      --ink: #0d1f26; --ink-soft: #4f6269; --ink-faint: #94a4a9;
+      --rule: #dfe5e7; --rule-soft: #e8eced;
+      --accent: #c26a1f; --accent-bright: #e28233; --accent-soft: rgba(194, 106, 31, 0.09);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; }
+    body {
+      min-height: 100dvh;
+      background:
+        radial-gradient(ellipse at 20% -10%, rgba(92, 225, 198, 0.06), transparent 55%),
+        radial-gradient(ellipse at 80% 110%, rgba(232, 162, 78, 0.05), transparent 50%),
+        var(--bg);
+    }
+
+    header { padding: 40px 40px 16px; display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; border-bottom: 1px solid var(--rule-soft); }
+    h1 { font-family: var(--serif); font-weight: 400; font-size: 32px; margin: 0 0 4px; letter-spacing: 0.01em; }
+    h1 em { color: var(--accent); }
+    .lede { color: var(--ink-soft); font-size: 14px; max-width: 640px; line-height: 1.5; }
+    .controls { display: flex; gap: 8px; flex-wrap: wrap; }
+    button { background: var(--surface); border: 1px solid var(--rule); color: var(--ink); padding: 9px 14px; border-radius: 10px; font-family: var(--sans); font-size: 13px; cursor: pointer; transition: border-color 120ms, color 120ms, background 120ms; }
+    button:hover { border-color: var(--ink-faint); }
+    button.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-bright); }
+    .group { display: inline-flex; gap: 0; border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; }
+    .group button { border: 0; border-radius: 0; border-right: 1px solid var(--rule); }
+    .group button:last-child { border-right: 0; }
+    .group button.active { background: var(--accent-soft); color: var(--accent-bright); }
+
+    section { padding: 24px 40px 48px; }
+    .section-title { font-family: var(--serif); font-size: 22px; color: var(--ink-soft); margin: 0 0 6px; }
+    .section-sub { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); margin: 0 0 20px; }
+
+    .pivot-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 20px;
+    }
+    .card {
+      background: var(--surface); border: 1px solid var(--rule); border-radius: 14px;
+      padding: 22px 18px 14px; text-align: center;
+      transition: border-color 120ms;
+    }
+    .card:hover { border-color: var(--accent); }
+    .card.featured { border-color: var(--signal); }
+    .stage-wrap { position: relative; width: 160px; height: 160px; margin: 0 auto; }
+    .stage-wrap svg { width: 100%; height: 100%; overflow: visible; }
+    .pivot-dot {
+      position: absolute; width: 8px; height: 8px; border-radius: 50%;
+      background: var(--signal); box-shadow: 0 0 0 2px var(--bg), 0 0 8px var(--signal);
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+    .mini-row { display: flex; justify-content: center; gap: 14px; align-items: end; margin: 10px 0 8px; padding: 8px 0; border-top: 1px dashed var(--rule); border-bottom: 1px dashed var(--rule); }
+    .mini { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+    .mini svg { overflow: visible; }
+    .mini span { font-family: var(--mono); font-size: 9px; color: var(--ink-faint); }
+    .card-title { font-family: var(--serif); font-size: 15px; color: var(--ink); margin-top: 6px; }
+    .card-meta { font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); margin-top: 4px; }
+
+    .footer { padding: 16px 40px 40px; color: var(--ink-faint); font-family: var(--mono); font-size: 11px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>pivot <em>explorer</em></h1>
+      <div class="lede">Same approved anchor — L0 +20.4° · L1 −17.2° · L2 +0.4° — but each card rotates all three layers around a different point. The teal dot marks the pivot. The centroid (current) spins in place; edge and external pivots swing the layers through space instead.</div>
+    </div>
+    <div class="controls">
+      <div class="group" aria-label="Fill style">
+        <button id="btnOutline" class="active">outlined</button>
+        <button id="btnFill">filled</button>
+        <button id="btnMixed">mixed</button>
+      </div>
+      <label style="display:inline-flex; align-items:center; gap:8px; color:var(--ink-soft); font-size:13px;">
+        <input type="checkbox" id="cbShowPivot" checked /> show pivot dot
+      </label>
+      <button id="btnTheme">toggle theme</button>
+    </div>
+  </header>
+
+  <section>
+    <h2 class="section-title">pivot variants</h2>
+    <p class="section-sub">9 structural pivots + 3 "same-point-jittered" variations</p>
+    <div class="pivot-grid" id="grid"></div>
+  </section>
+
+  <div class="footer">
+    viewBox 0 0 256 256 — triangle apex ~(128, 36), base ~(28–228, 208), centroid ~(128, 150).
+  </div>
+
+  <script>
+    const TRI_OUTLINE = "M236.8,188.09,149.35,36.22a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19A23.51,23.51,0,0,0,236.8,188.09ZM222.93,203.8a8.5,8.5,0,0,1-7.48,4.2H40.55a8.5,8.5,0,0,1-7.48-4.2,7.59,7.59,0,0,1,0-7.72L120.52,44.21a8.75,8.75,0,0,1,15,0l87.45,151.87A7.59,7.59,0,0,1,222.93,203.8Z";
+    const TRI_FILL    = "M149.35,36.22a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19,23.51,23.51,0,0,0,0-23.72Z";
+
+    // Approved anchor
+    const ANCHOR = [
+      { angle: 20.4, dx: -0.3, dy: 6.6 },
+      { angle: -17.2, dx: -5.8, dy: 8.4 },
+      { angle: 0.4, dx: 2.1, dy: 9.8 },
+    ];
+    const OPACITIES = [0.28, 0.58, 1.0];
+
+    // Pivot points — each variant uses ONE shared pivot for all layers
+    const PIVOTS = [
+      { id: "centroid",   label: "centroid (current)",     px: 128, py: 150, sub: "spins in place" },
+      { id: "apex",       label: "apex",                    px: 128, py: 36,  sub: "fans from peak" },
+      { id: "base-mid",   label: "base midpoint",           px: 128, py: 208, sub: "hinges on ground" },
+      { id: "base-left",  label: "base-left corner",        px: 28,  py: 208, sub: "pivots on a foot" },
+      { id: "base-right", label: "base-right corner",       px: 228, py: 208, sub: "pivots on a foot" },
+      { id: "upper",      label: "upper third",             px: 128, py: 100, sub: "mostly in place, fans below" },
+      { id: "lower",      label: "lower third",             px: 128, py: 180, sub: "fans above" },
+      { id: "left-edge",  label: "left edge mid",           px: 78,  py: 130, sub: "rotates through body" },
+      { id: "external",   label: "below (external)",        px: 128, py: 300, sub: "pendulum hanging" },
+    ];
+
+    // "Same-pivot-per-layer-but-jittered" — each layer gets its own nearby pivot
+    const JITTERED = [
+      { id: "jit-apex",     label: "apex ± jitter",     px: 128, py: 36,  jitter: 18 },
+      { id: "jit-base-mid", label: "base-mid ± jitter", px: 128, py: 208, jitter: 18 },
+      { id: "jit-centroid", label: "centroid ± jitter (your current)", px: 128, py: 150, jitter: 0 },
+    ];
+
+    let fillMode = "outline";
+    let showPivot = true;
+
+    function pickPath(i){
+      if (fillMode === "outline") return TRI_OUTLINE;
+      if (fillMode === "fill") return TRI_FILL;
+      return i === 2 ? TRI_FILL : TRI_OUTLINE;
+    }
+
+    // Build SVG — each layer shares the same pivot, or uses per-layer pivots if provided
+    function svgFromPivot(layers, pivot, perLayerPivots = null) {
+      const parts = layers.map((L, i) => {
+        const p = perLayerPivots ? perLayerPivots[i] : pivot;
+        return `<g transform="translate(${L.dx.toFixed(2)} ${L.dy.toFixed(2)}) rotate(${L.angle.toFixed(2)} ${p.px} ${p.py})" opacity="${OPACITIES[i]}"><path d="${pickPath(i)}" fill="var(--accent)"/></g>`;
+      }).join("");
+      return `<svg viewBox="0 0 256 256">${parts}</svg>`;
+    }
+
+    function pivotDotStyle(pivot, stageSize = 160) {
+      // viewBox is 0-256; stage is stageSize px. Translate to %
+      const xPct = (pivot.px / 256) * 100;
+      const yPct = (pivot.py / 256) * 100;
+      return `left: ${xPct}%; top: ${yPct}%;`;
+    }
+
+    function mulberry32(seed){ return function(){ let t = seed += 0x6D2B79F5; t = Math.imul(t ^ (t>>>15), t|1); t ^= t + Math.imul(t ^ (t>>>7), t|61); return ((t ^ (t>>>14))>>>0)/4294967296; } }
+    const rand = (r, a, b) => a + r()*(b-a);
+
+    function renderCard({ id, label, sub, px, py, jitter = null }) {
+      const pivot = { px, py };
+      let perLayerPivots = null;
+      if (jitter !== null) {
+        const r = mulberry32(id.split("").reduce((a,c)=>a+c.charCodeAt(0),0));
+        perLayerPivots = ANCHOR.map(() => ({
+          px: px + rand(r, -jitter, jitter),
+          py: py + rand(r, -jitter, jitter),
+        }));
+      }
+
+      const card = document.createElement("div");
+      card.className = "card" + (id === "centroid" ? " featured" : "");
+      const svg = svgFromPivot(ANCHOR, pivot, perLayerPivots);
+      const dotsHTML = showPivot && !perLayerPivots
+        ? `<div class="pivot-dot" style="${pivotDotStyle(pivot)}"></div>`
+        : showPivot && perLayerPivots
+        ? perLayerPivots.map(p => `<div class="pivot-dot" style="${pivotDotStyle(p)}; opacity:0.6;"></div>`).join("")
+        : "";
+      const sizes = [32, 20, 16, 12];
+      const mini = sizes.map(sz => {
+        const s = svgFromPivot(ANCHOR, pivot, perLayerPivots).replace("<svg ", `<svg width="${sz}" height="${sz}" `);
+        return `<div class="mini">${s}<span>${sz}</span></div>`;
+      }).join("");
+
+      card.innerHTML = `
+        <div class="stage-wrap">${svg}${dotsHTML}</div>
+        <div class="mini-row">${mini}</div>
+        <div class="card-title">${label}</div>
+        <div class="card-meta">${sub}${jitter === null ? ` · (${px}, ${py})` : ` · ±${jitter}px`}</div>`;
+      return card;
+    }
+
+    function renderAll() {
+      const grid = document.getElementById("grid");
+      grid.innerHTML = "";
+      [...PIVOTS, ...JITTERED].forEach(p => {
+        grid.appendChild(renderCard(p));
+      });
+    }
+
+    // Controls
+    const fillGroup = ["btnOutline", "btnFill", "btnMixed"];
+    const setActive = (id) => fillGroup.forEach(x => document.getElementById(x).classList.toggle("active", x === id));
+    document.getElementById("btnOutline").onclick = () => { fillMode = "outline"; setActive("btnOutline"); renderAll(); };
+    document.getElementById("btnFill").onclick    = () => { fillMode = "fill";    setActive("btnFill");    renderAll(); };
+    document.getElementById("btnMixed").onclick   = () => { fillMode = "mixed";   setActive("btnMixed");   renderAll(); };
+    document.getElementById("cbShowPivot").onchange = (e) => { showPivot = e.target.checked; renderAll(); };
+    document.getElementById("btnTheme").onclick = () => {
+      const isLight = document.documentElement.getAttribute("data-theme") === "light";
+      document.documentElement.setAttribute("data-theme", isLight ? "dark" : "light");
+    };
+
+    renderAll();
+  </script>
+</body>
+</html>
