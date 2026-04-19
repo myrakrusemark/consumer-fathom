@@ -18,7 +18,7 @@ See fathom2/docs/routine-spec.md for the canonical field reference.
 from __future__ import annotations
 
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 from . import delta_client
 
@@ -380,13 +380,20 @@ async def soft_delete(routine_id: str) -> dict:
 
 
 async def fire(routine_id: str, prompt_override: str | None = None) -> dict:
-    """Write a routine-fire delta. The kitty plugin (or other consumer) picks it up."""
+    """Write a routine-fire delta. The kitty plugin (or other consumer) picks it up.
+
+    Stamps a `fired-at:<iso>` tag so repeat fires of the same routine bypass
+    the lake's sequential dedup (which skips writes when source + tags +
+    content all match the previous delta). Without this tag, clicking "Fire
+    now" twice in a row for the same routine would be a no-op.
+    """
     existing = await get_latest_spec(routine_id)
     if not existing or existing["meta"].get("deleted"):
         raise FileNotFoundError(f"Routine {routine_id} not found")
     meta = existing["meta"]
     body = prompt_override if prompt_override is not None else existing["body"]
-    tags = ["routine-fire", f"routine-id:{routine_id}"]
+    fired_at = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    tags = ["routine-fire", f"routine-id:{routine_id}", f"fired-at:{fired_at}"]
     if existing["workspace"]:
         tags.append(f"workspace:{existing['workspace']}")
     mode = str(meta.get("permission_mode") or "auto").strip()
