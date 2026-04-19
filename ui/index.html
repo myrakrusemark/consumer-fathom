@@ -1510,6 +1510,41 @@
     .agent-plugin-chip .pextra { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
     .agent-plugin-chip[data-enabled="false"] { opacity: 0.45; }
 
+    /* Runtime plugins inlined into the status row: small mono pill, no chip
+       border — reads as metadata about the agent, not as a standalone item. */
+    .agent-plugin-inline {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 2px 8px; border-radius: 4px;
+      background: rgba(255,255,255,0.03);
+      font-size: 12px;
+    }
+    .agent-plugin-inline .pname { color: var(--ink-soft); }
+    .agent-plugin-inline .pextra { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
+
+    /* Label above the install tiles when an agent is already connected —
+       signals the tiles are "add another" rather than "install your first". */
+    .agent-add-another {
+      font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--ink-faint);
+      margin: 14px 0 8px;
+    }
+
+    /* Routines subsection inside the Agent section. Tighter than a top-level
+       section — it's nested, not standalone. */
+    .agent-routines { margin-top: 18px; }
+    .agent-routines-head {
+      display: flex; align-items: baseline; gap: 10px;
+      margin-bottom: 10px;
+    }
+    .agent-routines-head h3 {
+      font-family: var(--serif); font-weight: 400;
+      font-size: 17px; margin: 0;
+    }
+    .agent-routines-head .meta {
+      font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--ink-faint);
+    }
+
     /* Inline "fedora agent" label chip — introduces the group of agent-pushed
        source chips that follow it. Not a real chip (no dot, no border), just
        a mono-typed label that sits in the same flex-wrap as the source chips. */
@@ -1629,19 +1664,10 @@
          the chip in the top-left is the next routine that will fire. The
          secondary text on each chip is a countdown ("in 23m"). Tap a chip
          to open the routine detail view, same shape as the source detail. -->
-    <section class="section" id="routinesSection" hidden>
-      <div class="section-head">
-        <h2>Routines</h2>
-        <span class="meta" id="routinesMeta">loading…</span>
-      </div>
-      <div class="sources" id="routinesList">
-        <!-- Populated by loadRoutines() / renderRoutines() -->
-        <button class="chip add" id="newRoutineBtn" type="button">+ New routine</button>
-      </div>
-    </section>
-
     <!-- Agent — the local runtime. Shows a connected status when alive,
-         or an install callout (snazzy) when not. -->
+         or an install callout (snazzy) when not. Routines live inside
+         this section because they're inherently agent-scoped: they fire
+         into claude sessions that the local agent spawns. -->
     <section class="section" id="agentSection">
       <div class="section-head">
         <h2>Agent</h2>
@@ -2296,12 +2322,18 @@
       return `<span class="chip" data-source="${src.id}" data-state="${state}"><span class="dot"></span><span class="label">${label}</span></span>`;
     }
 
+    // Source types hidden from the cloud Sources section because they're
+    // better handled by the local fathom-agent (e.g. `vault` is a watcher
+    // plugin, not a cloud-polled source). The source-runner may still list
+    // them, but the dashboard pretends it doesn't see them.
+    const AGENT_OWNED_SOURCE_TYPES = new Set(['vault']);
+
     async function loadSources() {
       try {
         const r = await fetch(API_BASE + '/v1/sources', { headers: authHeaders() });
         if (!r.ok) return;
         const data = await r.json();
-        const sources = data.sources || [];
+        const sources = (data.sources || []).filter(s => !AGENT_OWNED_SOURCE_TYPES.has(s.source_type));
         _sources = {};
         _availableTypes = sources.filter(s => s.status === 'available');
         sources.forEach(s => { _sources[s.id] = s; });
@@ -2740,9 +2772,9 @@
     // Routines are spec deltas in the lake. CRUD = write a new spec with the
     // same routine-id. See /v1/routines/* endpoints in api/server.py.
 
-    const routinesList = document.getElementById('routinesList');
-    const routinesMeta = document.getElementById('routinesMeta');
-    const newRoutineBtn = document.getElementById('newRoutineBtn');
+    // Routines render inside the Agent section's body (injected by
+    // renderAgentSection when an agent is alive). Multiple per-host lists
+    // exist simultaneously, keyed by [data-routine-list="<host>"].
     let _routineCache = [];      // most recent list from backend
     let _openEditorFor = null;   // routine-id currently in edit mode, or '__new__', or null
     let _agentStatus = { alive: false, agents: [] };  // populated by loadAgentStatus()
@@ -2841,43 +2873,47 @@
         return;
       }
 
-      const a = agents[0];
-      const plugins = a.plugins || {};
-      const sourceEntries = Object.entries(plugins).filter(([name, p]) => {
-        const m = PLUGIN_META[name] || { role: 'source' };
-        return p && p.enabled && m.role === 'source';
-      });
-      _agentSourceCount = sourceEntries.length;
-      _updateSourcesMeta();
-      if (sourceEntries.length === 0) return;
-
-      // Build a fragment: line-break spacer (zero-height flex 100%) →
-      // agent label → source chips. A <br> doesn't work here because
-      // Chrome ignores width on br inside flex containers.
+      // Each connected agent gets its own newline + `<host> agent` label +
+      // chips for its source-role plugins. Multiple agents stack vertically
+      // in the same flex-wrap row.
       const frag = document.createDocumentFragment();
+      let totalSources = 0;
 
-      const brk = document.createElement('div');
-      brk.className = 'line-break';
-      brk.setAttribute('data-agent-chip', '');
-      frag.appendChild(brk);
+      for (const a of agents) {
+        const plugins = a.plugins || {};
+        const sourceEntries = Object.entries(plugins).filter(([name, p]) => {
+          const m = PLUGIN_META[name] || { role: 'source' };
+          return p && p.enabled && m.role === 'source';
+        });
+        if (sourceEntries.length === 0) continue;
+        totalSources += sourceEntries.length;
 
-      const label = document.createElement('div');
-      label.className = 'chip agent-label';
-      label.setAttribute('data-agent-chip', '');
-      label.innerHTML = `${_esc(a.host)} agent`;
-      frag.appendChild(label);
+        const brk = document.createElement('div');
+        brk.className = 'line-break';
+        brk.setAttribute('data-agent-chip', '');
+        frag.appendChild(brk);
 
-      for (const [name, p] of sourceEntries) {
-        const pm = PLUGIN_META[name] || { label: name };
-        const extra = _pluginExtra(name, p);
-        const chip = document.createElement('div');
-        chip.className = 'chip';
-        chip.setAttribute('data-state', 'active');
-        chip.setAttribute('data-agent-chip', '');
-        chip.title = `pushed by ${a.host} agent`;
-        chip.innerHTML = `<span class="dot"></span><span class="label">${_esc(pm.label)}${extra ? ` <span class="source-type">${_esc(extra)}</span>` : ''}</span>`;
-        frag.appendChild(chip);
+        const label = document.createElement('div');
+        label.className = 'chip agent-label';
+        label.setAttribute('data-agent-chip', '');
+        label.innerHTML = `${_esc(a.host)} agent`;
+        frag.appendChild(label);
+
+        for (const [name, p] of sourceEntries) {
+          const pm = PLUGIN_META[name] || { label: name };
+          const extra = _pluginExtra(name, p);
+          const chip = document.createElement('div');
+          chip.className = 'chip';
+          chip.setAttribute('data-state', 'active');
+          chip.setAttribute('data-agent-chip', '');
+          chip.title = `pushed by ${a.host} agent`;
+          chip.innerHTML = `<span class="dot"></span><span class="label">${_esc(pm.label)}${extra ? ` <span class="source-type">${_esc(extra)}</span>` : ''}</span>`;
+          frag.appendChild(chip);
+        }
       }
+
+      _agentSourceCount = totalSources;
+      _updateSourcesMeta();
 
       // Append after the + Add source button so the new line is always at
       // the end of the sources flow.
@@ -2890,46 +2926,7 @@
       const agents = _agentStatus.agents || [];
       // Render the agent-sources sub-group inside Sources (split by role)
       renderAgentSources();
-      if (_agentStatus.alive && agents.length) {
-        // Connected view — status row + runtime plugins (non-source).
-        // Source-role plugins live in the Sources section now.
-        const a = agents[0];
-        const plugins = a.plugins || {};
-        const runtimeEntries = Object.entries(plugins).filter(([name, p]) => {
-          const m = PLUGIN_META[name] || { role: 'source' };
-          return p && p.enabled && m.role === 'runtime';
-        });
-        const totalEnabled = Object.values(plugins).filter(p => p && p.enabled).length;
-        meta.textContent = `connected · ${a.host} · ${totalEnabled} plugin${totalEnabled === 1 ? '' : 's'}`;
-        const runtimeHtml = runtimeEntries.length ? `
-          <div class="agent-plugins">
-            ${runtimeEntries.map(([name, p]) => {
-              const pm = PLUGIN_META[name] || { label: name };
-              const extra = _pluginExtra(name, p);
-              return `<div class="agent-plugin-chip" data-enabled="${!!p.enabled}" title="runtime plugin">
-                <span class="pname">${pm.label}</span>
-                ${extra ? `<span class="pextra">${_esc(extra)}</span>` : ''}
-              </div>`;
-            }).join('')}
-          </div>` : '';
-        body.innerHTML = `
-          <div class="agent-connected">
-            <div class="agent-connected-status">
-              <span class="dot"></span>
-              <span class="host">${_esc(a.host)}</span>
-              ${a.version ? `<span style="color: var(--ink-faint); font-family: var(--mono); font-size: 11px;">v${_esc(a.version)}</span>` : ''}
-              <span class="meta-line">${a.uptime_s != null ? `up ${Math.round(a.uptime_s / 60)}m` : ''}</span>
-            </div>
-            ${runtimeHtml}
-          </div>`;
-      } else {
-        // Install view — snazzy callout + platform cards
-        meta.textContent = 'not installed';
-        body.innerHTML = `
-          <div class="agent-callout">
-            <h3>Install the Fathom agent and unlock routines and local sources.</h3>
-            <p>The agent runs locally on your machine. It watches your files, tracks system health, and executes scheduled Routines — prompts that fire into a local claude session on a schedule of your choosing.</p>
-          </div>
+      const platformTiles = `
           <div class="extend-grid">
             <div class="extend" data-surface="agent-linux">
               <span class="extend-icon">🐧</span>
@@ -2944,6 +2941,73 @@
               <div class="extend-text"><span class="label">Windows</span><span class="sub">scheduled task</span></div>
             </div>
           </div>`;
+
+      if (_agentStatus.alive && agents.length) {
+        // Connected view — one status row per host. Runtime plugins (non-
+        // source) are inlined into the status row as small mono pills; the
+        // separate plugins sub-row has been folded in for compactness.
+        // Source-role plugins still live in the Sources section.
+        const totalEnabled = agents.reduce(
+          (n, a) => n + Object.values(a.plugins || {}).filter(p => p && p.enabled).length,
+          0
+        );
+        const agentWord = agents.length === 1 ? 'agent' : 'agents';
+        meta.textContent = `connected · ${agents.length} ${agentWord} · ${totalEnabled} plugin${totalEnabled === 1 ? '' : 's'}`;
+
+        // Per-agent layout: status row + its routines subsection, then the
+        // platform tiles below for adding another machine. Routines are
+        // scoped per-host — each block shows routines pinned to that host
+        // (via meta.host) plus fleet-wide routines (no host set). The
+        // "+ New routine" chip defaults the host to that agent.
+        const perAgentHtml = agents.map(a => {
+          const plugins = a.plugins || {};
+          const runtimeEntries = Object.entries(plugins).filter(([name, p]) => {
+            const m = PLUGIN_META[name] || { role: 'source' };
+            return p && p.enabled && m.role === 'runtime';
+          });
+          const runtimeInline = runtimeEntries.map(([name, p]) => {
+            const pm = PLUGIN_META[name] || { label: name };
+            const extra = _pluginExtra(name, p);
+            return `<span class="agent-plugin-inline" title="runtime plugin">
+              <span class="pname">${pm.label}</span>${extra ? ` <span class="pextra">${_esc(extra)}</span>` : ''}
+            </span>`;
+          }).join('');
+          return `
+            <div class="agent-connected">
+              <div class="agent-connected-status">
+                <span class="dot"></span>
+                <span class="host">${_esc(a.host)}</span>
+                ${a.version ? `<span style="color: var(--ink-faint); font-family: var(--mono); font-size: 11px;">v${_esc(a.version)}</span>` : ''}
+                ${runtimeInline}
+                <span class="meta-line">${a.uptime_s != null ? `up ${Math.round(a.uptime_s / 60)}m` : ''}</span>
+              </div>
+              <div class="agent-routines" data-host="${_esc(a.host)}">
+                <div class="agent-routines-head">
+                  <h3>Routines on ${_esc(a.host)}</h3>
+                  <span class="meta">loading…</span>
+                </div>
+                <div class="sources" data-routine-list="${_esc(a.host)}">
+                  <button class="chip add" data-new-routine-for="${_esc(a.host)}" type="button">+ New routine</button>
+                </div>
+              </div>
+            </div>`;
+        }).join('');
+
+        // Show the install CTAs beneath connected agents — makes it obvious
+        // how to add another machine to the fleet.
+        body.innerHTML = perAgentHtml + `<div class="agent-add-another">Add another machine</div>` + platformTiles;
+
+        // Now that #routinesList exists in the DOM again, paint routine chips
+        // into it. renderRoutines() is idempotent; safe to call repeatedly.
+        renderRoutines();
+      } else {
+        // Install view — banner + platform cards
+        meta.textContent = 'not installed';
+        body.innerHTML = `
+          <div class="agent-callout">
+            <h3>Install the Fathom agent and unlock routines and local sources.</h3>
+            <p>The agent runs locally on your machine. It watches your files, tracks system health, and executes scheduled Routines — prompts that fire into a local claude session on a schedule of your choosing.</p>
+          </div>` + platformTiles;
       }
     }
 
@@ -2955,9 +3019,13 @@
         const data = await r.json();
         _routineCache = data.routines || [];
       } catch (e) {
-        routinesList.innerHTML = `<button class="chip add" id="newRoutineBtn" type="button">+ New routine</button><div class="meta" style="flex-basis:100%">failed to load routines: ${_esc(e.message)}</div>`;
-        _wireAddRoutineChip();
-        routinesMeta.textContent = '';
+        // Paint the error into every per-host list so it's visible regardless
+        // of which agent block is being viewed. Non-fatal; retry on next poll.
+        document.querySelectorAll('[data-routine-list]').forEach(list => {
+          const host = list.dataset.routineList || '';
+          list.innerHTML = `<button class="chip add" data-new-routine-for="${_esc(host)}" type="button">+ New routine</button><div class="meta" style="flex-basis:100%">failed to load routines: ${_esc(e.message)}</div>`;
+        });
+        _wireAddRoutineChips();
         return;
       }
       renderRoutines();
@@ -2996,28 +3064,18 @@
       const when = _nextFireText(r);
       const diff = (Number(r.next_fire_at || 0) * 1000) - Date.now();
       const soon = r.enabled && diff > 0 && diff < 10 * 60 * 1000;  // <10min highlights
+      // Fleet-wide routines get a subtle marker so they're distinguishable
+      // from host-pinned ones sitting in the same agent block.
+      const fleetwide = !r.host ? ' <span class="next-fire" style="opacity:.6">· any</span>' : '';
       return `<span class="chip" data-routine="${_esc(r.id)}" data-state="${state}">
         <span class="dot"></span>
-        <span class="label">${_esc(name)} <span class="next-fire${soon ? ' soon' : ''}">${_esc(when)}</span></span>
+        <span class="label">${_esc(name)} <span class="next-fire${soon ? ' soon' : ''}">${_esc(when)}</span>${fleetwide}</span>
       </span>`;
     }
 
-    function renderRoutines() {
-      const section = document.getElementById('routinesSection');
-
-      // No live agent → hide the whole Routines section. The Agent section
-      // below has the install callout covering the "unlock this" message.
-      if (!_agentStatus.alive) {
-        if (section) section.hidden = true;
-        return;
-      }
-      if (section) section.hidden = false;
-
-      const enabled = _routineCache.filter(r => r.enabled).length;
-      routinesMeta.textContent = _routineCache.length ? `${enabled} active · ${_routineCache.length} total` : 'none yet';
-
-      // Timeline sort: enabled routines by next_fire_at asc, then disabled.
-      const sorted = _routineCache.slice().sort((a, b) => {
+    // Timeline sort: enabled routines by next_fire_at asc, then disabled.
+    function _sortRoutines(arr) {
+      return arr.slice().sort((a, b) => {
         if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
         const an = Number(a.next_fire_at || 0);
         const bn = Number(b.next_fire_at || 0);
@@ -3026,20 +3084,43 @@
         if (bn) return 1;
         return (a.name || a.id).localeCompare(b.name || b.id);
       });
+    }
 
-      const chipsHtml = sorted.map(_routineChipHTML).join('');
-      routinesList.innerHTML = chipsHtml + '<button class="chip add" id="newRoutineBtn" type="button">+ New routine</button>';
-      _wireAddRoutineChip();
+    function renderRoutines() {
+      // One list per agent block (keyed by host). An agent sees routines
+      // pinned to its host and fleet-wide routines (no host set).
+      const lists = document.querySelectorAll('[data-routine-list]');
+      if (!lists.length || !_agentStatus.alive) return;
+
+      for (const list of lists) {
+        const host = list.dataset.routineList;
+        const mine = _routineCache.filter(r => !r.host || r.host === host);
+        const chipsHtml = _sortRoutines(mine).map(_routineChipHTML).join('');
+        list.innerHTML = chipsHtml + `<button class="chip add" data-new-routine-for="${_esc(host)}" type="button">+ New routine</button>`;
+
+        // Per-block meta: counts scoped to this host's view.
+        const metaEl = list.closest('.agent-routines')?.querySelector('.agent-routines-head .meta');
+        if (metaEl) {
+          const enabled = mine.filter(r => r.enabled).length;
+          metaEl.textContent = mine.length ? `${enabled} active · ${mine.length} total` : 'none yet';
+        }
+      }
+      _wireAddRoutineChips();
       _wireRoutineChips();
     }
 
-    function _wireAddRoutineChip() {
-      const btn = document.getElementById('newRoutineBtn');
-      if (btn) btn.addEventListener('click', openAddRoutine);
+    function _wireAddRoutineChips() {
+      document.querySelectorAll('[data-new-routine-for]').forEach(btn => {
+        btn.addEventListener('click', () => openAddRoutine(btn.dataset.newRoutineFor || ''));
+      });
     }
 
     function _wireRoutineChips() {
-      routinesList.querySelectorAll('.chip[data-routine]').forEach(chip => {
+      // Wire every routine chip in every per-host list. De-dup by setting a
+      // marker so repeated render calls don't stack listeners.
+      document.querySelectorAll('[data-routine-list] .chip[data-routine]').forEach(chip => {
+        if (chip._wired) return;
+        chip._wired = true;
         chip.addEventListener('click', () => {
           if (chip._longPressed) { chip._longPressed = false; return; }
           openRoutineDetail(chip.dataset.routine);
@@ -3063,10 +3144,23 @@
     function renderEditorHtml(existing) {
       const isEdit = !!existing;
       const r = existing || {
-        id: '', name: '', workspace: 'fathom2', schedule: '0 * * * *', prompt: '',
+        id: '', name: '', workspace: 'fathom2', host: '', schedule: '0 * * * *', prompt: '',
         permission_mode: 'auto', enabled: true, single_fire: false,
       };
       const preset = inferPreset(r.schedule);
+      // Build the host dropdown from currently-connected agents plus an
+      // "any" fleet-wide option. Pre-selects the routine's current host.
+      const hostOptions = [
+        `<option value="">any (fleet-wide)</option>`,
+        ...(_agentStatus.agents || []).map(a =>
+          `<option value="${_esc(a.host)}" ${a.host === (r.host || '') ? 'selected' : ''}>${_esc(a.host)}</option>`
+        ),
+      ];
+      // If the routine is pinned to a host that isn't currently connected,
+      // keep the value so it's preserved on save.
+      if (r.host && !(_agentStatus.agents || []).some(a => a.host === r.host)) {
+        hostOptions.push(`<option value="${_esc(r.host)}" selected>${_esc(r.host)} (offline)</option>`);
+      }
       return `
         <div class="routine-editor" data-editing="${_esc(isEdit ? r.id : '__new__')}">
           <div class="field-row">
@@ -3077,6 +3171,10 @@
             <div class="form-group">
               <label>name</label>
               <input class="form-input" data-f="name" type="text" value="${_esc(r.name)}" placeholder="Human-readable" />
+            </div>
+            <div class="form-group">
+              <label>host</label>
+              <select class="form-input" data-f="host">${hostOptions.join('')}</select>
             </div>
             <div class="form-group">
               <label>workspace</label>
@@ -3191,6 +3289,7 @@
         id: get('id').trim(),
         name: get('name').trim(),
         workspace: get('workspace').trim(),
+        host: get('host').trim(),
         schedule: computeCron(editor),
         prompt: get('prompt'),
         permission_mode: mode,
@@ -3435,11 +3534,28 @@
     const viewAddRoutine = document.getElementById('viewAddRoutine');
     const addRoutineBackBtn = document.getElementById('addRoutineBackBtn');
 
-    function openAddRoutine() {
+    function openAddRoutine(host = '') {
       viewMain.hidden = true;
       viewAddRoutine.hidden = false;
       const mount = document.getElementById('addRoutineMount');
-      mount.innerHTML = renderEditorHtml(null);
+      // Pre-fill the host field when launched from a specific agent's
+      // "+ New routine" chip. Passing a bare `{ host }` object to
+      // renderEditorHtml would treat it as an edit of an empty routine —
+      // instead, build a minimal new-routine default with host set.
+      const defaults = host ? {
+        id: '', name: '', workspace: 'fathom2', host, schedule: '0 * * * *', prompt: '',
+        permission_mode: 'auto', enabled: true, single_fire: false,
+      } : null;
+      mount.innerHTML = renderEditorHtml(defaults);
+      // renderEditorHtml uses data-editing="__new__" when existing is falsy.
+      // With `defaults` set (truthy), it'd be treated as edit mode. Patch:
+      if (defaults) {
+        const editor = mount.querySelector('.routine-editor');
+        editor.dataset.editing = '__new__';
+        // Re-enable the disabled id input (edit mode disables it).
+        const idInput = editor.querySelector('[data-f="id"]');
+        if (idInput) idInput.disabled = false;
+      }
       scrollViewToTop(viewAddRoutine);
       syncComposer();
       wireEditor(mount.querySelector('.routine-editor'), {

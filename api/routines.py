@@ -29,6 +29,7 @@ _SPEC_KEYS_ORDER = [
     "interval_minutes",
     "enabled",
     "workspace",
+    "host",
     "permission_mode",
     "single_fire",
     "deleted",
@@ -260,6 +261,9 @@ async def list_routines() -> list[dict]:
             "permission_mode": str(meta.get("permission_mode") or "auto"),
             "single_fire": bool(meta.get("single_fire", False)),
             "workspace": workspace,
+            # `host` pins the routine to a specific agent. Empty/missing =
+            # fleet-wide (any live agent will pick up the fire delta).
+            "host": str(meta.get("host") or ""),
             "delta_id": d.get("id"),
             "prompt": body,
             "last_fire_at": _ts_to_epoch(last_fire_d.get("timestamp")) if last_fire_d else 0,
@@ -396,6 +400,11 @@ async def fire(routine_id: str, prompt_override: str | None = None) -> dict:
     tags = ["routine-fire", f"routine-id:{routine_id}", f"fired-at:{fired_at}"]
     if existing["workspace"]:
         tags.append(f"workspace:{existing['workspace']}")
+    # Host-pin the fire if the spec has a host; kitty plugins on other
+    # machines will veto fires whose host: tag doesn't match them.
+    host_target = str(meta.get("host") or "").strip()
+    if host_target:
+        tags.append(f"host:{host_target}")
     mode = str(meta.get("permission_mode") or "auto").strip()
     if mode:
         tags.append(f"permission-mode:{mode}")

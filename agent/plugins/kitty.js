@@ -18,7 +18,7 @@
 
 import { spawn } from "child_process";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
-import { homedir } from "os";
+import { homedir, hostname } from "os";
 import { join, dirname } from "path";
 
 const STATE_PATH = join(homedir(), ".fathom", "kitty-state.json");
@@ -136,6 +136,15 @@ function fire(delta, config, pusher) {
   const routineId = tag(delta, "routine-id:") || "unknown";
   const workspace = tag(delta, "workspace:") || "";
   const requestedMode = tag(delta, "permission-mode:") || "auto";
+  const targetHost = tag(delta, "host:") || "";
+
+  // ── Host-pinning veto ──
+  // A fire with `host:<name>` is reserved for that specific agent. Silently
+  // skip fires not addressed to us so every agent's kitty plugin doesn't
+  // race to spawn windows for host-pinned routines. Fires with no host tag
+  // are fleet-wide and accepted everywhere.
+  const myHost = config.host || hostname();
+  if (targetHost && targetHost !== myHost) return;
 
   // ── Agent veto ──
   // The dashboard controls routines; the agent controls its own execution.
