@@ -236,6 +236,16 @@ TOOLS = [
                         "type": "string",
                         "description": "directory under ~/Dropbox/Work/ where the kitty session opens",
                     },
+                    "host": {
+                        "type": "string",
+                        "description": (
+                            "which machine runs this routine — must match a connected "
+                            "agent's hostname (e.g. 'fedora'). Empty = fleet-wide (every "
+                            "connected agent will execute the fire). When unsure, call "
+                            "action='help' to see the list of connected machines, or leave "
+                            "blank and the tool will ask."
+                        ),
+                    },
                     "enabled": {"type": "boolean", "description": "paused if false"},
                     "single_fire": {
                         "type": "boolean",
@@ -373,16 +383,19 @@ async def _fetch_image_as_tool_result(media_hash: str) -> str:
 # ── Routines tool — action-dispatched CRUD ──────────────────────────────
 
 
-ROUTINE_SPEC_HELP = """ROUTINE SPEC — quick reference
+ROUTINE_SPEC_HELP_STATIC = """ROUTINE SPEC — quick reference
 
-A routine is a prompt + a cron schedule + a workspace. When its cron fires,
-a local `fathom-agent` picks it up, spawns a kitty window with claude in the
-named workspace, and injects the prompt. Claude runs, writes a summary delta,
-and the dashboard pairs it back to the fire.
+A routine is a prompt + a cron schedule + a workspace, pinned to a specific
+machine. When its cron fires, the named machine's local `fathom-agent` picks
+it up, spawns a kitty window with claude in the named workspace, and injects
+the prompt. Claude runs, writes a summary delta, and the dashboard pairs it
+back to the fire.
 
 Fields (used with action=create or action=update):
   id              (required, immutable)   stable identifier, e.g. "gold-check"
   name            (required)              human label, e.g. "Gold Price Pulse"
+  host            (which machine)         hostname of the connected agent that runs this;
+                                          empty = fleet-wide (every connected agent fires)
   schedule        (cron, 5 fields)        "0 * * * *" hourly · "*/5 * * * *" every 5 min
   prompt          (the work)              what claude should do when fired
   permission_mode auto | normal           auto = classifier guardrails · normal = user approves each tool
@@ -404,6 +417,33 @@ When mutation actions are called without a connected local agent, the tool
 returns installation instructions instead. Tell the user to visit the main
 dashboard and pick a platform under "Local Agent".
 """
+
+
+async def _routine_help_text() -> str:
+    """Static help + a live dump of currently-connected machines.
+
+    The live section matters because `host` is a required-ish field and the
+    LLM has to pick from the connected set. Including it in help means the
+    LLM rarely has to make a second round trip just to see the machine list.
+    """
+    alive, agents = await _agent_alive()
+    if not alive:
+        live = "\nCONNECTED MACHINES — none right now. Mutation actions will fail until an agent connects."
+    else:
+        names = ", ".join(a["host"] for a in agents)
+        live = (
+            f"\nCONNECTED MACHINES — {names}\n"
+            "When creating a routine: if only one machine is connected, use it as the "
+            "default host without asking. If multiple are connected, ask the user which "
+            "machine the routine should run on. The user may also name a machine that "
+            "isn't currently connected — accept it; the routine sits until that machine "
+            "comes back online."
+        )
+    return ROUTINE_SPEC_HELP_STATIC + live
+
+
+# Backwards-compat alias so anything that references the old name still works.
+ROUTINE_SPEC_HELP = ROUTINE_SPEC_HELP_STATIC
 
 
 async def _agent_alive() -> tuple[bool, list[dict]]:
@@ -505,6 +545,22 @@ async def _gather_create_gaps(args: dict) -> dict:
                 "the routine should run in (e.g. 'fathom2', 'applications')."
             )
 
+    # `host` is only a "gap" when there are 2+ live machines — the user has
+    # to pick. With exactly one, it's silently defaulted further down. With
+    # zero live machines, other gates have already rejected the call. An
+    # explicit host the user named (even if offline) is accepted as-is.
+    if "host" not in args:
+        _alive, agents = await _agent_alive()
+        if len(agents) > 1:
+            missing.append("host")
+            names = ", ".join(a["host"] for a in agents)
+            hints.append(
+                f"No machine. Live machines right now: {names}. "
+                "Ask the user which machine should run this routine. "
+                "They can also name a machine that isn't currently connected; "
+                "the routine will sit until that machine comes back."
+            )
+
     return {"missing": missing, "hint": " ".join(hints) if hints else ""}
 
 
@@ -518,7 +574,7 @@ async def _execute_routines(args: dict) -> str:
             "action": "help",
             "agent_connected": alive,
             "agents": agents,
-            "spec": ROUTINE_SPEC_HELP,
+            "spec": await _routine_help_text(),
         })
 
     if action == "list":
@@ -578,6 +634,16 @@ async def _execute_routines(args: dict) -> str:
             return _no_agent_response(action)
 
     if action == "create":
+        # Single-machine default: if exactly one agent is connected and the
+        # caller didn't set `host`, silently pin to that machine. With two or
+        # more live agents, _gather_create_gaps returns a needs_info asking
+        # the user to pick. With zero live agents, the earlier _agent_alive
+        # gate already rejected the call.
+        if "host" not in args:
+            _alive, agents = await _agent_alive()
+            if len(agents) == 1:
+                args = {**args, "host": agents[0]["host"]}
+
         # Clarification loop: inspect args, return `needs_info` when gaps exist
         # so the LLM can go back to the user and ask before committing.
         gaps = await _gather_create_gaps(args)
