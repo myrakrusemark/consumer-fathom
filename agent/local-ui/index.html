@@ -42,14 +42,14 @@
     .readonly { font-size: var(--text-base); line-height: 1.55; color: var(--ink-soft); margin-top: 8px; }
     code { font-family: var(--mono); font-size: var(--text-sm); color: var(--accent); background: var(--accent-soft); padding: 1px 5px; border-radius: 3px; }
 
-    /* Plugin card layout — fth-card + fth-card-body give the surface; this adds margin and inner-flex. */
-    .plugin { margin: 16px 0; }
-    .plugin-head { display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 16px; }
-    .plugin-head .info { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
-    .plugin-head .action { border-left: 1px solid var(--rule); padding-left: 16px; }
+    /* Plugin card layout — fth-card gives the surface; the card itself is a
+       grid so the pause/resume button owns its own full-height column on the right. */
+    .plugin { margin: 16px 0; display: grid; grid-template-columns: 1fr auto; }
+    .plugin-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
     .plugin-head .name { font-weight: 500; font-size: var(--text-lg); }
     .plugin-head .cap { font-family: var(--mono); font-size: var(--text-sm); color: var(--ink-faint); }
-    .plugin-head .pause-btn { min-width: 104px; justify-content: center; }
+    .plugin-action { display: flex; align-items: center; padding: 0 20px; }
+    .plugin-action .pause-btn { min-width: 104px; justify-content: center; }
     .plugin[data-enabled="false"] { opacity: 0.7; }
     .plugin[data-enabled="false"] .fth-dot { background: var(--ink-faint); box-shadow: none; }
     .instances { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
@@ -206,17 +206,15 @@
         <div class="plugin fth-card" data-plugin="${esc(name)}" data-enabled="${!!pc.enabled}">
           <div class="fth-card-body">
             <div class="plugin-head">
-              <div class="info">
-                <span class="name">${esc(label)}</span>
-                ${kindLine}
-              </div>
-              <div class="action">
-                <button class="fth-btn fth-btn--ghost fth-btn--ghost-compact pause-btn" data-act="toggle-enabled" data-plugin="${esc(name)}" title="${pc.enabled ? "Pause this plugin" : "Resume this plugin"}">
-                  <span class="fth-dot"></span>${actionLabel}
-                </button>
-              </div>
+              <span class="name">${esc(label)}</span>
+              ${kindLine}
             </div>
             ${body}
+          </div>
+          <div class="plugin-action">
+            <button class="fth-btn fth-btn--ghost fth-btn--ghost-compact pause-btn" data-act="toggle-enabled" data-plugin="${esc(name)}" title="${pc.enabled ? "Pause this plugin" : "Resume this plugin"}">
+              <span class="fth-dot"></span>${actionLabel}
+            </button>
           </div>
         </div>`;
     }
