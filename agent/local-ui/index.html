@@ -39,7 +39,12 @@
        Dashboard link / Notes / Sources). Detail view has its own topbar. */
     .list-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; border-bottom: 1px solid var(--rule); padding-bottom: 14px; }
     .list-header .fth-brand { font-size: var(--text-3xl); }
+    .list-header .host-block { display: flex; align-items: baseline; gap: 8px; }
     .list-header .host { font-family: var(--mono); font-size: var(--text-md); color: var(--ink-soft); }
+    .list-header .version {
+      font-family: var(--mono); font-size: 11px; letter-spacing: 0.02em;
+      color: var(--ink-faint);
+    }
 
     /* Dashboard link — hidden when agent has no api_url (pre-pairing). */
     #dashboard-link { margin-bottom: 20px; text-decoration: none; }
@@ -103,7 +108,10 @@
     <div class="fth-view-body">
       <header class="list-header">
         <span class="fth-brand">fathom<span class="fth-brand-mark"><img src="https://design.fathomdx.io/v1/logo.svg" alt="" /></span></span>
-        <span class="host">__FATHOM_HOST__</span>
+        <span class="host-block">
+          <span class="version">v__FATHOM_VERSION__</span>
+          <span class="host">__FATHOM_HOST__</span>
+        </span>
       </header>
 
       <a id="dashboard-link" class="fth-btn fth-btn--ghost fth-btn--ghost-compact" target="_blank" rel="noopener" title="Open the Fathom dashboard in a new tab">

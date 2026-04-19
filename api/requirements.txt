@@ -1,5 +1,6 @@
 fastapi>=0.115
 uvicorn>=0.34
+python-multipart>=0.0.20
 openai>=1.60
 httpx>=0.28
 pydantic>=2.10

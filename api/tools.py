@@ -4,7 +4,10 @@ from __future__ import annotations
 import base64
 import json
 
+import httpx
+
 from . import delta_client, routines as routines_mod
+from .settings import settings
 
 # ── Tool definitions (OpenAI format) ────────────
 
@@ -259,6 +262,42 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "explain",
+            "description": (
+                "Explain a part of the Fathom dashboard to the user. Call this "
+                "whenever the user asks what something is, how it works, or how "
+                "to set it up — covers sources, feed, stats, and agent. The tool "
+                "returns a spec-style description blended with the user's live "
+                "state (e.g. how many sources they have configured right now), "
+                "so your answer can be concrete rather than generic. Prefer this "
+                "over answering from general knowledge — the dashboard is "
+                "opinionated and the tool is authoritative."
+            ),
+            "parameters": {
+                "type": "object",
+                "required": ["topic"],
+                "properties": {
+                    "topic": {
+                        "type": "string",
+                        "enum": ["sources", "feed", "stats", "agent"],
+                        "description": (
+                            "sources: pollers that write deltas into the lake (RSS, "
+                            "Mastodon, HN, custom). "
+                            "feed: the 'What I noticed' surface on the dashboard — "
+                            "synthesized stories from recent lake activity. "
+                            "stats: the time-series dashboard showing deltas-in, "
+                            "recall, mood pressure, drift. "
+                            "agent: the local fathom-agent runtime — what it does "
+                            "and how to install it."
+                        ),
+                    },
+                },
+            },
+        },
+    },
 ]
 
 
@@ -347,6 +386,9 @@ async def execute(name: str, arguments: dict) -> str:
 
         if name == "routines":
             return await _execute_routines(arguments)
+
+        if name == "explain":
+            return await _execute_explain(arguments)
 
         return json.dumps({"error": f"Unknown tool: {name}"})
 
@@ -714,3 +756,160 @@ async def _execute_routines(args: dict) -> str:
             return json.dumps({"action": "fire", "error": "not_found", "message": str(e)})
 
     return json.dumps({"action": action, "error": f"unknown action: {action}"})
+
+
+# ── Explain tool ────────────────────────────────────────────────────────────
+#
+# Static doc + live state, per dashboard concept. Each topic builder returns
+# a dict; the tool serializes it. Live calls stay best-effort — if the
+# source-runner is down we still return the static doc so the LLM has
+# something useful to relay.
+
+
+_EXPLAIN_SOURCES = (
+    "SOURCES — pollers that write deltas into the lake on a schedule.\n"
+    "Each source is a plugin running inside the source-runner container:\n"
+    "  rss           — fetch feed items, one delta per entry\n"
+    "  mastodon      — a user's timeline, one delta per toot\n"
+    "  hacker-news   — front-page stories above a karma threshold\n"
+    "  custom        — user-defined, wraps any HTTP endpoint\n\n"
+    "Sources show up as chips under the 'Sources' section on the dashboard. "
+    "Click + Add source to configure one. Configured sources can be paused, "
+    "resumed, or manually polled from their detail view. Deltas a source "
+    "writes get tagged with the source type + instance id, so you can filter "
+    "for them later (e.g. tags_include=['source:rss', 'rss:hn-front'])."
+)
+
+
+_EXPLAIN_FEED = (
+    "FEED ('What I noticed') — the dashboard's top surface, right below the "
+    "opener. Each card is a synthesized *story* composed from a cluster of "
+    "recent deltas: the feed worker groups related lake activity and writes "
+    "a narrative delta with a title, body, and optional images.\n\n"
+    "Stories are generated lazily from lake content — on a fresh install "
+    "with no deltas there's nothing to synthesize, which is why new users "
+    "see an empty-state prompt until their first sources or chats land.\n\n"
+    "Tapping a card opens it as a new chat session with the story as the "
+    "opening turn, so the user can dig into any thread Fathom noticed."
+)
+
+
+_EXPLAIN_STATS = (
+    "STATS — a multi-track time-series of Fathom's internal state, rendered "
+    "like an ECG at the bottom of the dashboard. Each track is a different "
+    "signal sampled over the last N hours:\n"
+    "  deltas       — writes per time bucket (ingest rate)\n"
+    "  recall       — how many deltas got pulled back out via search\n"
+    "  mood         — carrier-wave pressure (how 'loud' things feel)\n"
+    "  drift        — semantic drift between identity crystal and current state\n"
+    "  usage        — LLM token spend per bucket\n\n"
+    "Stats is the 'am I alive and well?' view — a glance shows whether "
+    "sources are flowing, whether Fathom is recalling, whether pressure is "
+    "building toward a mood synthesis. The drift track in particular "
+    "triggers auto-regeneration of the identity crystal when it crosses "
+    "threshold × red_ratio (see settings.crystal_*)."
+)
+
+
+_EXPLAIN_AGENT = (
+    "AGENT — the local fathom-agent runtime. A small Node process that runs "
+    "on the user's machine and subscribes to routine-fire deltas from the "
+    "lake. When a fire event arrives, the agent spawns a local claude "
+    "session in the matching workspace directory with the routine's prompt.\n\n"
+    "Without an agent: the cloud half of Fathom still works (chat, feed, "
+    "memory), but routines can't execute — no machine to run them on. "
+    "Mutation actions on the routines tool will return install instructions "
+    "in that case.\n\n"
+    "Install: main dashboard → Agent section → pick Linux / Mac / Windows "
+    "card → run the one-liner. The agent registers itself by writing "
+    "agent-heartbeat deltas every ~30s, tagged with host:<hostname>."
+)
+
+
+async def _live_sources_summary() -> dict:
+    """Best-effort: fetch configured sources from source-runner."""
+    try:
+        async with httpx.AsyncClient(
+            base_url=settings.source_runner_url.rstrip("/"), timeout=5
+        ) as c:
+            r = await c.get("/api/sources")
+            r.raise_for_status()
+            data = r.json() or {}
+    except Exception:
+        return {"configured": None, "note": "source-runner unreachable"}
+
+    items = data.get("sources") or data if isinstance(data, list) else data.get("sources", [])
+    if not isinstance(items, list):
+        items = []
+    configured = [s for s in items if s.get("status") != "available"]
+    by_status: dict[str, int] = {}
+    for s in configured:
+        st = s.get("status") or "unknown"
+        by_status[st] = by_status.get(st, 0) + 1
+    return {
+        "configured": len(configured),
+        "by_status": by_status,
+        "types": sorted({s.get("source_type") for s in configured if s.get("source_type")}),
+    }
+
+
+async def _live_feed_summary() -> dict:
+    try:
+        data = await delta_client.feed_stories(limit=50, offset=0)
+    except Exception:
+        return {"stories": None, "note": "feed endpoint unreachable"}
+    return {"stories": len(data.get("stories") or [])}
+
+
+async def _live_stats_summary() -> dict:
+    try:
+        s = await delta_client.stats()
+    except Exception:
+        return {"note": "stats endpoint unreachable"}
+    return {
+        "total_deltas": s.get("total_deltas") or s.get("count"),
+        "embedded": s.get("embedded") or s.get("embedded_count"),
+        "embedding_coverage": s.get("embedding_coverage"),
+    }
+
+
+async def _live_agent_summary() -> dict:
+    alive, agents = await _agent_alive()
+    return {
+        "connected": alive,
+        "count": len(agents),
+        "hosts": [a["host"] for a in agents],
+    }
+
+
+async def _execute_explain(args: dict) -> str:
+    topic = (args.get("topic") or "").strip().lower()
+    if topic == "sources":
+        return json.dumps({
+            "topic": topic,
+            "doc": _EXPLAIN_SOURCES,
+            "live": await _live_sources_summary(),
+        })
+    if topic == "feed":
+        return json.dumps({
+            "topic": topic,
+            "doc": _EXPLAIN_FEED,
+            "live": await _live_feed_summary(),
+        })
+    if topic == "stats":
+        return json.dumps({
+            "topic": topic,
+            "doc": _EXPLAIN_STATS,
+            "live": await _live_stats_summary(),
+        })
+    if topic == "agent":
+        return json.dumps({
+            "topic": topic,
+            "doc": _EXPLAIN_AGENT,
+            "live": await _live_agent_summary(),
+        })
+    return json.dumps({
+        "topic": topic,
+        "error": "unknown_topic",
+        "known": ["sources", "feed", "stats", "agent"],
+    })

@@ -15,6 +15,7 @@ import { homedir, hostname } from "os";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { createInterface } from "readline";
+import { execFileSync } from "child_process";
 import { Pusher } from "./pusher.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -173,7 +174,27 @@ WantedBy=default.target
     const path = join(dir, "fathom-agent.service");
     mkdirSync(dir, { recursive: true });
     writeFileSync(path, unit);
-    console.log(`Written: ${path}\n\nRun:\n  systemctl --user daemon-reload\n  systemctl --user enable fathom-agent\n  systemctl --user start fathom-agent`);
+    console.log(`Written: ${path}`);
+    // restart (not enable --now) so upgrade installs re-exec with the new
+    // ExecStart path; enable is separate and idempotent for boot-persistence.
+    const steps = [
+      ["systemctl", ["--user", "daemon-reload"]],
+      ["systemctl", ["--user", "enable", "fathom-agent"]],
+      ["systemctl", ["--user", "restart", "fathom-agent"]],
+    ];
+    try {
+      for (const [cmd, args] of steps) {
+        process.stdout.write(`  ${cmd} ${args.join(" ")} … `);
+        execFileSync(cmd, args, { stdio: "inherit" });
+        process.stdout.write("ok\n");
+      }
+      console.log("\n✓ fathom-agent is running. Check status: systemctl --user status fathom-agent");
+    } catch (e) {
+      console.error(`\nCouldn't auto-start the service: ${e.message}`);
+      console.error("Run these manually:");
+      console.error("  systemctl --user daemon-reload");
+      console.error("  systemctl --user enable --now fathom-agent");
+    }
   } else if (platform === "darwin") {
     const label = "com.fathom.agent";
     const plist = `<?xml version="1.0" encoding="UTF-8"?>
@@ -189,11 +210,34 @@ WantedBy=default.target
     const path = join(homedir(), "Library", "LaunchAgents", `${label}.plist`);
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, plist);
-    console.log(`Written: ${path}\n\nRun:\n  launchctl load ${path}\n  launchctl start ${label}`);
+    console.log(`Written: ${path}`);
+    try {
+      // Unload first in case this is an upgrade of an existing install.
+      try { execFileSync("launchctl", ["unload", path], { stdio: "ignore" }); } catch {}
+      execFileSync("launchctl", ["load", path], { stdio: "inherit" });
+      execFileSync("launchctl", ["start", label], { stdio: "inherit" });
+      console.log(`\n✓ fathom-agent is running. Check status: launchctl list | grep ${label}`);
+    } catch (e) {
+      console.error(`\nCouldn't auto-start the service: ${e.message}`);
+      console.error("Run these manually:");
+      console.error(`  launchctl load ${path}`);
+      console.error(`  launchctl start ${label}`);
+    }
   } else if (platform === "win32") {
     const batPath = join(CONFIG_DIR, "fathom-agent.bat");
     writeFileSync(batPath, `@echo off\nset FATHOM_API_URL=${apiUrl}\nset FATHOM_API_KEY=${apiKey}\n"${nodePath}" "${scriptPath}" run\n`);
-    console.log(`Written: ${batPath}\n\nRun:\n  schtasks /create /tn "FathomAgent" /tr "${batPath}" /sc onlogon /rl limited\n  schtasks /run /tn "FathomAgent"`);
+    console.log(`Written: ${batPath}`);
+    try {
+      // /f overwrites any existing task so `install` is idempotent (upgrade re-registers).
+      execFileSync("schtasks", ["/create", "/tn", "FathomAgent", "/tr", batPath, "/sc", "onlogon", "/rl", "limited", "/f"], { stdio: "inherit" });
+      execFileSync("schtasks", ["/run", "/tn", "FathomAgent"], { stdio: "inherit" });
+      console.log("\n✓ fathom-agent scheduled task is running. Check: schtasks /query /tn FathomAgent");
+    } catch (e) {
+      console.error(`\nCouldn't auto-create the scheduled task: ${e.message}`);
+      console.error("Run these manually:");
+      console.error(`  schtasks /create /tn "FathomAgent" /tr "${batPath}" /sc onlogon /rl limited /f`);
+      console.error('  schtasks /run /tn "FathomAgent"');
+    }
   }
 }
 
@@ -341,14 +385,20 @@ async function runInit(cliArgs, plugins, existingConfig) {
   }
 
   saveConfig(nextConfig);
+  // Detect launch via npx (process.argv[1] lives under the npx cache) so the
+  // follow-up hints match how the user actually invoked this CLI. Otherwise a
+  // globally-installed user gets npx advice and an npx user gets `command
+  // not found`.
+  const launchedViaNpx = /[\\/]_npx[\\/]/.test(process.argv[1] || "");
+  const cmd = launchedViaNpx ? "npx fathom-agent" : "fathom-agent";
   console.log(`\n✓ Paired as '${host}'`);
   console.log(`  token id: ${redemption.token_id}`);
   console.log(`  scopes:   ${(redemption.scopes || []).join(", ")}`);
   console.log(`  config:   ${CONFIG_PATH}\n`);
   console.log("Start the agent:");
-  console.log("  fathom-agent run\n");
+  console.log(`  ${cmd} run\n`);
   console.log("Or install as a background service:");
-  console.log("  fathom-agent install\n");
+  console.log(`  ${cmd} install\n`);
 }
 
 // ── Main ─────────────────────────────────────────

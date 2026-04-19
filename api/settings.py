@@ -1,6 +1,7 @@
 """Configuration from environment variables."""
 from __future__ import annotations
 
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
@@ -20,11 +21,13 @@ PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
 
 
 class Settings(BaseSettings):
-    # LLM provider
-    provider: str = "gemini"
-    api_key: str = ""
-    base_url: str = ""       # overrides provider default if set
-    model: str = ""          # overrides provider default if set
+    # LLM provider — these use the LLM_ prefix (not FATHOM_) to keep them
+    # distinct from Fathom's own bearer tokens (ftm_…), which the client
+    # tools (mcp, cli, hooks) read from FATHOM_API_KEY.
+    provider: str = Field("gemini", validation_alias="LLM_PROVIDER")
+    api_key: str = Field("", validation_alias="LLM_API_KEY")
+    base_url: str = Field("", validation_alias="LLM_BASE_URL")   # overrides provider default
+    model: str = Field("", validation_alias="LLM_MODEL")         # overrides provider default
 
     # Delta store
     delta_store_url: str = "http://localhost:8100"

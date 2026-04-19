@@ -80,6 +80,18 @@ async def _check_once() -> dict:
     snap = await drift.sample()
     threshold = settings.crystal_drift_threshold
     ratio = settings.crystal_drift_red_ratio
+
+    # Bootstrap case — no crystal exists yet. drift.sample() reports drift=0
+    # with no_crystal=True in that state, which would leave the ratio test
+    # permanently below threshold. Fire unconditionally so fresh installs
+    # get a first crystal without requiring drift to grow from a zero
+    # baseline (which it can't, because there's nothing to drift from).
+    if snap.get("no_crystal"):
+        decision = "cooldown" if await _within_cooldown() else "firing-bootstrap"
+        if decision == "firing-bootstrap":
+            asyncio.create_task(_trigger_regen())
+        return {**snap, "auto_regen": decision, "score": 0.0}
+
     if threshold <= 0:
         return {**snap, "auto_regen": "disabled-no-threshold"}
 

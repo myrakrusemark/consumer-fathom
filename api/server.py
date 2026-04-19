@@ -538,10 +538,19 @@ async def list_models():
 
 @app.get("/health")
 async def health():
+    missing: list[str] = []
+    if not settings.api_key:
+        missing.append("api_key")
+    if not settings.resolved_base_url:
+        missing.append("base_url")
+    if not settings.resolved_model:
+        missing.append("model")
     return {
         "status": "ok",
         "provider": settings.provider,
         "model": settings.resolved_model,
+        "llm_configured": not missing,
+        "llm_missing": missing,
     }
 
 
@@ -922,6 +931,48 @@ async def preview_schedule_endpoint(body: dict):
 # agent (fathom-agent + its plugins) writes one every ~60s with expires_at
 # set to ~120s in the future. The delta-store filters out expired deltas
 # automatically, so querying [agent-heartbeat] returns only live agents.
+
+
+# ── Agent release info ─────────────────────────────────────────────────────
+# Cache the npm registry's "latest" tag for fathom-agent in process memory.
+# Every browser refresh would otherwise hit npm, leaking this install's IP
+# and wasting their bandwidth. One hour is plenty — agent releases are slow.
+
+_LATEST_AGENT_CACHE: dict = {"version": None, "checked_at": None, "error": None}
+_LATEST_AGENT_TTL_SECONDS = 3600
+
+
+@app.get("/v1/agents/latest-version")
+async def agents_latest_version():
+    """Return the newest published fathom-agent version from the npm registry."""
+    import time as _time
+    now = _time.time()
+    checked = _LATEST_AGENT_CACHE.get("checked_at")
+    if checked and (now - checked) < _LATEST_AGENT_TTL_SECONDS and _LATEST_AGENT_CACHE.get("version"):
+        return {
+            "latest": _LATEST_AGENT_CACHE["version"],
+            "checked_at": datetime.fromtimestamp(checked, timezone.utc).isoformat(),
+            "cached": True,
+        }
+    try:
+        async with httpx.AsyncClient(timeout=6) as c:
+            r = await c.get("https://registry.npmjs.org/fathom-agent/latest")
+            r.raise_for_status()
+            data = r.json()
+        version = data.get("version")
+        _LATEST_AGENT_CACHE.update({"version": version, "checked_at": now, "error": None})
+        return {
+            "latest": version,
+            "checked_at": datetime.fromtimestamp(now, timezone.utc).isoformat(),
+            "cached": False,
+        }
+    except Exception as e:
+        _LATEST_AGENT_CACHE.update({"checked_at": now, "error": str(e)})
+        return {
+            "latest": _LATEST_AGENT_CACHE.get("version"),  # last-known may still be useful
+            "checked_at": datetime.fromtimestamp(now, timezone.utc).isoformat(),
+            "error": "registry_unreachable",
+        }
 
 
 @app.get("/v1/agents/status")

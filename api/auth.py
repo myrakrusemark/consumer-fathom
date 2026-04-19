@@ -92,6 +92,9 @@ PUBLIC_PATHS = frozenset({
     # can't require one. Mint (POST /v1/pair) is NOT public — that still
     # requires tokens:manage.
     "/v1/pair/redeem",
+    # npm registry lookup; just public metadata. Dashboard calls this
+    # before the user has a token.
+    "/v1/agents/latest-version",
 })
 
 PUBLIC_PREFIXES = (

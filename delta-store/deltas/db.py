@@ -67,6 +67,16 @@ async def init_pool(dsn: str | None = None) -> asyncpg.Pool:
     """Create the connection pool and ensure the schema exists."""
     global _pool
     url = dsn or DATABASE_URL
+
+    # The pool's setup hook calls register_vector, which introspects the
+    # `vector` type. That type only exists after CREATE EXTENSION runs, so
+    # bootstrap the extension on a one-off connection before opening the pool.
+    bootstrap = await asyncpg.connect(url)
+    try:
+        await bootstrap.execute("CREATE EXTENSION IF NOT EXISTS vector")
+    finally:
+        await bootstrap.close()
+
     _pool = await asyncpg.create_pool(url, min_size=2, max_size=10, setup=_setup_connection)
 
     async with _pool.acquire() as conn:

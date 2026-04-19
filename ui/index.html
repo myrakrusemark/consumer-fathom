@@ -275,6 +275,20 @@
     }
     .show-more-feed:hover { border-color: var(--ink-faint); color: var(--ink-soft); }
 
+    /* Empty-state for the feed — shown only when the lake has zero stories.
+       Soft, inviting, points at the composer. Reads as ambient prose rather
+       than a UI card. */
+    .feed-empty {
+      padding: 32px 8px; text-align: center;
+      font-family: var(--serif); font-size: 18px; line-height: 1.5;
+      color: var(--ink-soft);
+    }
+    .feed-empty .sub {
+      display: block; margin-top: 8px;
+      font-family: var(--sans); font-size: 13px;
+      color: var(--ink-faint);
+    }
+
     /* Sources strip */
     .sources { display: flex; flex-wrap: wrap; gap: 8px; }
     .chip {
@@ -1406,6 +1420,39 @@
     .cron-picker .cron-preview li { padding: 1px 0; }
     .cron-picker .cron-preview .err { color: #d35; }
 
+    /* When the LLM isn't configured we blank out the rest of the dashboard
+       and show only the header + banner — nothing else is meaningful until
+       the key is set. Toggled by loadHealth() via body.config-missing. */
+    body.config-missing main > *:not(#configWarning) { display: none !important; }
+    body.config-missing .view:not(#viewMain) { display: none !important; }
+    body.config-missing .composer-wrap { display: none !important; }
+    body.config-missing #jumpToTechBtn { display: none !important; }
+    body.config-missing #sidebarToggleBtn { display: none !important; }
+
+    /* Config warning — shown at the top of main when the LLM provider
+       key/base/model isn't set. Visually distinct from the agent callout:
+       amber tint, small and sober, not a pitch. */
+    .config-warning {
+      margin: 0 0 16px;
+      padding: 12px 16px;
+      background: linear-gradient(135deg, rgba(220,120,40,0.10), rgba(220,120,40,0.04));
+      border: 1px solid rgba(220,120,40,0.35);
+      border-radius: 10px;
+      display: flex; align-items: flex-start; gap: 12px;
+      font-size: 13px; color: var(--ink);
+    }
+    /* The .config-warning rule above sets display:flex which would defeat
+       the HTML hidden attribute; re-assert it explicitly. */
+    .config-warning[hidden] { display: none !important; }
+    .config-warning .ico { font-size: 16px; line-height: 1.3; flex: 0 0 auto; }
+    .config-warning .body { flex: 1 1 auto; min-width: 0; }
+    .config-warning .title { font-weight: 600; margin: 0 0 2px; }
+    .config-warning .detail { color: var(--ink-soft); margin: 0; }
+    .config-warning code {
+      font-family: var(--mono); font-size: 12px;
+      background: var(--surface-2); padding: 1px 5px; border-radius: 4px;
+    }
+
     /* ── Agent section ──────────────────────────── */
     /* Install callout — banner shape, shown when no agent is registered.
        Reads as a one-line pitch, not a feature card. */
@@ -1450,6 +1497,10 @@
       font-family: var(--mono); font-size: 13px; color: var(--ink);
     }
     .agent-connected-status .host { cursor: help; }
+    .agent-connected-status .agent-version {
+      font-family: var(--mono); font-size: 11px;
+      color: var(--ink-faint); letter-spacing: 0.02em;
+    }
     .agent-connected-status .source-count {
       font-family: var(--mono); font-size: 11px; color: var(--ink-faint);
     }
@@ -1461,6 +1512,22 @@
     .agent-connected-status .configure-link:hover { text-decoration: underline; }
     .agent-connected-status .configure-link[aria-disabled="true"] {
       color: var(--ink-faint); cursor: not-allowed; pointer-events: none;
+    }
+    /* Update-available chip. Inline with the host name so it reads as a
+       property of this agent rather than a banner. Click reveals the copy
+       command in a tooltip. */
+    .agent-update-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 1px 8px; border-radius: 999px;
+      background: rgba(220,120,40,0.12);
+      border: 1px solid rgba(220,120,40,0.35);
+      color: var(--ink); cursor: pointer;
+      font-family: var(--mono); font-size: 11px; letter-spacing: 0.02em;
+    }
+    .agent-update-chip:hover { background: rgba(220,120,40,0.20); }
+    .agent-update-chip .dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: rgb(220,120,40);
     }
     .agent-plugins {
       display: flex; flex-wrap: wrap; gap: 8px;
@@ -1683,6 +1750,16 @@
   <!-- ── Main ──────────────────────────────────── -->
   <main>
 
+    <!-- Config warning — shown only when /health reports llm_configured:false.
+         Populated by loadHealth(). Hidden by default so there's no flash. -->
+    <div class="config-warning" id="configWarning" hidden>
+      <span class="ico">⚠</span>
+      <div class="body">
+        <p class="title" id="configWarningTitle">You're almost there! But your LLM is not configured.</p>
+        <p class="detail" id="configWarningDetail"></p>
+      </div>
+    </div>
+
     <!-- Opener: title + subtext both render dynamically at runtime -->
     <section class="opener">
       <div class="stamp">Wednesday · 3:42 PM · St. Louis</div>
@@ -1694,7 +1771,7 @@
     <section class="section">
       <div class="section-head">
         <h2>What I noticed</h2>
-        <span class="meta">4 stories · 2h ago</span>
+        <span class="meta" id="feedMeta"></span>
       </div>
       <div class="feed">
         <!-- Populated by loadFeedStories() -->
@@ -1866,8 +1943,46 @@
           <ol>
             <li>The command installs the fathom-agent on that machine (via npx).</li>
             <li>It redeems this pair code to get a long-lived API key, written to <code>~/.fathom/agent.json</code>.</li>
+            <li>Then it registers the agent as a system service (systemd on Linux, launchd on Mac, a scheduled task on Windows) and starts it.</li>
             <li>The agent starts heartbeating; this dashboard detects it and closes this dialog.</li>
             <li>Need to run on a different machine later? Re-open this dialog, get a new code. Re-pairing rotates the key automatically.</li>
+          </ol>
+        </details>
+      </div>
+    </div>
+  </div>
+
+  <!-- Update-available modal. Reuses pair-modal styling; populated by the
+       click handler on .agent-update-chip. -->
+  <div class="pair-modal" id="updateModal" hidden>
+    <div class="pair-backdrop" data-update-dismiss></div>
+    <div class="pair-dialog">
+      <div class="pair-head">
+        <h2>Update available</h2>
+        <button class="pair-close" data-update-dismiss aria-label="Close">×</button>
+      </div>
+      <div class="pair-body">
+        <p class="pair-lead">
+          <code id="updateHost">—</code> is running
+          <code id="updateFrom">—</code>. The latest published version is
+          <code id="updateTo">—</code>.
+        </p>
+        <p class="pair-lead">
+          Run this on that machine to pull the new release and re-register
+          its service with the updated binary. Your existing pairing and
+          plugin config are preserved.
+        </p>
+        <div class="pair-cmd-wrap">
+          <pre class="pair-cmd" id="updateCmd">—</pre>
+          <button class="btn" id="updateCopyBtn">Copy</button>
+        </div>
+        <details class="pair-details">
+          <summary>What this does</summary>
+          <ol>
+            <li><code>npx -y fathom-agent@latest</code> fetches the newest release from npm, bypassing any cached older copy.</li>
+            <li><code>install</code> rewrites the systemd/launchd/Windows service file to point at the new binary path, then restarts it.</li>
+            <li>If the agent isn't running as a service, substitute <code>run</code> for <code>install</code> to just start it in the foreground.</li>
+            <li>The agent reads the same <code>~/.fathom/agent.json</code>, so you don't need to re-pair.</li>
           </ol>
         </details>
       </div>
@@ -2877,6 +2992,40 @@
     // Load sources on startup
     loadSources();
 
+    // ── LLM config health check ─────────────────────
+    // Hit /health; if llm_configured is false, surface a banner at the top
+    // of the dashboard so the user knows why chat will 401 before they try.
+    async function loadHealth() {
+      const banner = document.getElementById('configWarning');
+      if (!banner) return;
+      try {
+        const r = await fetch(API_BASE + '/health', { headers: authHeaders() });
+        if (!r.ok) return;  // silent: /health itself is healthy-ish, don't cry wolf
+        const h = await r.json();
+        if (h.llm_configured) {
+          banner.hidden = true;
+          document.body.classList.remove('config-missing');
+          return;
+        }
+        document.body.classList.add('config-missing');
+        const missing = Array.isArray(h.llm_missing) ? h.llm_missing : [];
+        const envFor = {
+          api_key:  'LLM_API_KEY',
+          base_url: 'LLM_BASE_URL (or pick a known LLM_PROVIDER)',
+          model:    'LLM_MODEL (or pick a known LLM_PROVIDER)',
+        };
+        const parts = missing.map(m => `<code>${envFor[m] || m}</code>`).join(', ');
+        const provider = h.provider ? `<code>${h.provider}</code>` : 'unknown';
+        document.getElementById('configWarningDetail').innerHTML =
+          `Provider is set to ${provider} but ${parts || 'required values are'} missing. ` +
+          `Set it in your <code>.env</code> and restart: <code>docker compose up -d api</code>.`;
+        banner.hidden = false;
+      } catch (e) {
+        // network error — stay quiet rather than showing a misleading banner
+      }
+    }
+    loadHealth();
+
     // ── Routines ────────────────────────────────────
     // Routines are spec deltas in the lake. CRUD = write a new spec with the
     // same routine-id. See /v1/routines/* endpoints in api/server.py.
@@ -2887,6 +3036,70 @@
     let _routineCache = [];      // most recent list from backend
     let _openEditorFor = null;   // routine-id currently in edit mode, or '__new__', or null
     let _agentStatus = { alive: false, agents: [] };  // populated by loadAgentStatus()
+    let _latestAgentVersion = null;  // populated by loadLatestAgentVersion()
+
+    // Compare two dot-separated version strings. Returns 1 if a>b, -1 if a<b, 0
+    // if equal. Missing segments are treated as 0; pre-release suffixes (-alpha
+    // etc) are stripped so 0.11.0 > 0.11.0-rc1 still works the naive way.
+    function _semverCmp(a, b) {
+      if (!a || !b) return 0;
+      const norm = (v) => String(v).replace(/^v/, '').split('-')[0].split('.').map((n) => parseInt(n, 10) || 0);
+      const pa = norm(a), pb = norm(b);
+      const len = Math.max(pa.length, pb.length);
+      for (let i = 0; i < len; i++) {
+        const x = pa[i] || 0, y = pb[i] || 0;
+        if (x > y) return 1;
+        if (x < y) return -1;
+      }
+      return 0;
+    }
+
+    async function loadLatestAgentVersion() {
+      try {
+        const r = await fetch(API_BASE + '/v1/agents/latest-version');
+        if (!r.ok) return;
+        const data = await r.json();
+        if (data.latest) _latestAgentVersion = data.latest;
+      } catch (e) { /* offline or registry down — silently skip */ }
+    }
+    loadLatestAgentVersion();
+
+    // Clicking an update chip opens a modal that explains the update path
+    // and gives a single copyable command. Delegated so it catches
+    // re-renders of the agent card.
+    const updateModal = document.getElementById('updateModal');
+    const updateHostEl = document.getElementById('updateHost');
+    const updateFromEl = document.getElementById('updateFrom');
+    const updateToEl = document.getElementById('updateTo');
+    const updateCmdEl = document.getElementById('updateCmd');
+    const updateCopyBtn = document.getElementById('updateCopyBtn');
+
+    function closeUpdateModal() { updateModal.hidden = true; }
+    updateModal.querySelectorAll('[data-update-dismiss]').forEach((el) => {
+      el.addEventListener('click', closeUpdateModal);
+    });
+
+    document.addEventListener('click', (e) => {
+      const chip = e.target.closest('.agent-update-chip');
+      if (!chip) return;
+      const host = chip.dataset.updateHost || '—';
+      const from = chip.dataset.fromVersion || '—';
+      const to = chip.dataset.toVersion || '—';
+      updateHostEl.textContent = host;
+      updateFromEl.textContent = 'v' + from;
+      updateToEl.textContent = 'v' + to;
+      updateCmdEl.textContent = 'npx -y fathom-agent@latest install';
+      updateCopyBtn.textContent = 'Copy';
+      updateModal.hidden = false;
+    });
+
+    updateCopyBtn.addEventListener('click', () => {
+      try {
+        navigator.clipboard.writeText(updateCmdEl.textContent);
+        updateCopyBtn.textContent = 'Copied!';
+        setTimeout(() => { updateCopyBtn.textContent = 'Copy'; }, 1200);
+      } catch (_) { /* clipboard denied */ }
+    });
     let _cloudSourceCounts = { active: 0, paused: 0 };  // snapshot from last loadSources()
 
     function _updateSourcesMeta() {
@@ -3043,6 +3256,13 @@
             ? `<a class="configure-link" href="${_esc(a.agent_url)}" target="_blank" rel="noopener" title="Opens the on-machine agent UI in a new tab (only resolves from ${_esc(a.host)})">configure ↗</a>`
             : `<span class="configure-link" aria-disabled="true" title="local-ui plugin not enabled on this machine — add it to agent.json">configure (unavailable)</span>`;
 
+          // Update chip: only render when we know both versions and the
+          // agent is behind. Clicking opens the update modal.
+          let updateChipHtml = '';
+          if (a.version && _latestAgentVersion && _semverCmp(a.version, _latestAgentVersion) < 0) {
+            updateChipHtml = `<span class="agent-update-chip" data-update-host="${_esc(a.host)}" data-from-version="${_esc(a.version)}" data-to-version="${_esc(_latestAgentVersion)}" title="An update is available — click for details"><span class="dot"></span>update → v${_esc(_latestAgentVersion)}</span>`;
+          }
+
           // Operator-mode detail, tucked into a hover tooltip on the host
           // name: version, human uptime, runtime plugin details (e.g.
           // "kitty: auto, normal"). Keeps the consumer stats line clean
@@ -3070,6 +3290,7 @@
               <div class="agent-connected-status">
                 <span class="host"${hostTooltip ? ` title="${_esc(hostTooltip)}"` : ''}>${_esc(a.host)}</span>
                 <span class="source-count">${_esc(sourceCountText)}</span>
+                ${updateChipHtml}
                 ${configureHtml}
               </div>
               <div class="agent-routines" data-host="${_esc(a.host)}">
@@ -3706,7 +3927,11 @@
       const h = (pairHostInput.value || '').trim();
       const ok = _validHost(h);
       const hostArg = ok ? h : '<name>';
-      const cmd = `npx -y fathom-agent@latest init --api-url ${_pairState.apiUrl} --pair-code ${_pairState.code} --host ${hostArg}`;
+      // Chain init → install so the paired agent is running as a service
+      // after one copy-paste. `install` auto-runs systemctl/launchctl/schtasks
+      // on the respective OS (agent >= 0.11.1). If install fails (e.g. user
+      // wanted foreground only), the pairing is still intact from `init`.
+      const cmd = `npx -y fathom-agent@latest init --api-url ${_pairState.apiUrl} --pair-code ${_pairState.code} --host ${hostArg} && npx -y fathom-agent install`;
       pairCmdEl.textContent = cmd;
       pairCmdEl.dataset.pending = ok ? 'false' : 'true';
       pairCopyBtn.disabled = !ok;
@@ -3751,6 +3976,27 @@
       pairCopyBtn.disabled = true;
       pairModal.hidden = false;
       pairHostInput.focus();
+
+      // First-run footgun: on a brand-new install, auth is open because no
+      // tokens exist. The agent's pair redemption mints the *first* token,
+      // which flips the API into auth-required mode — and the dashboard
+      // suddenly can't read /v1/agents/status, /v1/routines, etc. Mint a
+      // dashboard token for the browser first, before the agent ever
+      // redeems, so we're on the safe side of that transition.
+      if (!_authToken) {
+        try {
+          const tr = await fetch(API_BASE + '/v1/tokens', {
+            method: 'POST', headers: authHeaders(),
+            body: JSON.stringify({ name: 'dashboard (browser)' }),
+          });
+          if (tr.ok) {
+            const td = await tr.json();
+            if (td.token) _saveAuthToken(td.token);
+          }
+        } catch (_) {
+          // Non-fatal — if auth is still open, /v1/pair will succeed below.
+        }
+      }
 
       let code;
       try {
@@ -5013,6 +5259,19 @@ GET  /v1/usage               Usage stats`,
       return card;
     }
 
+    function _relTime(iso) {
+      if (!iso) return '';
+      const then = new Date(iso).getTime();
+      if (isNaN(then)) return '';
+      const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
+      if (mins < 1) return 'just now';
+      if (mins < 60) return `${mins}m ago`;
+      const hrs = Math.round(mins / 60);
+      if (hrs < 24) return `${hrs}h ago`;
+      const days = Math.round(hrs / 24);
+      return `${days}d ago`;
+    }
+
     async function loadFeedStories(append) {
       try {
         const data = await api(`/v1/feed/stories?limit=${FEED_PAGE}&offset=${feedOffset}`);
@@ -5022,10 +5281,36 @@ GET  /v1/usage               Usage stats`,
           feed.appendChild(renderStoryCard(s, append ? i * 0.18 : i * 0.18));
         });
         feedOffset += stories.length;
-        if (!data.has_more || stories.length < FEED_PAGE) {
+        // Empty-state on first page: no stories at all in the lake yet.
+        // Replace the feed with an invitation and hide the Show-more button.
+        if (!append && feedOffset === 0) {
+          feed.innerHTML = `
+            <div class="feed-empty">
+              The lake is empty for now.
+              <span class="sub">Say hi down below so we can get to know each other.</span>
+            </div>`;
+          showMoreBtn.style.display = 'none';
+        } else if (!data.has_more || stories.length < FEED_PAGE) {
           showMoreBtn.textContent = 'No more stories';
           showMoreBtn.disabled = true;
           showMoreBtn.style.opacity = '0.4';
+        }
+        // Update section meta. On first page only — preserves meta when
+        // "show more" appends additional pages.
+        if (!append) {
+          const meta = document.getElementById('feedMeta');
+          if (meta) {
+            const total = (typeof data.total === 'number') ? data.total : feedOffset;
+            if (total === 0) {
+              meta.textContent = '';
+            } else {
+              const newest = stories[0] || {};
+              const ts = newest.timestamp || newest.created_at || newest.ts || newest.published_at;
+              const rel = _relTime(ts);
+              const stamp = rel ? ` · ${rel}` : '';
+              meta.textContent = `${total} ${total === 1 ? 'story' : 'stories'}${stamp}`;
+            }
+          }
         }
         refreshLightbox();
       } catch (err) {

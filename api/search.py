@@ -301,7 +301,10 @@ async def _deep(
     tree: list[dict] = []
     deltas_by_step: dict[str, list[dict]] = {}
     media_hashes: list[str] = []
-    total = 0
+    # Dedupe across steps — a plan's steps overlap heavily (especially on a
+    # small lake), so counting per-step inflates total_count beyond what the
+    # user actually sees in the rendered context.
+    seen_ids: set[str] = set()
 
     for step in plan["steps"]:
         sid = step["id"]
@@ -315,11 +318,14 @@ async def _deep(
                 "fathom-chat" in tags or d.get("source") == "fathom-chat"
             ):
                 continue
+            did = d.get("id")
+            if did:
+                if did in seen_ids:
+                    continue
+                seen_ids.add(did)
             cleaned.append(d)
             if d.get("media_hash"):
                 media_hashes.append(d["media_hash"])
-
-        total += len(cleaned)
 
         relation = step.get("relation") or _DEFAULT_RELATION_BY_ACTION.get(
             action, "surfaced"
@@ -344,7 +350,7 @@ async def _deep(
         "plan": plan,
         "tree": tree,
         "deltas_by_step": deltas_by_step,
-        "total_count": total,
+        "total_count": len(seen_ids),
         "media_hashes": media_hashes[:_MAX_MEDIA_HASHES],
         "as_prompt": _render_tree(tree, deltas_by_step),
     }

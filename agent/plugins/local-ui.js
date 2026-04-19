@@ -223,7 +223,18 @@ async function handle(req, res, config) {
       // Prefer the friendly host name captured during pairing; fall back
       // to the OS hostname so the UI always has something to show.
       const displayName = (cfg && cfg.host) ? cfg.host : hostname();
-      const rendered = html.replaceAll("__FATHOM_HOST__", displayName);
+      // Agent version from its own package.json — cached once per process
+      // since the file doesn't change at runtime.
+      let version = "";
+      try {
+        const pkg = JSON.parse(
+          readFileSync(join(BUILTIN_PLUGIN_DIR, "..", "package.json"), "utf8")
+        );
+        version = pkg.version || "";
+      } catch {}
+      const rendered = html
+        .replaceAll("__FATHOM_HOST__", displayName)
+        .replaceAll("__FATHOM_VERSION__", version);
       sendHtml(res, rendered);
     } catch (e) {
       send(res, 500, { error: "ui_html_missing", message: e.message });
@@ -322,6 +333,7 @@ export default {
   icon: "⚙",
   description: "Serve a localhost-only HTTP server for on-machine agent configuration.",
   defaults: {
+    enabled: true,
     port: 8202,
     bind: "127.0.0.1",
   },
