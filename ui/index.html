@@ -2781,13 +2781,14 @@
     let _openEditorFor = null;   // routine-id currently in edit mode, or '__new__', or null
     let _agentStatus = { alive: false, agents: [] };  // populated by loadAgentStatus()
     let _cloudSourceCounts = { active: 0, paused: 0 };  // snapshot from last loadSources()
-    let _agentSourceCount = 0;   // source-role plugins reported by the live agent
 
     function _updateSourcesMeta() {
+      // Top Sources strip now counts only cloud-polled sources — machine
+      // sources render inside each agent block (phase 5 symmetry with
+      // routines).
       const meta = document.querySelector('#sourcesList')?.closest('.section')?.querySelector('.meta');
       if (!meta) return;
-      const active = _cloudSourceCounts.active + _agentSourceCount;
-      const paused = _cloudSourceCounts.paused;
+      const { active, paused } = _cloudSourceCounts;
       meta.textContent = active + ' active' + (paused ? ' · ' + paused + ' paused' : '');
     }
 
@@ -2866,62 +2867,14 @@
     }
 
     function renderAgentSources() {
-      // Remove any previous agent-injected chips from the main list
+      // No-op as of phase 5 — machine-source chips now render inside each
+      // agent's own block (see the Sources sub-section in renderAgentSection).
+      // Kept as a function for safe call-sites that still reference it; any
+      // stale data-agent-chip markers in the top Sources strip are scrubbed
+      // for idempotence during reloads.
       const list = document.getElementById('sourcesList');
-      list.querySelectorAll('[data-agent-chip]').forEach(el => el.remove());
-
-      const agents = _agentStatus.agents || [];
-      if (!_agentStatus.alive || !agents.length) {
-        _agentSourceCount = 0;
-        _updateSourcesMeta();
-        return;
-      }
-
-      // Each connected agent gets its own newline + `<host> agent` label +
-      // chips for its source-role plugins. Multiple agents stack vertically
-      // in the same flex-wrap row.
-      const frag = document.createDocumentFragment();
-      let totalSources = 0;
-
-      for (const a of agents) {
-        const plugins = a.plugins || {};
-        const sourceEntries = Object.entries(plugins).filter(([name, p]) => {
-          const m = PLUGIN_META[name] || { role: 'source' };
-          return p && p.enabled && m.role === 'source';
-        });
-        if (sourceEntries.length === 0) continue;
-        totalSources += sourceEntries.length;
-
-        const brk = document.createElement('div');
-        brk.className = 'line-break';
-        brk.setAttribute('data-agent-chip', '');
-        frag.appendChild(brk);
-
-        const label = document.createElement('div');
-        label.className = 'chip agent-label';
-        label.setAttribute('data-agent-chip', '');
-        label.innerHTML = `${_esc(a.host)} agent`;
-        frag.appendChild(label);
-
-        for (const [name, p] of sourceEntries) {
-          const pm = PLUGIN_META[name] || { label: name };
-          const extra = _pluginExtra(name, p);
-          const chip = document.createElement('div');
-          chip.className = 'chip';
-          chip.setAttribute('data-state', 'active');
-          chip.setAttribute('data-agent-chip', '');
-          chip.title = `pushed by ${a.host} agent`;
-          chip.innerHTML = `<span class="dot"></span><span class="label">${_esc(pm.label)}${extra ? ` <span class="source-type">${_esc(extra)}</span>` : ''}</span>`;
-          frag.appendChild(chip);
-        }
-      }
-
-      _agentSourceCount = totalSources;
+      if (list) list.querySelectorAll('[data-agent-chip]').forEach(el => el.remove());
       _updateSourcesMeta();
-
-      // Append after the + Add source button so the new line is always at
-      // the end of the sources flow.
-      list.appendChild(frag);
     }
 
     function renderAgentSection() {
@@ -2976,6 +2929,41 @@
               <span class="pname">${pm.label}</span>${extra ? ` <span class="pextra">${_esc(extra)}</span>` : ''}
             </span>`;
           }).join('');
+
+          // Sources on this machine — one chip per enabled source-role
+          // plugin, plus a chip per configured instance for multi-instance
+          // plugins (homeassistant gets one chip per HA server). Clicking
+          // the "Configure" link will deep-link into the machine's local
+          // UI once phase 6 lands; for now it's a placeholder.
+          const sourceChips = Object.entries(plugins)
+            .filter(([name, p]) => {
+              const m = PLUGIN_META[name] || { role: 'source' };
+              return p && p.enabled && m.role === 'source';
+            })
+            .flatMap(([name, p]) => {
+              const pm = PLUGIN_META[name] || { label: name };
+              const instances = Array.isArray(p.instances) ? p.instances : null;
+              if (instances && instances.length) {
+                // One chip per configured instance — lets the user see each
+                // HA server (or any multi-instance plugin) individually.
+                return instances.map(inst => {
+                  const label = inst.name || inst.id || pm.label;
+                  return `<span class="chip" data-state="active" title="${_esc(pm.label)} — pushed by ${_esc(a.host)} agent">
+                    <span class="dot"></span>
+                    <span class="label">${_esc(label)} <span class="source-type">${_esc(pm.label)}</span></span>
+                  </span>`;
+                });
+              }
+              // Non-instance source plugins get one chip showing plugin-
+              // specific extra (path count, polling interval, etc.).
+              const extra = _pluginExtra(name, p);
+              return [`<span class="chip" data-state="active" title="pushed by ${_esc(a.host)} agent">
+                <span class="dot"></span>
+                <span class="label">${_esc(pm.label)}${extra ? ` <span class="source-type">${_esc(extra)}</span>` : ''}</span>
+              </span>`];
+            })
+            .join('');
+
           return `
             <div class="agent-connected">
               <div class="agent-connected-status">
@@ -2984,6 +2972,16 @@
                 ${a.version ? `<span style="color: var(--ink-faint); font-family: var(--mono); font-size: 11px;">v${_esc(a.version)}</span>` : ''}
                 ${runtimeInline}
                 <span class="meta-line">${a.uptime_s != null ? `up ${Math.round(a.uptime_s / 60)}m` : ''}</span>
+              </div>
+              <div class="agent-routines" data-host="${_esc(a.host)}">
+                <div class="agent-routines-head">
+                  <h3>Sources on ${_esc(a.host)}</h3>
+                  <span class="meta">machine-local</span>
+                </div>
+                <div class="sources">
+                  ${sourceChips || '<span class="meta" style="padding: 8px 0;">none configured yet</span>'}
+                  <button class="chip add" data-configure-machine="${_esc(a.host)}" type="button" title="Configure in local UI (phase 6)">configure ↗</button>
+                </div>
               </div>
               <div class="agent-routines" data-host="${_esc(a.host)}">
                 <div class="agent-routines-head">
