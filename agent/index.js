@@ -249,8 +249,8 @@ function promptChoice(question, choices, defaultKey) {
   });
 }
 
-function freshConfigFromPlugins(plugins, apiUrl, apiKey) {
-  const out = { api_url: apiUrl, api_key: apiKey, plugins: {} };
+function freshConfigFromPlugins(plugins, apiUrl, apiKey, host) {
+  const out = { api_url: apiUrl, api_key: apiKey, host, plugins: {} };
   for (const [name, p] of plugins) {
     out.plugins[name] = {
       enabled: false,
@@ -282,7 +282,7 @@ async function runInit(cliArgs, plugins, existingConfig) {
   const yes = !!(overrides.yes || overrides.y);
   let apiUrl = overrides["api-url"] || overrides.url || process.env.FATHOM_API_URL || existingConfig.api_url || "http://localhost:8201";
   const pairCode = overrides["pair-code"] || overrides.code || "";
-  const host = overrides.host || hostname();
+  const host = overrides.host || existingConfig.host || hostname();
 
   const configExists = existsSync(CONFIG_PATH);
   let branch = "fresh";
@@ -330,14 +330,14 @@ async function runInit(cliArgs, plugins, existingConfig) {
   const apiKey = redemption.token;
   let nextConfig;
   if (branch === "keep") {
-    nextConfig = { ...existingConfig, api_url: apiUrl, api_key: apiKey };
+    nextConfig = { ...existingConfig, api_url: apiUrl, api_key: apiKey, host };
   } else if (branch === "overwrite" && configExists) {
     const bak = `${CONFIG_PATH}.bak-${new Date().toISOString().replace(/[:.]/g, "-")}`;
     copyFileSync(CONFIG_PATH, bak);
     console.log(`Backed up existing config to ${bak}`);
-    nextConfig = freshConfigFromPlugins(plugins, apiUrl, apiKey);
+    nextConfig = freshConfigFromPlugins(plugins, apiUrl, apiKey, host);
   } else {
-    nextConfig = freshConfigFromPlugins(plugins, apiUrl, apiKey);
+    nextConfig = freshConfigFromPlugins(plugins, apiUrl, apiKey, host);
   }
 
   saveConfig(nextConfig);
@@ -416,8 +416,18 @@ async function main() {
   const overrides = cliArgs.overrides;
   const hasOverrides = Object.keys(overrides).length > 0;
 
+  // Top-level config.host (set by `init --host`) is the dashboard
+  // identity for this machine. Inject it as the default `host` on every
+  // plugin's config so plugin-level `config.host || hostname()` fallbacks
+  // still win if someone explicitly sets one, but unset plugins pick up
+  // the dashboard-facing name instead of the raw OS hostname.
+  const topLevelHost = config.host || undefined;
+
   for (const [name, plugin] of plugins) {
-    let pc = pluginConfigs[name] || {};
+    let pc = {
+      ...(topLevelHost ? { host: topLevelHost } : {}),
+      ...(pluginConfigs[name] || {}),
+    };
 
     // Apply CLI overrides
     if (overrides[name]) {

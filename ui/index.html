@@ -40,6 +40,11 @@
 
     ::selection { background: var(--accent); color: var(--bg-deep); }
 
+    /* Jump-to-section offset — sticky topbar ≈ 36px control + 28px
+       padding + 1px border ≈ 65px. Small breathing room on top. Used by
+       Element.scrollIntoView() so target headings land below the topbar. */
+    .scroll-target { scroll-margin-top: 72px; }
+
     /* ── Top bar ─────────────────────────────────── */
     .topbar {
       display: flex; align-items: center; justify-content: space-between;
@@ -372,7 +377,11 @@
       margin-top: 52px; padding-top: 32px;
       border-top: 1px solid var(--rule-soft);
     }
-    .ecg-section {
+    /* Divider above the technical section — signals the shift from the
+       consumer read (Feed, Sources, Agent) to operator-facing surfaces
+       (Reach, Stats, etc.). Applied to the first section of that block
+       so the whole tail reads as one grouping. */
+    #reachSection {
       margin-top: 52px; padding-top: 32px;
       border-top: 1px solid var(--rule-soft);
     }
@@ -381,7 +390,7 @@
       margin-bottom: 16px; gap: 12px;
     }
     .ecg-head h2 {
-      font-family: var(--serif); font-weight: 400; font-size: 26px; margin: 0;
+      font-family: var(--serif); font-weight: 400; font-size: 22px; margin: 0;
       color: var(--ink);
     }
     .ecg-head .meta {
@@ -1423,25 +1432,35 @@
       max-width: 600px;
     }
 
-    /* Connected status — shown when agent heartbeat is alive. */
-    .agent-connected { display: flex; flex-direction: column; gap: 12px; }
-    .agent-connected-status {
-      display: flex; align-items: center; gap: 10px;
-      padding: 10px 14px; border-radius: 10px;
+    /* Connected status — shown when agent heartbeat is alive. The outer
+       .agent-connected is the card shell (one per agent); the status row
+       reads as a stats line, with the Routines subsection below. */
+    .agent-connected {
+      display: flex; flex-direction: column;
+      padding: 12px 14px;
       background: var(--surface); border: 1px solid var(--rule);
+      border-radius: 12px;
     }
-    .agent-connected-status .dot {
-      width: 8px; height: 8px; border-radius: 50%;
-      background: var(--signal);
-      box-shadow: 0 0 8px var(--dot-glow);
-      flex-shrink: 0;
+    .agent-connected + .agent-connected { margin-top: 12px; }
+    .agent-connected-status {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+      padding: 2px 0 10px;
     }
     .agent-connected-status .host {
       font-family: var(--mono); font-size: 13px; color: var(--ink);
     }
-    .agent-connected-status .meta-line {
+    .agent-connected-status .host { cursor: help; }
+    .agent-connected-status .source-count {
       font-family: var(--mono); font-size: 11px; color: var(--ink-faint);
+    }
+    .agent-connected-status .configure-link {
       margin-left: auto;
+      font-family: var(--mono); font-size: 11px; letter-spacing: 0.02em;
+      color: var(--accent); text-decoration: none; white-space: nowrap;
+    }
+    .agent-connected-status .configure-link:hover { text-decoration: underline; }
+    .agent-connected-status .configure-link[aria-disabled="true"] {
+      color: var(--ink-faint); cursor: not-allowed; pointer-events: none;
     }
     .agent-plugins {
       display: flex; flex-wrap: wrap; gap: 8px;
@@ -1494,7 +1513,25 @@
     }
     .pair-close:hover { color: var(--ink); }
     .pair-lead { font-size: 14px; color: var(--ink-soft); margin: 4px 0 14px; line-height: 1.5; }
+    /* Host-name input inside the pair dialog. Required — the command
+       below stays in a placeholder state until a valid name is entered. */
+    .pair-host-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+    .pair-host-field label {
+      font-family: var(--mono); font-size: 11px; letter-spacing: 0.05em;
+      text-transform: uppercase; color: var(--ink-faint);
+    }
+    .pair-host-field input {
+      background: var(--bg); border: 1px solid var(--rule); border-radius: 8px;
+      padding: 10px 12px; font-family: var(--mono); font-size: 13px;
+      color: var(--ink); outline: none;
+    }
+    .pair-host-field input:focus { border-color: var(--accent); }
+    .pair-host-field input[data-invalid="true"] { border-color: var(--danger); }
+    .pair-host-help { font-size: 12px; color: var(--ink-faint); line-height: 1.4; }
+    .pair-host-help[data-state="error"] { color: var(--danger); }
     .pair-cmd-wrap { display: flex; gap: 8px; align-items: stretch; margin-bottom: 12px; }
+    .pair-cmd[data-pending="true"] { color: var(--ink-faint); font-style: italic; }
+    .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
     .pair-cmd {
       flex: 1; margin: 0; padding: 12px 14px;
       background: var(--bg); border: 1px solid var(--rule); border-radius: 8px;
@@ -1525,16 +1562,40 @@
       margin: 14px 0 8px;
     }
 
-    /* Routines subsection inside the Agent section. Tighter than a top-level
-       section — it's nested, not standalone. */
-    .agent-routines { margin-top: 18px; }
+    /* Compact inline variant shown when at least one agent is already
+       connected — big install cards would be over-weight for a "while
+       you're here" affordance. One line: muted label + three os links. */
+    .agent-add-another-inline {
+      display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px;
+      margin: 14px 0 4px; font-size: 13px;
+    }
+    .agent-add-another-inline .label {
+      font-family: var(--mono); font-size: 11px;
+      color: var(--ink-faint);
+    }
+    .agent-add-another-inline .sep {
+      color: var(--ink-faint); opacity: 0.5; user-select: none;
+    }
+    .install-link {
+      background: transparent; border: 0; padding: 0;
+      font: inherit; color: var(--accent);
+      cursor: pointer;
+    }
+    .install-link:hover { text-decoration: underline; }
+    .install-link:focus-visible {
+      outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px;
+    }
+
+    /* Routines subsection inside an agent card. Tighter than a top-level
+       section — it's nested, separated from the sources row by a hairline. */
+    .agent-routines { padding-top: 10px; border-top: 1px solid var(--rule); }
     .agent-routines-head {
       display: flex; align-items: baseline; gap: 10px;
       margin-bottom: 10px;
     }
     .agent-routines-head h3 {
       font-family: var(--serif); font-weight: 400;
-      font-size: 17px; margin: 0;
+      font-size: 15px; margin: 0;
     }
     .agent-routines-head .meta {
       font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em;
@@ -1607,6 +1668,9 @@
       <div class="brand">fathom<span class="brand-mark"><svg class="ph-triangle" viewBox="0 0 340 256" fill="currentColor"><g transform="rotate(20.4 128 150)" opacity="0.28"><path d="M236.8,188.09,149.35,36.22a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19A23.51,23.51,0,0,0,236.8,188.09ZM222.93,203.8a8.5,8.5,0,0,1-7.48,4.2H40.55a8.5,8.5,0,0,1-7.48-4.2,7.59,7.59,0,0,1,0-7.72L120.52,44.21a8.75,8.75,0,0,1,15,0l87.45,151.87A7.59,7.59,0,0,1,222.93,203.8Z"/></g><g transform="translate(41 0) rotate(-17.2 128 150)" opacity="0.58"><path d="M236.8,188.09,149.35,36.22a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19A23.51,23.51,0,0,0,236.8,188.09ZM222.93,203.8a8.5,8.5,0,0,1-7.48,4.2H40.55a8.5,8.5,0,0,1-7.48-4.2,7.59,7.59,0,0,1,0-7.72L120.52,44.21a8.75,8.75,0,0,1,15,0l87.45,151.87A7.59,7.59,0,0,1,222.93,203.8Z"/></g><g transform="translate(82 0) rotate(0.4 128 150)"><path d="M149.35,36.22a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19,23.51,23.51,0,0,0,0-23.72Z"/></g></svg></span></div>
     </div>
     <div class="topbar-right">
+      <button class="icon-btn" id="jumpToTechBtn" aria-label="Jump to technical section" title="Jump to technical section">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>
+      </button>
       <button class="icon-btn theme-toggle" id="themeToggle" aria-label="Toggle theme" title="Toggle theme">
         <!-- moon (shown in dark mode — click to go light) -->
         <svg class="ic-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
@@ -1638,11 +1702,37 @@
       <button class="show-more-feed" id="showMoreFeed" type="button">Show more</button>
     </section>
 
+    <!-- Extend: how to reach Fathom from elsewhere -->
+    <section class="section scroll-target" id="reachSection">
+      <div class="section-head">
+        <h2>Reach me from anywhere</h2>
+        <span class="meta">one mind, all surfaces</span>
+      </div>
+      <div class="extend-grid">
+        <div class="extend" data-surface="mcp-and-hooks">
+          <span class="extend-icon">⌘</span>
+          <div class="extend-text"><span class="label">MCP &amp; Hooks</span><span class="sub">npx fathom-connect</span></div>
+        </div>
+        <div class="extend" data-surface="cli">
+          <span class="extend-icon">▸</span>
+          <div class="extend-text"><span class="label">CLI</span><span class="sub">npx fathom-delta-cli</span></div>
+        </div>
+        <div class="extend" data-surface="browser">
+          <span class="extend-icon">◎</span>
+          <div class="extend-text"><span class="label">Browser</span><span class="sub">WIP</span></div>
+        </div>
+        <div class="extend" data-surface="api">
+          <span class="extend-icon">⟡</span>
+          <div class="extend-text"><span class="label">API</span><span class="sub">OpenAI-compatible</span></div>
+        </div>
+      </div>
+    </section>
+
     <!-- Sources -->
     <section class="section">
       <div class="section-head">
         <h2>Sources</h2>
-        <span class="meta">7 active · 2 paused</span>
+        <span class="meta"></span>
       </div>
       <div class="sources" id="sourcesList">
         <!-- Populated by loadSources() + renderAgentSources(). Agent chips
@@ -1672,34 +1762,8 @@
       <div id="agentBody"><!-- populated by renderAgentSection() --></div>
     </section>
 
-    <!-- Extend: how to reach Fathom from elsewhere -->
-    <section class="section">
-      <div class="section-head">
-        <h2>Reach me from anywhere</h2>
-        <span class="meta">one mind, all surfaces</span>
-      </div>
-      <div class="extend-grid">
-        <div class="extend" data-surface="mcp-and-hooks">
-          <span class="extend-icon">⌘</span>
-          <div class="extend-text"><span class="label">MCP &amp; Hooks</span><span class="sub">npx fathom-connect</span></div>
-        </div>
-        <div class="extend" data-surface="cli">
-          <span class="extend-icon">▸</span>
-          <div class="extend-text"><span class="label">CLI</span><span class="sub">npx fathom-delta-cli</span></div>
-        </div>
-        <div class="extend" data-surface="browser">
-          <span class="extend-icon">◎</span>
-          <div class="extend-text"><span class="label">Browser</span><span class="sub">WIP</span></div>
-        </div>
-        <div class="extend" data-surface="api">
-          <span class="extend-icon">⟡</span>
-          <div class="extend-text"><span class="label">API</span><span class="sub">OpenAI-compatible</span></div>
-        </div>
-      </div>
-    </section>
-
     <!-- Stats — multi-track time-series of Fathom's state -->
-    <section class="ecg-section">
+    <section class="ecg-section" id="statsSection">
       <div class="ecg-head">
         <h2>Stats</h2>
         <div class="ecg-controls">
@@ -1787,9 +1851,14 @@
       </div>
       <div class="pair-body">
         <p class="pair-lead">Copy this command and run it on the machine you want to connect. The code is single-use and expires in <span id="pairCountdown">—</span>.</p>
+        <div class="pair-host-field">
+          <label for="pairHostInput">Name this machine</label>
+          <input type="text" id="pairHostInput" placeholder="e.g. laptop, home-server, studio" autocomplete="off" spellcheck="false" maxlength="63" />
+          <div class="pair-host-help" id="pairHostHelp">Letters, numbers, dots, dashes, and underscores. This is how the machine appears in the dashboard.</div>
+        </div>
         <div class="pair-cmd-wrap">
           <pre class="pair-cmd" id="pairCmd">generating…</pre>
-          <button class="btn" id="pairCopyBtn">Copy</button>
+          <button class="btn" id="pairCopyBtn" disabled>Copy</button>
         </div>
         <div class="pair-status" id="pairStatus">Waiting for the agent's first heartbeat…</div>
         <details class="pair-details">
@@ -2295,6 +2364,17 @@
       ta.style.height = 'auto';
       ta.style.height = Math.min(ta.scrollHeight, 160) + 'px';
     });
+
+    // Jump to technical section — header button that smooth-scrolls to
+    // "Reach me from anywhere". The target section carries a
+    // scroll-margin-top equal to the sticky topbar's height so the
+    // heading lands below the header instead of under it.
+    const jumpTechBtn = document.getElementById('jumpToTechBtn');
+    if (jumpTechBtn) {
+      jumpTechBtn.addEventListener('click', () => {
+        document.getElementById('reachSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
 
     // Theme toggle
     const toggle = document.getElementById('themeToggle');
@@ -2810,13 +2890,11 @@
     let _cloudSourceCounts = { active: 0, paused: 0 };  // snapshot from last loadSources()
 
     function _updateSourcesMeta() {
-      // Top Sources strip now counts only cloud-polled sources — machine
-      // sources render inside each agent block (phase 5 symmetry with
-      // routines).
+      // The count is redundant with the chip list below; the meta stays
+      // empty. Call sites are preserved in case we want to reuse the slot
+      // later (e.g., for a "stale" warning when a poller's behind).
       const meta = document.querySelector('#sourcesList')?.closest('.section')?.querySelector('.meta');
-      if (!meta) return;
-      const { active, paused } = _cloudSourceCounts;
-      meta.textContent = active + ' active' + (paused ? ' · ' + paused + ' paused' : '');
+      if (meta) meta.textContent = '';
     }
 
     const CRON_PRESETS = {
@@ -2932,12 +3010,7 @@
         // source) are inlined into the status row as small mono pills; the
         // separate plugins sub-row has been folded in for compactness.
         // Source-role plugins still live in the Sources section.
-        const totalEnabled = agents.reduce(
-          (n, a) => n + Object.values(a.plugins || {}).filter(p => p && p.enabled).length,
-          0
-        );
-        const agentWord = agents.length === 1 ? 'agent' : 'agents';
-        meta.textContent = `connected · ${agents.length} ${agentWord} · ${totalEnabled} plugin${totalEnabled === 1 ? '' : 's'}`;
+        meta.textContent = `${agents.length} connected`;
 
         // Per-agent layout: status row + its routines subsection, then the
         // platform tiles below for adding another machine. Routines are
@@ -2950,75 +3023,58 @@
           // heartbeat at runtime). PLUGIN_META is now only a fallback for
           // labels on plugins that don't self-identify.
           const categoryOf = (name, p) => p.category || (PLUGIN_META[name] && PLUGIN_META[name].role) || 'source';
-          const runtimeEntries = Object.entries(plugins).filter(([name, p]) =>
-            p && p.enabled && categoryOf(name, p) === 'runtime'
-          );
-          const runtimeInline = runtimeEntries.map(([name, p]) => {
-            const pm = PLUGIN_META[name] || { label: name };
-            const extra = _pluginExtra(name, p);
-            return `<span class="agent-plugin-inline" title="runtime plugin">
-              <span class="pname">${pm.label}</span>${extra ? ` <span class="pextra">${_esc(extra)}</span>` : ''}
-            </span>`;
-          }).join('');
 
-          // Sources on this machine — one chip per enabled source-category
-          // plugin, plus a chip per configured instance for multi-instance
-          // plugins (homeassistant gets one chip per HA server). System-
-          // category plugins (heartbeat, localui) are deliberately not
-          // shown in this block — they're infrastructure, not sources.
-          const sourceChips = Object.entries(plugins)
+          // Source count for the stats line — one entry per enabled
+          // source-category plugin, plus one per configured instance for
+          // multi-instance plugins (HA). No label list: just the count.
+          // Sources are configured on the machine itself, so the stats
+          // line ends with a "configure" link deep-linking to the
+          // on-machine agent UI.
+          const sourceCount = Object.entries(plugins)
             .filter(([name, p]) =>
               p && p.enabled && categoryOf(name, p) === 'source'
             )
-            .flatMap(([name, p]) => {
-              const pm = PLUGIN_META[name] || { label: name };
+            .reduce((n, [, p]) => {
               const instances = Array.isArray(p.instances) ? p.instances : null;
-              if (instances && instances.length) {
-                // One chip per configured instance — lets the user see each
-                // HA server (or any multi-instance plugin) individually.
-                return instances.map(inst => {
-                  const label = inst.name || inst.id || pm.label;
-                  return `<span class="chip" data-state="active" title="${_esc(pm.label)} — pushed by ${_esc(a.host)} agent">
-                    <span class="dot"></span>
-                    <span class="label">${_esc(label)} <span class="source-type">${_esc(pm.label)}</span></span>
-                  </span>`;
-                });
-              }
-              // Non-instance source plugins get one chip showing plugin-
-              // specific extra (path count, polling interval, etc.).
+              return n + (instances && instances.length ? instances.length : 1);
+            }, 0);
+          const sourceCountText = `${sourceCount} source${sourceCount === 1 ? '' : 's'}`;
+          const configureHtml = a.agent_url
+            ? `<a class="configure-link" href="${_esc(a.agent_url)}" target="_blank" rel="noopener" title="Opens the on-machine agent UI in a new tab (only resolves from ${_esc(a.host)})">configure ↗</a>`
+            : `<span class="configure-link" aria-disabled="true" title="local-ui plugin not enabled on this machine — add it to agent.json">configure (unavailable)</span>`;
+
+          // Operator-mode detail, tucked into a hover tooltip on the host
+          // name: version, human uptime, runtime plugin details (e.g.
+          // "kitty: auto, normal"). Keeps the consumer stats line clean
+          // while preserving the diagnostic info one hover away.
+          const uptimeText = a.uptime_s != null
+            ? (a.uptime_s < 3600
+                ? `${Math.round(a.uptime_s / 60)}m`
+                : `${Math.floor(a.uptime_s / 3600)}h ${Math.round((a.uptime_s % 3600) / 60)}m`)
+            : '';
+          const runtimeDetailParts = Object.entries(plugins)
+            .filter(([name, p]) => p && p.enabled && categoryOf(name, p) === 'runtime')
+            .map(([name, p]) => {
+              const pm = PLUGIN_META[name] || { label: name };
               const extra = _pluginExtra(name, p);
-              return [`<span class="chip" data-state="active" title="pushed by ${_esc(a.host)} agent">
-                <span class="dot"></span>
-                <span class="label">${_esc(pm.label)}${extra ? ` <span class="source-type">${_esc(extra)}</span>` : ''}</span>
-              </span>`];
-            })
-            .join('');
+              return extra ? `${pm.label.toLowerCase()}: ${extra}` : pm.label.toLowerCase();
+            });
+          const hostTooltip = [
+            a.version ? `v${a.version}` : '',
+            uptimeText ? `up ${uptimeText}` : '',
+            ...runtimeDetailParts,
+          ].filter(Boolean).join(' · ');
 
           return `
             <div class="agent-connected">
               <div class="agent-connected-status">
-                <span class="dot"></span>
-                <span class="host">${_esc(a.host)}</span>
-                ${a.version ? `<span style="color: var(--ink-faint); font-family: var(--mono); font-size: 11px;">v${_esc(a.version)}</span>` : ''}
-                ${runtimeInline}
-                <span class="meta-line">${a.uptime_s != null ? `up ${Math.round(a.uptime_s / 60)}m` : ''}</span>
+                <span class="host"${hostTooltip ? ` title="${_esc(hostTooltip)}"` : ''}>${_esc(a.host)}</span>
+                <span class="source-count">${_esc(sourceCountText)}</span>
+                ${configureHtml}
               </div>
               <div class="agent-routines" data-host="${_esc(a.host)}">
                 <div class="agent-routines-head">
-                  <h3>Sources on ${_esc(a.host)}</h3>
-                  <span class="meta">machine-local</span>
-                </div>
-                <div class="sources">
-                  ${sourceChips || '<span class="meta" style="padding: 8px 0;">none configured yet</span>'}
-                  ${a.agent_url
-                    ? `<a class="chip add" href="${_esc(a.agent_url)}" target="_blank" rel="noopener" title="Opens the on-machine agent UI in a new tab (only resolves from ${_esc(a.host)})">configure ↗</a>`
-                    : `<button class="chip add" type="button" disabled title="local-ui plugin not enabled on this machine — add it to agent.json">configure (unavailable)</button>`}
-                </div>
-              </div>
-              <div class="agent-routines" data-host="${_esc(a.host)}">
-                <div class="agent-routines-head">
-                  <h3>Routines on ${_esc(a.host)}</h3>
-                  <span class="meta">loading…</span>
+                  <h3>Routines</h3>
                 </div>
                 <div class="sources" data-routine-list="${_esc(a.host)}">
                   <button class="chip add" data-new-routine-for="${_esc(a.host)}" type="button">+ New routine</button>
@@ -3029,7 +3085,20 @@
 
         // Show the install CTAs beneath connected agents — makes it obvious
         // how to add another machine to the fleet.
-        body.innerHTML = perAgentHtml + `<div class="agent-add-another">Add another machine</div>` + platformTiles;
+        // When at least one agent is already connected, the install
+        // affordance collapses to a single inline text line — big cards
+        // are only needed for first-run. Clicks on these spans still
+        // reach openPairModal via the [data-surface^="agent-"] delegation.
+        const addAnotherInline = `
+          <div class="agent-add-another-inline">
+            <span class="label">Add another machine:</span>
+            <button type="button" class="install-link" data-surface="agent-linux">Linux</button>
+            <span class="sep">|</span>
+            <button type="button" class="install-link" data-surface="agent-mac">Mac</button>
+            <span class="sep">|</span>
+            <button type="button" class="install-link" data-surface="agent-windows">Windows</button>
+          </div>`;
+        body.innerHTML = perAgentHtml + addAnotherInline;
 
         // Now that #routinesList exists in the DOM again, paint routine chips
         // into it. renderRoutines() is idempotent; safe to call repeatedly.
@@ -3132,12 +3201,6 @@
         const chipsHtml = _sortRoutines(mine).map(_routineChipHTML).join('');
         list.innerHTML = chipsHtml + `<button class="chip add" data-new-routine-for="${_esc(host)}" type="button">+ New routine</button>`;
 
-        // Per-block meta: counts scoped to this host's view.
-        const metaEl = list.closest('.agent-routines')?.querySelector('.agent-routines-head .meta');
-        if (metaEl) {
-          const enabled = mine.filter(r => r.enabled).length;
-          metaEl.textContent = mine.length ? `${enabled} active · ${mine.length} total` : 'none yet';
-        }
       }
       _wireAddRoutineChips();
       _wireRoutineChips();
@@ -3621,13 +3684,51 @@
     const pairCountdown = document.getElementById('pairCountdown');
     const pairTitle = document.getElementById('pairTitle');
     const pairCopyBtn = document.getElementById('pairCopyBtn');
+    const pairHostInput = document.getElementById('pairHostInput');
+    const pairHostHelp = document.getElementById('pairHostHelp');
 
     let _pairTimers = [];
     const _pairCancelAll = () => { _pairTimers.forEach(clearTimeout); _pairTimers.forEach(clearInterval); _pairTimers = []; };
 
+    // Current pair state — lets the input-change handler re-render the
+    // command line without re-minting. Cleared on close.
+    let _pairState = null;  // { apiUrl, code }
+
+    // Hostname-safe alphabet: start with alnum, then alnum + dot/hyphen/
+    // underscore. Keeps the install command free of quoting concerns and
+    // rejects pasted whitespace/garbage at the UI layer.
+    const _HOST_RX = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$/;
+
+    function _validHost(v) { return _HOST_RX.test((v || '').trim()); }
+
+    function _renderPairCmd() {
+      if (!_pairState) return;
+      const h = (pairHostInput.value || '').trim();
+      const ok = _validHost(h);
+      const hostArg = ok ? h : '<name>';
+      const cmd = `npx -y fathom-agent@latest init --api-url ${_pairState.apiUrl} --pair-code ${_pairState.code} --host ${hostArg}`;
+      pairCmdEl.textContent = cmd;
+      pairCmdEl.dataset.pending = ok ? 'false' : 'true';
+      pairCopyBtn.disabled = !ok;
+      pairHostInput.dataset.invalid = (h && !ok) ? 'true' : 'false';
+      if (!h) {
+        pairHostHelp.textContent = 'Letters, numbers, dots, dashes, and underscores. This is how the machine appears in the dashboard.';
+        pairHostHelp.dataset.state = '';
+      } else if (!ok) {
+        pairHostHelp.textContent = 'Must start with a letter or number and contain only letters, numbers, dots, dashes, or underscores.';
+        pairHostHelp.dataset.state = 'error';
+      } else {
+        pairHostHelp.textContent = `This machine will appear as "${h}" in the dashboard.`;
+        pairHostHelp.dataset.state = '';
+      }
+    }
+
+    pairHostInput.addEventListener('input', _renderPairCmd);
+
     function closePairModal() {
       pairModal.hidden = true;
       _pairCancelAll();
+      _pairState = null;
     }
 
     function _formatSecs(s) {
@@ -3645,7 +3746,11 @@
       pairStatus.textContent = 'Minting a pair code…';
       pairStatus.dataset.state = '';
       pairCountdown.textContent = '—';
+      pairHostInput.value = '';
+      pairHostInput.dataset.invalid = 'false';
+      pairCopyBtn.disabled = true;
       pairModal.hidden = false;
+      pairHostInput.focus();
 
       let code;
       try {
@@ -3667,8 +3772,8 @@
       // to the browser's location.origin so the install line is copy-pastable
       // onto another machine verbatim.
       const urlForAgent = (API_BASE || location.origin).replace(/\/$/, '');
-      const cmd = `npx -y fathom-agent@latest init --api-url ${urlForAgent} --pair-code ${code.code}`;
-      pairCmdEl.textContent = cmd;
+      _pairState = { apiUrl: urlForAgent, code: code.code };
+      _renderPairCmd();
 
       // Snapshot current agents so we can detect the new one.
       const existingHosts = new Set((_agentStatus.agents || []).map((a) => a.host));
@@ -3720,10 +3825,12 @@
       el.addEventListener('click', closePairModal)
     );
 
-    // Any click on an install tile (in the Agent section or anywhere else)
-    // with surface="agent-<os>" opens the pairing modal.
+    // Any click on an install trigger (big .extend tile OR the compact
+    // text link used when an agent is already connected) opens the
+    // pairing modal. Matching on the attribute lets both markup shapes
+    // share the same handler.
     document.body.addEventListener('click', (ev) => {
-      const tile = ev.target.closest('.extend[data-surface^="agent-"]');
+      const tile = ev.target.closest('[data-surface^="agent-"]');
       if (tile) openPairModal(tile.dataset.surface);
     });
 
