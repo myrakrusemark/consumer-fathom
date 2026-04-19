@@ -339,7 +339,9 @@
       flex-shrink: 0;
     }
     .chip .label { display: inline-block; }
-    .chip .label .source-type { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
+    .chip .label .source-type,
+    .chip .label .next-fire { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
+    .chip .label .next-fire.soon { color: var(--accent); }
     .chip[data-state="paused"] { color: var(--ink-faint); opacity: 0.55; }
     .chip[data-state="paused"] .dot { background: var(--ink-faint); box-shadow: none; }
     .chip[data-state="error"] { color: #d35; opacity: 0.75; }
@@ -1449,50 +1451,29 @@
     .cron-picker .cron-preview .err { color: #d35; }
 
     /* ── Agent section ──────────────────────────── */
-    /* Install callout — shown when no agent is registered.
-       The point is to make the "unlock this" value obvious. */
+    /* Install callout — banner shape, shown when no agent is registered.
+       Reads as a one-line pitch, not a feature card. */
     .agent-callout {
       position: relative; overflow: hidden;
       background:
         linear-gradient(135deg, rgba(255,165,0,0.06), rgba(120,160,200,0.04) 60%),
         var(--surface);
       border: 1px solid var(--rule);
-      border-radius: 14px; padding: 22px 24px;
+      border-radius: 10px; padding: 14px 18px;
       margin-bottom: 14px;
     }
     .agent-callout::before {
       content: ""; position: absolute; inset: 0;
-      background: radial-gradient(600px 220px at -5% -10%, rgba(255,180,100,0.08), transparent 60%);
+      background: radial-gradient(600px 180px at -5% -10%, rgba(255,180,100,0.08), transparent 60%);
       pointer-events: none;
-    }
-    .agent-callout-badge {
-      display: inline-flex; align-items: center; gap: 6px;
-      font-family: var(--mono); font-size: 10px;
-      letter-spacing: 0.1em; text-transform: uppercase;
-      color: var(--accent);
-      padding: 3px 9px; border: 1px solid var(--accent);
-      border-radius: 999px; margin-bottom: 12px;
-      background: rgba(255,165,0,0.06);
     }
     .agent-callout h3 {
       font-family: var(--serif); font-weight: 400;
-      font-size: 22px; margin: 0 0 6px; line-height: 1.2;
+      font-size: 17px; margin: 0 0 2px; line-height: 1.25;
     }
     .agent-callout p {
-      margin: 0 0 10px; font-size: 14px; color: var(--ink-soft);
-      max-width: 560px;
-    }
-    .agent-callout ul {
-      margin: 6px 0 16px; padding: 0; list-style: none;
-      display: flex; flex-direction: column; gap: 4px;
-    }
-    .agent-callout li {
-      font-size: 13px; color: var(--ink-soft);
-      padding-left: 18px; position: relative;
-    }
-    .agent-callout li::before {
-      content: "→"; color: var(--accent);
-      position: absolute; left: 0; top: 0;
+      margin: 0; font-size: 13px; color: var(--ink-soft);
+      max-width: 600px;
     }
 
     /* Connected status — shown when agent heartbeat is alive. */
@@ -1642,16 +1623,21 @@
 
     <!-- Routines — scheduled prompts that fire into local claude sessions.
          Hidden entirely when no agent is connected (the Agent section's
-         install callout covers the "unlock this" messaging). -->
+         install callout covers the "unlock this" messaging).
+
+         Rendered as a timeline: chips sorted by next_fire_at ascending, so
+         the chip in the top-left is the next routine that will fire. The
+         secondary text on each chip is a countdown ("in 23m"). Tap a chip
+         to open the routine detail view, same shape as the source detail. -->
     <section class="section" id="routinesSection" hidden>
       <div class="section-head">
         <h2>Routines</h2>
         <span class="meta" id="routinesMeta">loading…</span>
       </div>
-      <div class="routine-list" id="routinesList">
-        <!-- Populated by loadRoutines() -->
+      <div class="sources" id="routinesList">
+        <!-- Populated by loadRoutines() / renderRoutines() -->
+        <button class="chip add" id="newRoutineBtn" type="button">+ New routine</button>
       </div>
-      <button class="chip add" id="newRoutineBtn" type="button" style="margin-top: 10px;">+ New routine</button>
     </section>
 
     <!-- Agent — the local runtime. Shows a connected status when alive,
@@ -1903,6 +1889,125 @@
       </section>
     </main>
   </div><!-- /view-add-source -->
+
+  <!-- ═══ VIEW: ROUTINE DETAIL ═════════════════════
+       Mirrors view-source-detail: hero with pause/kebab, activity
+       stats, recent fires, danger zone. Swapped in by openRoutineDetail()
+       and restored by closeRoutineDetail(). -->
+  <div class="view view-detail" id="viewRoutineDetail" hidden>
+    <header class="topbar">
+      <div class="topbar-left">
+        <button class="icon-btn" id="routineBackBtn" aria-label="Back">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+        </button>
+        <div class="topbar-title" id="routineDetailTitle">Routine</div>
+      </div>
+      <div class="topbar-right"></div>
+    </header>
+
+    <main>
+      <!-- Hero -->
+      <section class="source-hero">
+        <div class="row">
+          <div class="source-logo" id="routineDetailLogo">R</div>
+          <div class="detail-actions">
+            <button class="btn ghost compact" id="routineQuickPause"><span class="dot" id="routineDot"></span> Pause</button>
+            <div class="detail-kebab-wrap">
+              <button class="btn ghost icon-only" id="routineKebab" aria-label="More options"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg></button>
+              <div class="detail-kebab-menu" id="routineKebabMenu" hidden>
+                <button class="menu-item" id="routineFireNow">Fire now</button>
+                <button class="menu-item" id="routineEditBtn">Edit routine</button>
+                <div class="menu-sep"></div>
+                <div class="menu-label">Permission mode</div>
+                <button class="menu-item perm-mode" data-mode="auto">Auto</button>
+                <button class="menu-item perm-mode" data-mode="normal">Normal</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <h1 id="routineDetailName">Routine</h1>
+        <div class="source-meta">
+          <span class="source-status" id="routineStatusLine"><span id="routineStatusText">next fire · in 23m</span></span>
+        </div>
+      </section>
+
+      <!-- Activity -->
+      <section class="section">
+        <div class="section-head">
+          <h2>Activity</h2>
+          <span class="meta" id="routineLastSeen">—</span>
+        </div>
+        <div class="stats-row" id="routineStats">
+          <div class="stat"><span class="n" id="routineCount24h">—</span><span class="lbl">last 24h</span></div>
+          <div class="stat"><span class="n" id="routineCount7d">—</span><span class="lbl">last 7d</span></div>
+          <div class="stat"><span class="n" id="routineCountAll">—</span><span class="lbl">all time</span></div>
+        </div>
+      </section>
+
+      <!-- Schedule + prompt preview -->
+      <section class="section">
+        <div class="section-head">
+          <h2>Schedule</h2>
+          <span class="meta" id="routineScheduleMeta">—</span>
+        </div>
+        <div class="routine-prompt" id="routinePromptPreview">(empty)</div>
+      </section>
+
+      <!-- Recent fires — the equivalent of "Recent moments" on sources -->
+      <section class="section">
+        <div class="section-head">
+          <h2>Recent fires</h2>
+        </div>
+        <div class="delta-list" id="routineFires">
+          <!-- Populated by loadRoutineDetail() -->
+        </div>
+      </section>
+
+      <!-- Inline editor (hidden by default; revealed by kebab → Edit) -->
+      <section class="section" id="routineEditorSection" hidden>
+        <div class="section-head">
+          <h2>Edit routine</h2>
+        </div>
+        <div id="routineEditorMount"><!-- renderEditorHtml() swaps in here --></div>
+      </section>
+
+      <!-- Danger zone -->
+      <section class="section">
+        <div class="section-head">
+          <h2>Delete</h2>
+        </div>
+        <p style="font-size: 14px; color: var(--ink-soft); line-height: 1.55; margin: 0 0 14px;">
+          Deleting writes a tombstone delta. Past fires and summaries stay in the lake; the scheduler just stops firing.
+        </p>
+        <button class="btn danger" id="routineDeleteBtn">Delete routine</button>
+      </section>
+    </main>
+  </div><!-- /view-routine-detail -->
+
+  <!-- ═══ VIEW: ADD ROUTINE (wizard) ═══════════════
+       Single-step wizard wrapping the routine editor. Chose one step over
+       several because routines are cohesive: you need the cron + prompt
+       together to see if the schedule makes sense for the work. -->
+  <div class="view view-add-source" id="viewAddRoutine" hidden>
+    <header class="topbar">
+      <div class="topbar-left">
+        <button class="icon-btn" id="addRoutineBackBtn" aria-label="Back">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+        </button>
+        <div class="topbar-title">New routine</div>
+      </div>
+      <div class="topbar-right"></div>
+    </header>
+
+    <main>
+      <section class="wizard-step active">
+        <div class="wizard-stamp">New routine</div>
+        <h1 class="wizard-title">What should Fathom do on a timer?</h1>
+        <p class="wizard-sub">A routine is a prompt that fires into a local claude session on a cron schedule. Give it an id, a schedule, and what you want done.</p>
+        <div id="addRoutineMount"><!-- renderEditorHtml(null) swaps in here --></div>
+      </section>
+    </main>
+  </div><!-- /view-add-routine -->
 
   <!-- ═══ VIEW: SETTINGS ═══════════════════════════ -->
   <div class="view view-settings" id="viewSettings" hidden>
@@ -2822,14 +2927,8 @@
         meta.textContent = 'not installed';
         body.innerHTML = `
           <div class="agent-callout">
-            <span class="agent-callout-badge">Free extra functionality</span>
-            <h3>Install the Fathom agent to unlock Routines.</h3>
-            <p>The agent runs locally on your machine. It watches your files, tracks system health, and executes scheduled Routines — prompts that fire into a local claude session on a cron schedule.</p>
-            <ul>
-              <li>Scheduled Routines — have Fathom do work for you on a timer</li>
-              <li>Vault watching — your notes, automatically in the lake</li>
-              <li>System health — local metrics, no cloud required</li>
-            </ul>
+            <h3>Install the Fathom agent and unlock routines and local sources.</h3>
+            <p>The agent runs locally on your machine. It watches your files, tracks system health, and executes scheduled Routines — prompts that fire into a local claude session on a schedule of your choosing.</p>
           </div>
           <div class="extend-grid">
             <div class="extend" data-surface="agent-linux">
@@ -2856,11 +2955,51 @@
         const data = await r.json();
         _routineCache = data.routines || [];
       } catch (e) {
-        routinesList.innerHTML = '<div class="meta">failed to load routines: ' + e.message + '</div>';
+        routinesList.innerHTML = `<button class="chip add" id="newRoutineBtn" type="button">+ New routine</button><div class="meta" style="flex-basis:100%">failed to load routines: ${_esc(e.message)}</div>`;
+        _wireAddRoutineChip();
         routinesMeta.textContent = '';
         return;
       }
       renderRoutines();
+    }
+
+    // Relative-time text for the chip's secondary slot. Disabled routines
+    // read "paused"; routines with no next_fire_at fall back to the raw cron.
+    // Fires more than 24h out switch to an absolute short format so the
+    // timeline doesn't read "in 3d" indistinguishably for everything.
+    function _nextFireText(r) {
+      if (!r.enabled) return 'paused';
+      const epoch = Number(r.next_fire_at || 0);
+      if (!epoch) return r.schedule || '—';
+      const diff = (epoch * 1000) - Date.now();
+      if (diff <= 0) return 'any moment';
+      const mins = Math.round(diff / 60000);
+      if (mins < 60) return 'in ' + mins + 'm';
+      const hrs = Math.round(mins / 60);
+      if (hrs < 24) return 'in ' + hrs + 'h';
+      // >24h out → absolute local short form ("Sun 09:00")
+      try {
+        const d = new Date(epoch * 1000);
+        const day = DAY_LABELS[d.getDay()];
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mm = String(d.getMinutes()).padStart(2, '0');
+        return `${day} ${hh}:${mm}`;
+      } catch { return 'in ' + Math.round(hrs / 24) + 'd'; }
+    }
+
+    // Routines render as chips, sorted by next_fire_at ascending. The chip
+    // in the first slot is the next routine that will fire — the row reads
+    // as a timeline left-to-right. Disabled routines sink to the end.
+    function _routineChipHTML(r) {
+      const state = r.enabled ? 'active' : 'paused';
+      const name = r.name || r.id;
+      const when = _nextFireText(r);
+      const diff = (Number(r.next_fire_at || 0) * 1000) - Date.now();
+      const soon = r.enabled && diff > 0 && diff < 10 * 60 * 1000;  // <10min highlights
+      return `<span class="chip" data-routine="${_esc(r.id)}" data-state="${state}">
+        <span class="dot"></span>
+        <span class="label">${_esc(name)} <span class="next-fire${soon ? ' soon' : ''}">${_esc(when)}</span></span>
+      </span>`;
     }
 
     function renderRoutines() {
@@ -2874,41 +3013,51 @@
       }
       if (section) section.hidden = false;
 
-      newRoutineBtn.style.display = '';
       const enabled = _routineCache.filter(r => r.enabled).length;
       routinesMeta.textContent = _routineCache.length ? `${enabled} active · ${_routineCache.length} total` : 'none yet';
 
-      const rowsHtml = _routineCache.map(r => (_openEditorFor === r.id ? renderEditorHtml(r) : renderCardHtml(r))).join('');
-      const newEditorHtml = _openEditorFor === '__new__' ? renderEditorHtml(null) : '';
-      routinesList.innerHTML = newEditorHtml + (rowsHtml || (_openEditorFor === '__new__' ? '' : '<div class="meta">no routines yet — click "+ New routine" to create one.</div>'));
+      // Timeline sort: enabled routines by next_fire_at asc, then disabled.
+      const sorted = _routineCache.slice().sort((a, b) => {
+        if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
+        const an = Number(a.next_fire_at || 0);
+        const bn = Number(b.next_fire_at || 0);
+        if (an && bn) return an - bn;
+        if (an) return -1;
+        if (bn) return 1;
+        return (a.name || a.id).localeCompare(b.name || b.id);
+      });
 
-      attachRoutineHandlers();
+      const chipsHtml = sorted.map(_routineChipHTML).join('');
+      routinesList.innerHTML = chipsHtml + '<button class="chip add" id="newRoutineBtn" type="button">+ New routine</button>';
+      _wireAddRoutineChip();
+      _wireRoutineChips();
     }
 
-    function renderCardHtml(r) {
-      const sum = r.last_summary;
-      const lastRunLine = sum
-        ? `<div class="routine-summary"><strong>last run:</strong> ${_esc(sum.content)} <span style="opacity:.6">(${relTimeFromIso(sum.timestamp)})</span></div>`
-        : r.last_fire
-        ? `<div class="routine-summary"><strong>fired:</strong> awaiting summary… <span style="opacity:.6">(${relTimeFromIso(r.last_fire.timestamp)})</span></div>`
-        : '';
-      return `
-        <div class="routine-card" data-id="${_esc(r.id)}" data-enabled="${r.enabled}">
-          <div class="routine-card-head">
-            <span class="dot"></span>
-            <span class="name">${_esc(r.name || r.id)}</span>
-            <span class="schedule">${_esc(r.schedule || '—')}</span>
-            ${r.workspace ? `<span class="mini">ws: ${_esc(r.workspace)}</span>` : ''}
-            <span class="pill" data-mode="${_esc(r.permission_mode || 'auto')}">${_esc(r.permission_mode || 'auto')}</span>
-            <div class="routine-card-actions">
-              <button class="routine-btn" data-act="prompt">prompt</button>
-              <button class="routine-btn primary" data-act="fire" ${r.enabled ? '' : 'disabled'}>fire</button>
-              <button class="routine-btn" data-act="edit">edit</button>
-              <button class="routine-btn danger" data-act="delete">delete</button>
-            </div>
-          </div>
-          ${lastRunLine}
-        </div>`;
+    function _wireAddRoutineChip() {
+      const btn = document.getElementById('newRoutineBtn');
+      if (btn) btn.addEventListener('click', openAddRoutine);
+    }
+
+    function _wireRoutineChips() {
+      routinesList.querySelectorAll('.chip[data-routine]').forEach(chip => {
+        chip.addEventListener('click', () => {
+          if (chip._longPressed) { chip._longPressed = false; return; }
+          openRoutineDetail(chip.dataset.routine);
+        });
+        chip.addEventListener('touchstart', () => {
+          chip._longPressed = false;
+          chip._pressTimer = setTimeout(() => {
+            chip._longPressed = true;
+            if (navigator.vibrate) navigator.vibrate(12);
+            openRoutineDetail(chip.dataset.routine);
+          }, LONG_PRESS_MS);
+        }, { passive: true });
+        ['touchend','touchmove','touchcancel'].forEach(evt =>
+          chip.addEventListener(evt, () => {
+            if (chip._pressTimer) { clearTimeout(chip._pressTimer); chip._pressTimer = null; }
+          }, { passive: true })
+        );
+      });
     }
 
     function renderEditorHtml(existing) {
@@ -3050,122 +3199,266 @@
       };
     }
 
-    function attachRoutineHandlers() {
-      // Card buttons (view mode)
-      routinesList.querySelectorAll('.routine-card').forEach(card => {
-        const rid = card.dataset.id;
-        card.querySelectorAll('.routine-btn').forEach(btn => {
-          btn.addEventListener('click', async (ev) => {
-            ev.stopPropagation();
-            const act = btn.dataset.act;
-            if (act === 'prompt') {
-              const existing = card.querySelector('.routine-prompt');
-              if (existing) { existing.remove(); btn.textContent = 'prompt'; return; }
-              const r = _routineCache.find(x => x.id === rid);
-              if (!r) return;
-              const pre = document.createElement('pre');
-              pre.className = 'routine-prompt';
-              pre.textContent = r.prompt || '(empty)';
-              card.appendChild(pre);
-              btn.textContent = 'hide';
-            } else if (act === 'fire') {
-              btn.disabled = true; btn.textContent = 'firing…';
-              try {
-                await fetch(API_BASE + '/v1/routines/' + rid + '/fire', { method: 'POST', headers: authHeaders() });
-                btn.textContent = 'fired ✓';
-                setTimeout(loadRoutines, 1500);
-              } catch (e) {
-                alert('fire failed: ' + e.message);
-                btn.disabled = false; btn.textContent = 'fire';
-              }
-            } else if (act === 'edit') {
-              _openEditorFor = rid;
-              renderRoutines();
-            } else if (act === 'delete') {
-              if (!confirm('Delete routine "' + rid + '"? A tombstone delta will be written; history stays in the lake.')) return;
-              try {
-                const r = await fetch(API_BASE + '/v1/routines/' + rid, { method: 'DELETE', headers: authHeaders() });
-                if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
-                setTimeout(loadRoutines, 500);
-              } catch (e) {
-                alert('delete failed: ' + e.message);
-              }
-            }
-          });
+    // Wire a `.routine-editor` element into a working form. Used by both
+    // the routine-detail inline editor and the new-routine wizard — they
+    // share the same markup produced by renderEditorHtml(), so the event
+    // handling is factored out here. Caller provides onSave + onCancel.
+    function wireEditor(editor, { onSave, onCancel }) {
+      const editingId = editor.dataset.editing;
+      const isCreate = editingId === '__new__';
+
+      const preset = editor.querySelector('[data-cron-preset]');
+      const timeEl = editor.querySelector('[data-cron-time]');
+      const dayEl = editor.querySelector('[data-cron-day]');
+      const customEl = editor.querySelector('[data-cron-custom]');
+      const syncVisibility = () => {
+        const p = preset.value;
+        timeEl.style.display = (p === 'daily' || p === 'weekly') ? 'inline-block' : 'none';
+        dayEl.style.display = p === 'weekly' ? 'inline-block' : 'none';
+        customEl.style.display = p === 'custom' ? 'inline-block' : 'none';
+      };
+      preset.addEventListener('change', () => { syncVisibility(); schedulePreview(editor); });
+      [timeEl, dayEl, customEl].forEach(el => el.addEventListener('input', () => schedulePreview(editor)));
+      refreshCronPreview(editor);
+
+      editor.querySelectorAll('[data-perm-mode] button').forEach(btn => {
+        btn.addEventListener('click', () => {
+          editor.querySelectorAll('[data-perm-mode] button').forEach(b => b.setAttribute('data-active', 'false'));
+          btn.setAttribute('data-active', 'true');
         });
       });
 
-      // Editor interactions (create + edit mode)
-      routinesList.querySelectorAll('.routine-editor').forEach(editor => {
-        const editingId = editor.dataset.editing;
-        const isCreate = editingId === '__new__';
-
-        const preset = editor.querySelector('[data-cron-preset]');
-        const timeEl = editor.querySelector('[data-cron-time]');
-        const dayEl = editor.querySelector('[data-cron-day]');
-        const customEl = editor.querySelector('[data-cron-custom]');
-        const syncVisibility = () => {
-          const p = preset.value;
-          timeEl.style.display = (p === 'daily' || p === 'weekly') ? 'inline-block' : 'none';
-          dayEl.style.display = p === 'weekly' ? 'inline-block' : 'none';
-          customEl.style.display = p === 'custom' ? 'inline-block' : 'none';
-        };
-        preset.addEventListener('change', () => { syncVisibility(); schedulePreview(editor); });
-        [timeEl, dayEl, customEl].forEach(el => el.addEventListener('input', () => schedulePreview(editor)));
-        // Initial preview
-        refreshCronPreview(editor);
-
-        // Permission-mode segmented control
-        editor.querySelectorAll('[data-perm-mode] button').forEach(btn => {
-          btn.addEventListener('click', () => {
-            editor.querySelectorAll('[data-perm-mode] button').forEach(b => b.setAttribute('data-active', 'false'));
-            btn.setAttribute('data-active', 'true');
-          });
-        });
-
-        // Save / cancel
-        editor.querySelector('[data-act="cancel"]').addEventListener('click', () => {
-          _openEditorFor = null;
-          renderRoutines();
-        });
-        editor.querySelector('[data-act="save"]').addEventListener('click', async () => {
-          const errBox = editor.querySelector('[data-err]');
-          errBox.hidden = true; errBox.textContent = '';
-          const body = collectEditor(editor);
-          if (!body.id) { errBox.textContent = 'id is required'; errBox.hidden = false; return; }
-          if (!body.name) { errBox.textContent = 'name is required'; errBox.hidden = false; return; }
-          try {
-            if (isCreate) {
-              const r = await fetch(API_BASE + '/v1/routines', {
-                method: 'POST', headers: authHeaders(), body: JSON.stringify(body),
-              });
-              if (!r.ok) {
-                const d = await r.json().catch(() => ({}));
-                throw new Error(d.detail || (r.status + ' ' + r.statusText));
-              }
-            } else {
-              const r = await fetch(API_BASE + '/v1/routines/' + encodeURIComponent(editingId), {
-                method: 'PUT', headers: authHeaders(), body: JSON.stringify(body),
-              });
-              if (!r.ok) {
-                const d = await r.json().catch(() => ({}));
-                throw new Error(d.detail || (r.status + ' ' + r.statusText));
-              }
-            }
-            _openEditorFor = null;
-            setTimeout(loadRoutines, 500);
-          } catch (e) {
-            errBox.textContent = e.message;
-            errBox.hidden = false;
+      editor.querySelector('[data-act="cancel"]').addEventListener('click', () => {
+        if (onCancel) onCancel();
+      });
+      editor.querySelector('[data-act="save"]').addEventListener('click', async () => {
+        const errBox = editor.querySelector('[data-err]');
+        errBox.hidden = true; errBox.textContent = '';
+        const body = collectEditor(editor);
+        if (!body.id) { errBox.textContent = 'id is required'; errBox.hidden = false; return; }
+        if (!body.name) { errBox.textContent = 'name is required'; errBox.hidden = false; return; }
+        try {
+          const url = isCreate
+            ? API_BASE + '/v1/routines'
+            : API_BASE + '/v1/routines/' + encodeURIComponent(editingId);
+          const method = isCreate ? 'POST' : 'PUT';
+          const r = await fetch(url, { method, headers: authHeaders(), body: JSON.stringify(body) });
+          if (!r.ok) {
+            const d = await r.json().catch(() => ({}));
+            throw new Error(d.detail || (r.status + ' ' + r.statusText));
           }
-        });
+          if (onSave) onSave(body);
+        } catch (e) {
+          errBox.textContent = e.message;
+          errBox.hidden = false;
+        }
       });
     }
 
-    newRoutineBtn.addEventListener('click', () => {
-      _openEditorFor = _openEditorFor === '__new__' ? null : '__new__';
-      renderRoutines();
+    // ── Routine detail view ─────────────────────────
+    // Mirrors the source detail pattern: hero + kebab, activity stats,
+    // recent fires, collapsible editor, danger zone. Activity counts are
+    // computed from fire deltas fetched via /v1/deltas.
+    const viewRoutineDetail = document.getElementById('viewRoutineDetail');
+    const routineBackBtn = document.getElementById('routineBackBtn');
+    const routineKebabBtn = document.getElementById('routineKebab');
+    const routineKebabMenu = document.getElementById('routineKebabMenu');
+
+    function openRoutineDetail(routineId) {
+      const r = _routineCache.find(x => x.id === routineId);
+      if (!r) return;
+      viewRoutineDetail.dataset.routine = routineId;
+      document.getElementById('routineDetailTitle').textContent = r.name || r.id;
+      document.getElementById('routineDetailName').textContent = r.name || r.id;
+      document.getElementById('routineDetailLogo').textContent = ((r.name || r.id)[0] || 'R').toUpperCase();
+      document.getElementById('routineScheduleMeta').textContent = r.schedule || '—';
+      document.getElementById('routinePromptPreview').textContent = r.prompt || '(empty)';
+      document.getElementById('routineStatusText').textContent = _nextFireText(r);
+      document.getElementById('routineLastSeen').textContent = r.last_fire
+        ? 'Last fired · ' + relTimeFromIso(r.last_fire.timestamp)
+        : 'Never fired';
+
+      const paused = !r.enabled;
+      document.getElementById('routineStatusLine').classList.toggle('paused', paused);
+      document.getElementById('routineQuickPause').innerHTML = paused
+        ? '<span class="dot paused"></span> Enable'
+        : '<span class="dot"></span> Pause';
+
+      // Mark active permission mode in the kebab menu
+      routineKebabMenu.querySelectorAll('.menu-item.perm-mode').forEach(el => {
+        el.classList.toggle('active', el.dataset.mode === (r.permission_mode || 'auto'));
+      });
+
+      // Hide editor by default
+      document.getElementById('routineEditorSection').hidden = true;
+      document.getElementById('routineEditorMount').innerHTML = '';
+
+      viewMain.hidden = true;
+      viewRoutineDetail.hidden = false;
+      routineKebabMenu.hidden = true;
+      syncComposer();
+      scrollViewToTop(viewRoutineDetail);
+
+      loadRoutineDetail(routineId);
+    }
+
+    function closeRoutineDetail() {
+      viewRoutineDetail.hidden = true;
+      viewMain.hidden = false;
+      syncComposer();
+    }
+    routineBackBtn.addEventListener('click', closeRoutineDetail);
+
+    async function loadRoutineDetail(routineId) {
+      const list = document.getElementById('routineFires');
+      const count24h = document.getElementById('routineCount24h');
+      const count7d = document.getElementById('routineCount7d');
+      const countAll = document.getElementById('routineCountAll');
+      count24h.textContent = '—'; count7d.textContent = '—'; countAll.textContent = '—';
+      list.innerHTML = '';
+
+      try {
+        const r = await fetch(API_BASE + '/v1/deltas?limit=50&tags_include=' + encodeURIComponent('routine-fire,routine-id:' + routineId), { headers: authHeaders() });
+        if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
+        const data = await r.json();
+        const deltas = (data.deltas || data || []).filter(d => (d.tags || []).includes('routine-id:' + routineId));
+        const now = Date.now();
+        const within = (d, ms) => (now - new Date(d.timestamp).getTime()) <= ms;
+        count24h.textContent = _fmtCount(deltas.filter(d => within(d, 86400e3)).length);
+        count7d.textContent = _fmtCount(deltas.filter(d => within(d, 7 * 86400e3)).length);
+        countAll.textContent = _fmtCount(deltas.length);
+
+        list.innerHTML = deltas.slice(0, 20).map(_deltaRowHTML).join('')
+          || '<div style="color: var(--ink-faint); padding: 16px 0;">No fires yet.</div>';
+      } catch (e) {
+        list.innerHTML = `<div style="color: var(--ink-faint); padding: 16px 0;">Failed to load fires: ${_esc(e.message)}</div>`;
+      }
+    }
+
+    // Kebab menu toggle (routine detail)
+    routineKebabBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      routineKebabMenu.hidden = !routineKebabMenu.hidden;
     });
+    document.addEventListener('click', () => { routineKebabMenu.hidden = true; });
+    routineKebabMenu.addEventListener('click', (e) => e.stopPropagation());
+
+    // Fire now
+    document.getElementById('routineFireNow').addEventListener('click', async () => {
+      const rid = viewRoutineDetail.dataset.routine;
+      routineKebabMenu.hidden = true;
+      try {
+        await fetch(API_BASE + '/v1/routines/' + rid + '/fire', { method: 'POST', headers: authHeaders() });
+        setTimeout(() => loadRoutineDetail(rid), 1500);
+      } catch (e) {
+        alert('fire failed: ' + e.message);
+      }
+    });
+
+    // Edit — reveal the editor section inline in the detail view
+    document.getElementById('routineEditBtn').addEventListener('click', () => {
+      const rid = viewRoutineDetail.dataset.routine;
+      const r = _routineCache.find(x => x.id === rid);
+      if (!r) return;
+      routineKebabMenu.hidden = true;
+      const section = document.getElementById('routineEditorSection');
+      const mount = document.getElementById('routineEditorMount');
+      mount.innerHTML = renderEditorHtml(r);
+      section.hidden = false;
+      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      wireEditor(mount.querySelector('.routine-editor'), {
+        onSave: async () => {
+          section.hidden = true;
+          mount.innerHTML = '';
+          await loadRoutines();
+          // Re-open detail with refreshed data
+          openRoutineDetail(rid);
+        },
+        onCancel: () => {
+          section.hidden = true;
+          mount.innerHTML = '';
+        },
+      });
+    });
+
+    // Permission-mode via kebab
+    routineKebabMenu.querySelectorAll('.menu-item.perm-mode').forEach(item => {
+      item.addEventListener('click', async () => {
+        const rid = viewRoutineDetail.dataset.routine;
+        const mode = item.dataset.mode;
+        routineKebabMenu.hidden = true;
+        try {
+          await fetch(API_BASE + '/v1/routines/' + encodeURIComponent(rid), {
+            method: 'PUT', headers: authHeaders(),
+            body: JSON.stringify({ permission_mode: mode }),
+          });
+          await loadRoutines();
+          openRoutineDetail(rid);
+        } catch (e) {
+          alert('update failed: ' + e.message);
+        }
+      });
+    });
+
+    // Pause / enable
+    document.getElementById('routineQuickPause').addEventListener('click', async () => {
+      const rid = viewRoutineDetail.dataset.routine;
+      const r = _routineCache.find(x => x.id === rid);
+      if (!r) return;
+      try {
+        await fetch(API_BASE + '/v1/routines/' + encodeURIComponent(rid), {
+          method: 'PUT', headers: authHeaders(),
+          body: JSON.stringify({ enabled: !r.enabled }),
+        });
+        await loadRoutines();
+        openRoutineDetail(rid);
+      } catch (e) {
+        alert('toggle failed: ' + e.message);
+      }
+    });
+
+    // Delete
+    document.getElementById('routineDeleteBtn').addEventListener('click', async () => {
+      const rid = viewRoutineDetail.dataset.routine;
+      if (!confirm('Delete routine "' + rid + '"? A tombstone delta will be written; history stays in the lake.')) return;
+      try {
+        const r = await fetch(API_BASE + '/v1/routines/' + encodeURIComponent(rid), { method: 'DELETE', headers: authHeaders() });
+        if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
+        closeRoutineDetail();
+        setTimeout(loadRoutines, 500);
+      } catch (e) {
+        alert('delete failed: ' + e.message);
+      }
+    });
+
+    // ── Add-routine wizard ──────────────────────────
+    const viewAddRoutine = document.getElementById('viewAddRoutine');
+    const addRoutineBackBtn = document.getElementById('addRoutineBackBtn');
+
+    function openAddRoutine() {
+      viewMain.hidden = true;
+      viewAddRoutine.hidden = false;
+      const mount = document.getElementById('addRoutineMount');
+      mount.innerHTML = renderEditorHtml(null);
+      scrollViewToTop(viewAddRoutine);
+      syncComposer();
+      wireEditor(mount.querySelector('.routine-editor'), {
+        onSave: async () => {
+          closeAddRoutine();
+          await loadRoutines();
+        },
+        onCancel: () => closeAddRoutine(),
+      });
+    }
+
+    function closeAddRoutine() {
+      viewAddRoutine.hidden = true;
+      viewMain.hidden = false;
+      document.getElementById('addRoutineMount').innerHTML = '';
+      syncComposer();
+    }
+
+    addRoutineBackBtn.addEventListener('click', closeAddRoutine);
 
     // Load on startup
     loadRoutines();
@@ -3202,13 +3495,23 @@
         signinStatus.textContent = 'not signed in';
       }
     }
-    signinSaveBtn.addEventListener('click', () => {
-      const v = (signinTokenInput.value || '').trim();
+    function _saveSigninToken(v) {
       if (!v) return;
       _saveAuthToken(v);
       signinTokenInput.value = '';
       renderSigninStatus();
       if (!viewSettings.hidden) loadTokens();
+    }
+    // Auto-save as soon as the input looks like a token. Covers the common
+    // flow: paste "fth_..." → persisted immediately, no Save click needed.
+    // The Save button stays for manual confirmation / Enter-key submits.
+    const _TOKEN_PATTERN = /^fth_[A-Za-z0-9]{16,}$/;
+    signinTokenInput.addEventListener('input', () => {
+      const v = (signinTokenInput.value || '').trim();
+      if (_TOKEN_PATTERN.test(v)) _saveSigninToken(v);
+    });
+    signinSaveBtn.addEventListener('click', () => {
+      _saveSigninToken((signinTokenInput.value || '').trim());
     });
     signinClearBtn.addEventListener('click', () => {
       _saveAuthToken('');
