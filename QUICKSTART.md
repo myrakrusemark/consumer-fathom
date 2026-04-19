@@ -69,7 +69,7 @@ Need to pair another machine later? Re-open the same tile and mint a new code. I
 
 ### What a paired agent unlocks
 
-- **Routines.** Scheduled prompts that fire into a local Claude Code session on that machine. Write a prompt, pick a cron schedule, and the agent runs it.
+- **Routines.** Scheduled prompts that fire into a local Claude Code session on that machine. Write a prompt, pick a cron schedule, and the agent runs it. Requires [kitty](https://sw.kovidgoyal.net/kitty/) (the terminal) and the `claude` CLI on PATH — the agent spawns a kitty window per fire and injects the prompt via kitty's remote-control protocol. No `kitty.conf` setup needed; the agent passes the remote-control flags inline per spawn.
 - **Local sources.** Plugins for things only a local process can see: a notes vault, Home Assistant, system health, kitty config, whatever else you wire up.
 - **Presence.** The dashboard now knows when the machine is online, and that signal feeds the lake alongside everything else.
 
