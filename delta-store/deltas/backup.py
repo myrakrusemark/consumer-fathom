@@ -161,11 +161,14 @@ async def _dump_to(tmp_path: Path, dsn: str) -> tuple[bool, str]:
 
 def _classify(new_size: int, live_count: int, prev_count: int | None) -> tuple[str, str | None]:
     """Return (tier, reason). tier ∈ {'healthy','warning','lockdown'}."""
-    if new_size < MIN_SIZE_MB * 1024 * 1024:
-        return "lockdown", REASON_SIZE_FLOOR
-
+    # No prior reference — a virgin install legitimately produces a tiny
+    # backup. Skip both the size-floor and count-shrink checks until we've
+    # seen a real snapshot; otherwise day 0 always trips.
     if prev_count is None or prev_count <= 0:
         return "healthy", None
+
+    if new_size < MIN_SIZE_MB * 1024 * 1024:
+        return "lockdown", REASON_SIZE_FLOOR
 
     shrink = max(0.0, (prev_count - live_count) / prev_count)
     if shrink >= LOCKDOWN_RATIO:
