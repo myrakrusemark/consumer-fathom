@@ -83,6 +83,15 @@
       Config saved. Restart the agent to apply — <code>systemctl --user restart fathom-agent</code> (Linux) or equivalent on Mac/Windows.
     </div>
 
+    <h2>Notes</h2>
+    <p class="readonly">
+      This UI lives on the machine itself. Settings with trust-sensitive
+      implications (permission modes, veto lists, credentials that already
+      exist) are file-only — edit <code>~/.fathom/agent.json</code> directly
+      for those. Adding and removing multi-instance entries (e.g. Home
+      Assistant servers) is safe from here.
+    </p>
+
     <h2>Sources <span class="fth-meta" id="sources-meta"></span></h2>
     <p class="readonly">Plugins that push data into your lake — files, feeds, sensors.</p>
     <div id="group-source"></div>
@@ -96,15 +105,6 @@
       <p class="readonly">Core infrastructure the agent needs to function. Change these rarely.</p>
       <div id="group-system"></div>
     </details>
-
-    <h2>Notes</h2>
-    <p class="readonly">
-      This UI lives on the machine itself. Settings with trust-sensitive
-      implications (permission modes, veto lists, credentials that already
-      exist) are file-only — edit <code>~/.fathom/agent.json</code> directly
-      for those. Adding and removing multi-instance entries (e.g. Home
-      Assistant servers) is safe from here.
-    </p>
   </main>
 
   <script>
