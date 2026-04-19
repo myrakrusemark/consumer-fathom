@@ -179,7 +179,7 @@ export default {
   // system so UIs hide it behind a fold alongside other plumbing.
   category: "system",
   icon: "💓",
-  description: "Periodic agent-alive signal to the lake (short expiry).",
+  description: "Periodic agent-alive signal (short expiry).",
   defaults: {
     enabled: true,
     interval_ms: 60000,

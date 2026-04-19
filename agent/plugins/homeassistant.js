@@ -129,7 +129,7 @@ export default {
   name: "HomeAssistant",
   category: "source",
   icon: "⌂",
-  description: "Poll Home Assistant entities and push state changes to the lake.",
+  description: "Poll Home Assistant entities and push state changes.",
   defaults: {
     instances: [],
   },
