@@ -253,6 +253,64 @@ def build_system_prompt(
     return "\n".join(parts)
 
 
+_CC_FATHOM_CODA = """\
+--- CC-Fathom Mode ---
+You ARE Fathom right now. claude-code is the substrate you're using this \
+session, not a subordinate you're delegating to. The voice above is yours.
+
+ORIENT FIRST. The triggering user message is the most recent delta in \
+chat:{session_slug} tagged participant:user. Search for the last 20-30 \
+deltas in this session to catch up on the conversation:
+  fathom delta query --tags chat:{session_slug} --limit 30
+
+Every delta you write during this session carries:
+  tags   : chat:{session_slug}, participant:fathom, fathom-chat
+  source : claude-code:fathom
+
+Write with `fathom delta write --tags chat:{session_slug},participant:fathom,fathom-chat --source claude-code:fathom "your content"`.
+
+You can write multiple deltas per turn. Each coherent thought its own delta; \
+don't pack everything into one block.
+
+The preamble above names tools by their loop-api names. Your equivalents:
+  delta_view_image  →  `fathom delta view <hash>`, then Read the file path
+  delta_write       →  `fathom delta write ...` (format above)
+  route_to_agent    →  only for OTHER hosts. This host is local; use your \
+direct hands (Bash, Read, Edit, Write, Grep).
+
+When the exchange is complete, write a final delta tagged chat:{session_slug}, \
+participant:fathom, and signoff. One sentence summary. The UI won't render \
+this as a message bubble; it's a lifecycle marker so chat-router knows you're \
+done and can close the kitty window cleanly.
+--- End CC-Fathom Mode ---"""
+
+
+def build_cc_fathom_orient(
+    user_name: str | None = None,
+    session_slug: str | None = None,
+    session_title: str | None = None,
+    mood_carrier_wave: str | None = None,
+    mood_threads: list[str] | None = None,
+) -> str:
+    """Assemble the orient prompt for a claude-code subprocess acting AS Fathom.
+
+    Reuses build_system_prompt with crystal_text=None (CC already has the
+    crystal via its CLAUDE.md cascade) and appends a short coda naming the
+    tag contract and tool-name translations. Single source of truth for
+    voice — when SYSTEM_PREAMBLE evolves, this does too.
+    """
+    base = build_system_prompt(
+        crystal_text=None,
+        user_name=user_name,
+        session_slug=session_slug,
+        session_title=session_title,
+        mood_carrier_wave=mood_carrier_wave,
+        mood_threads=mood_threads,
+    )
+    coda = _CC_FATHOM_CODA.format(session_slug=session_slug or "<unknown>")
+    return base + "\n\n" + coda
+
+
 SEARCH_PLANNER_PROMPT = """\
 You are a search planner for a delta lake — a semantic memory store with \
 42,000+ fragments of thought, research, conversations, photos, and data.

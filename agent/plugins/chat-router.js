@@ -39,12 +39,32 @@ const engagements = new Map();
 
 // Track the newest delta timestamp we've processed, so a restart doesn't
 // re-fire historical invitations. Persisted to disk.
+//   last_seen              — agent-mode invitations (to:agent:<host>)
+//   last_seen_fathom_cc    — Fathom-mode invitations (fathom-mode:cc)
+// Separate cursors because the two queries run independently; sharing one
+// cursor would let a fast-moving poll skip the other mode's pending deltas.
 function loadState() {
   try {
-    return JSON.parse(readFileSync(STATE_PATH, "utf8"));
+    const s = JSON.parse(readFileSync(STATE_PATH, "utf8"));
+    if (!s.last_seen_fathom_cc) s.last_seen_fathom_cc = s.last_seen || new Date().toISOString();
+    return s;
   } catch {
-    return { last_seen: new Date().toISOString() };
+    const now = new Date().toISOString();
+    return { last_seen: now, last_seen_fathom_cc: now };
   }
+}
+
+// Fetch the CC-Fathom orient prompt from the consumer-api. Centralizing the
+// orient on the server keeps SYSTEM_PREAMBLE as the single source of truth —
+// chat-router doesn't duplicate Fathom's voice, it just pipes what the server
+// assembles (preamble + session block + mood, crystal skipped).
+async function fetchFathomModeOrient(pusher, sessionSlug) {
+  const url = `${pusher.apiUrl}/v1/cc-orient?session=${encodeURIComponent(sessionSlug)}`;
+  const headers = {};
+  if (pusher.apiKey) headers["Authorization"] = `Bearer ${pusher.apiKey}`;
+  const r = await fetch(url, { headers, signal: AbortSignal.timeout(10000) });
+  if (!r.ok) throw new Error(`/v1/cc-orient ${r.status}`);
+  return await r.text();
 }
 
 function saveState(state) {
@@ -179,6 +199,91 @@ function handleInvite(delta, config, host) {
   });
 }
 
+async function pollFathomModeInvitations(pusher, config, state) {
+  // Fathom-mode deltas are tagged `fathom-mode:cc` by the consumer-api when
+  // the user toggles the robot icon. Any fathom-agent sees these; for single-
+  // host setups (the common case) exactly one chat-router engages. Multi-host
+  // scoping would layer a to:agent:<host> tag on top; for v1 we assume one.
+  let invites;
+  try {
+    invites = await pusher.query({
+      tags_include: "fathom-mode:cc",
+      time_start: state.last_seen_fathom_cc,
+      limit: 100,
+    });
+  } catch (e) {
+    const cause = e.cause ? ` (cause: ${e.cause.code || e.cause.message})` : "";
+    console.error(`  chat-router: fathom-mode invite poll failed: ${e.message}${cause}`);
+    return;
+  }
+
+  invites.sort((a, b) => (a.timestamp || "").localeCompare(b.timestamp || ""));
+
+  for (const d of invites) {
+    if (d.timestamp <= state.last_seen_fathom_cc) continue;
+    await handleFathomModeInvite(d, pusher, config);
+    state.last_seen_fathom_cc = d.timestamp;
+  }
+  if (invites.length) saveState(state);
+}
+
+async function handleFathomModeInvite(delta, pusher, config) {
+  const sessionSlugs = allTagValues(delta, "chat:");
+  if (!sessionSlugs.length) {
+    console.log(`  chat-router: skipping fathom-mode:cc delta ${delta.id.slice(0, 8)} (no chat: tag)`);
+    return;
+  }
+  const [primary] = sessionSlugs;
+
+  // Live engagement for this session → inject the new message. Works whether
+  // the existing engagement is agent-mode or fathom-mode; the live-inject
+  // path is the same either way.
+  if (engagements.has(primary)) {
+    await injectIntoEngagement(primary, delta, null);
+    return;
+  }
+
+  // Fresh spawn in Fathom-mode. Workspace defaults to the agent's
+  // workspace_root — Fathom-mode is about answering with the mind's own hands
+  // on this host, not dispatching to a per-project workspace.
+  const cwd = workspacePath(config.workspace_root, config.default_workspace || "");
+
+  let prompt;
+  try {
+    prompt = await fetchFathomModeOrient(pusher, primary);
+  } catch (e) {
+    console.error(`  chat-router: fathom-mode orient fetch failed for ${primary}: ${e.message}`);
+    return;
+  }
+
+  console.log(`  🤖 fathom-mode engage ${primary}`);
+
+  const { socket, title, spawnedAt } = spawnClaudeInKitty({
+    workspaceCwd: cwd,
+    prompt,
+    permissionMode: config.permission_mode || "auto",
+    sessionLabel: `fathom-${primary}`,
+    // Distinct background so the Fathom-mode kitty is visually separable from
+    // agent-mode. Dark plum against agent-mode's teal.
+    kittyBackground: config.fathom_mode_background || "#2a1a3a",
+    autoSubmit: true,
+    injectDelayMs: 2000,
+  });
+
+  engagements.set(primary, {
+    socket,
+    title,
+    spawnedAt,
+    graceUntil: spawnedAt + 10_000,
+    sessionSlug: primary,
+    coSessions: [],
+    since: delta.timestamp || new Date(spawnedAt).toISOString(),
+    // CC in Fathom-mode writes with source=claude-code:fathom; this keeps the
+    // own-writes filter in pollLiveSessions honest so CC doesn't echo itself.
+    ownSource: "claude-code:fathom",
+  });
+}
+
 async function injectIntoEngagement(sessionSlug, delta, host) {
   const engagement = engagements.get(sessionSlug);
   if (!engagement) return;
@@ -245,14 +350,17 @@ async function pollLiveSessions(pusher, host) {
       if (d.timestamp <= eng.since) continue;
       eng.since = d.timestamp;
       const tags = d.tags || [];
-      // Signoff delta from the body on this host — the engagement's own
-      // claude-code finished. Claude exits but kitty doesn't self-close:
-      // without an active close the window sits on an empty shell forever.
-      // Detect the signoff, close the window, drop the engagement.
-      if (
-        tags.includes("signoff") &&
-        tags.includes(`participant:agent:${host}`)
-      ) {
+      // Signoff from this engagement's CC — kitty doesn't self-close when
+      // claude exits, so we detect the signoff delta and close the window.
+      // Agent-mode signoff: participant:agent:<host>.
+      // Fathom-mode signoff: participant:fathom + source=claude-code:fathom.
+      const hasSignoff = tags.includes("signoff");
+      const isAgentSignoff = hasSignoff && tags.includes(`participant:agent:${host}`);
+      const isFathomSignoff =
+        hasSignoff &&
+        tags.includes("participant:fathom") &&
+        (d.source || "") === "claude-code:fathom";
+      if (isAgentSignoff || isFathomSignoff) {
         signoffSeen = true;
         continue;
       }
@@ -294,6 +402,7 @@ export default {
 
     const tick = async () => {
       await pollInvitations(pusher, config, state, host);
+      await pollFathomModeInvitations(pusher, config, state);
       await pollLiveSessions(pusher, host);
     };
 

@@ -21,6 +21,7 @@ from .prompt import (
     CRYSTAL_DIRECTIVE,
     FEED_DIRECTIVE,
     ORIENT_PROMPT,
+    build_cc_fathom_orient,
     build_system_prompt,
     load_feed_directive,
 )
@@ -54,6 +55,12 @@ class ChatRequest(BaseModel):
     # useful with weaker models that don't reach for the body reliably.
     force_route: bool = False
     force_route_host: str | None = None
+    # Robot-icon toggle: when on, the user's delta is tagged `fathom-mode:cc`
+    # so chat-router engages a claude-code subprocess in Fathom-mode for the
+    # response. chat_listener latches out of the session while CC is engaged,
+    # falling back on a timeout. CC writes with participant:fathom — identity
+    # stays Fathom, substrate swaps to claude-code.
+    robot_mode: bool = False
 
 
 class SessionCreate(BaseModel):
@@ -415,7 +422,7 @@ async def chat_completions(req: ChatRequest):
     # and any subsequent logic see the same host. Auto-pick when exactly
     # one body is connected; fall through to None if the call fails, so
     # the message still lands (just without the route tag).
-    force_route_tags: list[str] = []
+    extra_tags: list[str] = []
     if req.force_route:
         from .tools import _agent_alive
 
@@ -429,7 +436,12 @@ async def chat_completions(req: ChatRequest):
             except Exception:
                 host = ""
         if host:
-            force_route_tags.append(f"to:agent:{host}")
+            extra_tags.append(f"to:agent:{host}")
+
+    # Robot-mode toggle: tag the user delta so chat-router picks it up for
+    # a Fathom-mode CC spawn, and chat_listener latches out of the session.
+    if req.robot_mode:
+        extra_tags.append("fathom-mode:cc")
 
     # Persist the user message(s). Image uploads already wrote their own
     # delta via /v1/media so we skip writing a duplicate text delta when
@@ -440,7 +452,7 @@ async def chat_completions(req: ChatRequest):
             content = m.content if isinstance(m.content, str) else json.dumps(m.content)
             if not req.image_uploaded:
                 await db.add_message(
-                    session_id, "user", content, extra_tags=force_route_tags or None
+                    session_id, "user", content, extra_tags=extra_tags or None
                 )
 
     # Return session_id so the UI can lock onto it for its poll cycle.
@@ -448,6 +460,30 @@ async def chat_completions(req: ChatRequest):
     # has already (or will shortly) pick up the user delta and write
     # Fathom's reply, which the UI's 3-second poll will surface.
     return {"session_id": session_id}
+
+
+@app.get("/v1/cc-orient")
+async def get_cc_orient(session: str):
+    """Return the Fathom-mode orient prompt for a claude-code spawn.
+
+    chat-router fetches this when engaging CC in Fathom-mode for a session.
+    Assembles SYSTEM_PREAMBLE + session block + current mood, skipping the
+    crystal (already loaded in CC's environment via the CLAUDE.md cascade).
+    Returned as plain text — chat-router pipes it straight into the kitty
+    spawn as the orient prompt.
+    """
+    from fastapi.responses import PlainTextResponse
+
+    sess = await db.get_session(session) if session else None
+    session_title = sess.get("title") if sess else None
+    current_mood = await mood.latest_mood()
+    orient = build_cc_fathom_orient(
+        session_slug=session,
+        session_title=session_title,
+        mood_carrier_wave=(current_mood or {}).get("carrier_wave"),
+        mood_threads=(current_mood or {}).get("threads"),
+    )
+    return PlainTextResponse(orient)
 
 
 @app.get("/v1/crystal")

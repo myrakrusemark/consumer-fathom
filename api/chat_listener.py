@@ -47,6 +47,12 @@ POLL_INTERVAL_SECONDS = 3
 # trail; short enough that they don't accumulate and clutter queries.
 EVENT_TTL_SECONDS = 300
 
+# How long to wait for a claude-code Fathom-mode response before falling
+# back to loop-api inference. The kitty spawn + orient + search + tool
+# loop can take a few seconds; 15s covers the common case while keeping
+# the user from staring at a stuck UI if the agent isn't running.
+FALLBACK_TIMEOUT_SECONDS = 15
+
 # Sources whose deltas should NOT trigger a Fathom turn:
 #   - fathom-chat-event: our own ephemeral tool/silence events.
 #   - fathom-mood, fathom-feed, consumer-api:route: other consumer-api
@@ -92,6 +98,13 @@ class ChatListener:
         # enforcement of the prompt's "silence when body answers" rule —
         # models like Gemini don't reliably follow the prompt on this.
         self._force_routed_sessions: set[str] = set()
+        # Sessions where the user has toggled the robot icon on. chat-router
+        # engages a claude-code subprocess in Fathom-mode for the response;
+        # this listener latches out to avoid double-answering. A fallback
+        # timer per session un-latches and runs the turn through fathom_think
+        # if CC doesn't write a response within FALLBACK_TIMEOUT_SECONDS.
+        self._fathom_mode_cc_sessions: set[str] = set()
+        self._fallback_timers: dict[str, asyncio.Task] = {}
 
     def start(self) -> None:
         if self._task and not self._task.done():
@@ -167,24 +180,46 @@ class ChatListener:
             tags = d.get("tags") or []
             is_user = "participant:user" in tags
             is_force_routed = any(t.startswith("to:agent:") for t in tags)
+            is_fathom_mode_cc = "fathom-mode:cc" in tags
 
-            # Latch / unlatch force-route mode on user turns:
-            #   force-routed user delta → latch on (and skip the delta itself)
-            #   normal user delta       → latch off, Fathom engages as usual
+            # Latch / unlatch on user turns:
+            #   force-routed user delta   → agent-mode latch
+            #   fathom-mode:cc user delta → CC-Fathom-mode latch + fallback timer
+            #   normal user delta         → clear any latches, Fathom engages as usual
             if is_user:
                 if is_force_routed:
                     self._force_routed_sessions.add(session_slug)
                     # Write a quiet ack so the UI shows Fathom received it.
                     asyncio.create_task(write_chat_event(session_slug, "silence", {}))
                     continue
-                else:
-                    self._force_routed_sessions.discard(session_slug)
+                if is_fathom_mode_cc:
+                    self._fathom_mode_cc_sessions.add(session_slug)
+                    # Cancel any lingering fallback timer for this session and
+                    # schedule a fresh one against this delta's content.
+                    existing = self._fallback_timers.pop(session_slug, None)
+                    if existing and not existing.done():
+                        existing.cancel()
+                    self._fallback_timers[session_slug] = asyncio.create_task(
+                        self._fallback_after_timeout(session_slug, d)
+                    )
+                    # Silence-ack so the UI renders a received-indicator while
+                    # chat-router spawns / injects into claude-code.
+                    asyncio.create_task(write_chat_event(session_slug, "silence", {}))
+                    continue
+                # Plain user turn — clear any latches and cancel pending fallback.
+                self._force_routed_sessions.discard(session_slug)
+                if session_slug in self._fathom_mode_cc_sessions:
+                    self._fathom_mode_cc_sessions.discard(session_slug)
+                    pending = self._fallback_timers.pop(session_slug, None)
+                    if pending and not pending.done():
+                        pending.cancel()
 
-            # While latched, skip everything in this session — the body is
-            # handling the turn end-to-end; Fathom stays out. The ack written
-            # at latch time is enough receipt; no need to ack each agent
-            # delta that flows through.
+            # While latched, skip everything in this session — the other
+            # responder (body or CC) is handling the turn. The ack written at
+            # latch time is enough receipt.
             if session_slug in self._force_routed_sessions:
+                continue
+            if session_slug in self._fathom_mode_cc_sessions:
                 continue
 
             # Fathom's own route_to_agent writes also carry to:agent:<host>.
@@ -296,6 +331,59 @@ class ChatListener:
         # next tick skips it (own-writes filter).
         await db.add_message(slug, "assistant", reply_text)
         await db.touch_session(slug)
+
+    async def _fallback_after_timeout(self, slug: str, user_delta: dict) -> None:
+        """Fall back to loop-api inference if CC doesn't respond in time.
+
+        Scheduled when a `fathom-mode:cc` user delta is seen. After
+        FALLBACK_TIMEOUT_SECONDS, checks whether any delta from
+        source='claude-code:fathom' has landed in the session. If yes, CC is
+        handling it and we just drop the latch. If no, we un-latch, write a
+        brain-switch event for the UI's inline note, and run the turn through
+        `fathom_think` as if robot-mode weren't on.
+        """
+        user_ts = user_delta.get("timestamp") or ""
+        try:
+            await asyncio.sleep(FALLBACK_TIMEOUT_SECONDS)
+        except asyncio.CancelledError:
+            return
+
+        try:
+            recent = await delta_client.query(
+                limit=20,
+                tags_include=f"chat:{slug}",
+                time_start=user_ts,
+            )
+        except Exception as e:
+            log.warning("chat-listener: fallback query failed for %s: %s", slug, e)
+            recent = []
+
+        cc_responded = any(d.get("source") == "claude-code:fathom" for d in recent)
+        if cc_responded:
+            # CC took the turn. Drop the latch so future non-robot messages
+            # flow normally; the timer is also cleaned up here.
+            self._fathom_mode_cc_sessions.discard(slug)
+            self._fallback_timers.pop(slug, None)
+            return
+
+        # CC didn't answer in time. Un-latch, mark the switch, run through loop-api.
+        log.info(
+            "chat-listener: CC fallback for session %s (timeout %ds)",
+            slug,
+            FALLBACK_TIMEOUT_SECONDS,
+        )
+        self._fathom_mode_cc_sessions.discard(slug)
+        self._fallback_timers.pop(slug, None)
+        try:
+            await write_chat_event(
+                slug,
+                "brain-switch",
+                {"from": "claude-code:fathom", "to": "loop-api", "reason": "timeout"},
+            )
+        except Exception as e:
+            log.warning("chat-listener: brain-switch write failed for %s: %s", slug, e)
+
+        await self._process_session(slug, [user_delta])
 
 
 def _chat_slug(tags: list[str]) -> str | None:
