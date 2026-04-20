@@ -29,13 +29,13 @@ def convert_html(raw_html: str) -> tuple[str, list[str]]:
         return "", []
 
     result = _html_to_md(raw_html)
-    content = result["content"].strip()
+    content = result.content.strip()
 
     seen: set[str] = set()
     urls: list[str] = []
 
-    for img in result.get("metadata", {}).get("images", []):
-        src = html.unescape(img.get("src", ""))
+    for img in result.metadata.images:
+        src = html.unescape(img.src or "")
         if src and src not in seen:
             urls.append(src)
             seen.add(src)
