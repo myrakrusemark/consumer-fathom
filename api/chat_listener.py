@@ -2,18 +2,15 @@
 
 Fathom's identity is "a distributed system that thinks, remembers, reflects,
 acts, and speaks." Until now, Fathom only spoke in response to an HTTP
-request. The agent side already lived in the lake — polling for deltas
-addressed to it and reacting. This module is the symmetric half:
-Fathom-the-mind also lives in the lake now, listening for any new delta
-in any chat session, and taking a turn per delta.
+request. This module is the symmetric half: Fathom-the-mind lives in the
+lake, listening for any new chat delta in any session and taking a turn
+per delta.
 
 The trigger layer is uniform: every new chat delta is a potential turn.
 The response layer is where choice lives — Fathom can speak, or answer
 with `<...>` to stay silent. Silence is the default; speaking is a choice.
 
-One process, one listener. No distributed locks, no dedup protocol. If
-Fathom ever fan-outs (Accelerando-style), that's a conscious merge point,
-not a race condition.
+One process, one listener. No distributed locks, no dedup protocol.
 """
 from __future__ import annotations
 
@@ -47,26 +44,16 @@ POLL_INTERVAL_SECONDS = 3
 # trail; short enough that they don't accumulate and clutter queries.
 EVENT_TTL_SECONDS = 300
 
-# How long to wait for a claude-code Fathom-mode response before falling
-# back to loop-api inference. The kitty spawn + orient + search + tool
-# loop can take a few seconds; 15s covers the common case while keeping
-# the user from staring at a stuck UI if the agent isn't running.
-FALLBACK_TIMEOUT_SECONDS = 15
-
 # Sources whose deltas should NOT trigger a Fathom turn:
 #   - fathom-chat-event: our own ephemeral tool/silence events.
-#   - fathom-mood, fathom-feed, consumer-api:route: other consumer-api
-#     writes. These are side effects, not conversation.
-# NOTE: `fathom-chat` is NOT in this list. Both user messages and
-# Fathom's own replies use that source (db.add_message writes with
-# LAKE_CHAT_SOURCE="fathom-chat"), so filtering by source would miss
-# legitimate user turns. Fathom's own writes are filtered by the
-# participant:fathom tag check below instead.
+#   - fathom-mood, fathom-feed: other consumer-api writes, side-effects,
+#     not conversation.
+# `fathom-chat` is NOT in this list: both user and Fathom messages use
+# it; own-writes are filtered by the participant:fathom tag check below.
 IGNORED_SOURCES = {
     "fathom-chat-event",
     "fathom-mood",
     "fathom-feed",
-    "consumer-api:route",  # Fathom's own route_to_agent writes
 }
 
 
@@ -75,9 +62,9 @@ class ChatListener:
 
     Holds a single `last_seen` timestamp across all sessions. Starts at
     process boot time so a restart doesn't retrigger historical messages.
-    Each tick: query deltas with chat:* tags newer than last_seen, group
-    by session, fire one turn per session (not one per delta — many deltas
-    in a short window should produce one response, not many).
+    Each tick: query deltas newer than last_seen, group by session, fire
+    one turn per session (not one per delta — many deltas in a short
+    window should produce one response, not many).
     """
 
     def __init__(self) -> None:
@@ -91,15 +78,6 @@ class ChatListener:
         # processed serially — avoids overlapping inference for one chat.
         # Separate sessions can still run concurrently.
         self._session_locks: dict[str, asyncio.Lock] = {}
-        # Sessions where the user has most recently force-routed to a body.
-        # The force-route tag means "use CC as Fathom's substrate for this
-        # response." chat-router on the target host spawns claude-code with
-        # the Fathom orient; this listener latches out to avoid
-        # double-answering. A companion fallback timer un-latches and runs
-        # the turn through fathom_think if CC doesn't write a response
-        # within FALLBACK_TIMEOUT_SECONDS (agent offline, slow, crashed).
-        self._force_routed_sessions: set[str] = set()
-        self._fallback_timers: dict[str, asyncio.Task] = {}
 
     def start(self) -> None:
         if self._task and not self._task.done():
@@ -166,50 +144,6 @@ class ChatListener:
             # delta tagged participant:fathom should also be skipped).
             if "participant:fathom" in (d.get("tags") or []):
                 continue
-            # Agent signoffs are acknowledgements, not conversation. The
-            # prompt tells Fathom to stay silent on them, but even a silent
-            # turn is a full inference round-trip — and the model doesn't
-            # always obey. Skip them at the trigger layer.
-            if "signoff" in (d.get("tags") or []):
-                continue
-            tags = d.get("tags") or []
-            is_user = "participant:user" in tags
-            is_force_routed = any(t.startswith("to:agent:") for t in tags)
-
-            # Latch / unlatch on user turns:
-            #   force-routed user delta → latch on, schedule fallback timer
-            #   plain user delta        → clear latch + cancel pending fallback
-            if is_user:
-                if is_force_routed:
-                    self._force_routed_sessions.add(session_slug)
-                    # Cancel any lingering fallback timer for this session and
-                    # schedule a fresh one keyed on this delta.
-                    existing = self._fallback_timers.pop(session_slug, None)
-                    if existing and not existing.done():
-                        existing.cancel()
-                    self._fallback_timers[session_slug] = asyncio.create_task(
-                        self._fallback_after_timeout(session_slug, d)
-                    )
-                    # Silence-ack so the UI renders a received-indicator while
-                    # chat-router spawns / injects into claude-code.
-                    asyncio.create_task(write_chat_event(session_slug, "silence", {}))
-                    continue
-                # Plain user turn — clear latch, cancel pending fallback.
-                if session_slug in self._force_routed_sessions:
-                    self._force_routed_sessions.discard(session_slug)
-                    pending = self._fallback_timers.pop(session_slug, None)
-                    if pending and not pending.done():
-                        pending.cancel()
-
-            # While latched, skip everything in this session — CC is handling
-            # the turn. The ack written at latch time is enough receipt.
-            if session_slug in self._force_routed_sessions:
-                continue
-
-            # Fathom's own route_to_agent writes also carry to:agent:<host>.
-            # Those are already filtered by source above, but guard anyway.
-            if is_force_routed:
-                continue
             by_session.setdefault(session_slug, []).append(d)
 
         self._last_seen = max_ts
@@ -257,10 +191,6 @@ class ChatListener:
         # UI's existing poll picks them up — same visual trail users had
         # when tool use streamed over SSE, now just routed through the
         # lake with a TTL. Deltas reap automatically after EVENT_TTL.
-        # _resolve_tools calls this synchronously, so we fire-and-forget
-        # the write as a background task to avoid blocking the tool loop
-        # on a lake write — the write is best-effort UI signal, not a
-        # correctness dependency.
         def on_tool_event(kind: str, name: str, data: dict) -> None:
             if kind != "result":
                 return
@@ -268,9 +198,9 @@ class ChatListener:
 
         history_msgs = await db.get_messages(slug)
         # Map the session history into OpenAI-ish {role, content} pairs.
-        # Agent messages come back with role='agent' — present them to the
-        # LLM as assistant-side context (they're Fathom's body's speech,
-        # which Fathom should read as its own prior turns).
+        # Any legacy 'agent' deltas in the lake (from before the routing
+        # path was removed) are surfaced as assistant-side context with a
+        # host annotation so Fathom reads them as its own prior speech.
         history: list[dict] = []
         for m in history_msgs:
             role = m.get("role")
@@ -315,59 +245,6 @@ class ChatListener:
         # next tick skips it (own-writes filter).
         await db.add_message(slug, "assistant", reply_text)
         await db.touch_session(slug)
-
-    async def _fallback_after_timeout(self, slug: str, user_delta: dict) -> None:
-        """Fall back to loop-api inference if CC doesn't respond in time.
-
-        Scheduled when a force-routed user delta is seen. After
-        FALLBACK_TIMEOUT_SECONDS, checks whether any delta from
-        source='claude-code:fathom' has landed in the session. If yes, CC is
-        handling it and we drop the latch. If no, we un-latch, write a
-        brain-switch event for the UI's inline note, and run the turn through
-        `fathom_think` as if force-route weren't on.
-        """
-        user_ts = user_delta.get("timestamp") or ""
-        try:
-            await asyncio.sleep(FALLBACK_TIMEOUT_SECONDS)
-        except asyncio.CancelledError:
-            return
-
-        try:
-            recent = await delta_client.query(
-                limit=20,
-                tags_include=f"chat:{slug}",
-                time_start=user_ts,
-            )
-        except Exception as e:
-            log.warning("chat-listener: fallback query failed for %s: %s", slug, e)
-            recent = []
-
-        cc_responded = any(d.get("source") == "claude-code:fathom" for d in recent)
-        if cc_responded:
-            # CC took the turn. Drop the latch so future non-force-routed
-            # messages flow normally; timer is cleaned up here too.
-            self._force_routed_sessions.discard(slug)
-            self._fallback_timers.pop(slug, None)
-            return
-
-        # CC didn't answer in time. Un-latch, mark the switch, run through loop-api.
-        log.info(
-            "chat-listener: CC fallback for session %s (timeout %ds)",
-            slug,
-            FALLBACK_TIMEOUT_SECONDS,
-        )
-        self._force_routed_sessions.discard(slug)
-        self._fallback_timers.pop(slug, None)
-        try:
-            await write_chat_event(
-                slug,
-                "brain-switch",
-                {"from": "claude-code:fathom", "to": "loop-api", "reason": "timeout"},
-            )
-        except Exception as e:
-            log.warning("chat-listener: brain-switch write failed for %s: %s", slug, e)
-
-        await self._process_session(slug, [user_delta])
 
 
 def _chat_slug(tags: list[str]) -> str | None:
