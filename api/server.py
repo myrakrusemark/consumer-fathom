@@ -77,10 +77,13 @@ class SourceUpdate(BaseModel):
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    from . import chat_listener
     auto_regen.start()
+    chat_listener.listener.start()
     try:
         yield
     finally:
+        await chat_listener.listener.stop()
         await auto_regen.stop()
         await delta_client.close()
 
@@ -379,89 +382,44 @@ async def fathom_think(
 
 @app.post("/v1/chat/completions")
 async def chat_completions(req: ChatRequest):
-    model = req.model or settings.resolved_model
+    """Write a user message into a chat session and return immediately.
 
-    # Session-aware: load history if session_id provided, or create one
-    SHORTTERM_TURNS = 6  # last 3 exchanges (user+assistant each)
+    Fathom's response comes via the chat listener (api/chat_listener.py),
+    which polls the lake for new deltas and fires inference per session.
+    This endpoint is no longer the inference trigger — it only persists
+    the user's delta. The UI picks up Fathom's eventual reply through
+    the same poll-the-session cycle that surfaces agent/body messages.
+
+    Why: every participant in a chat (user, Fathom, local bodies, other
+    humans in the future) should fire the same way — drop a delta,
+    everyone who's listening takes their turn. Previously Fathom only
+    responded to HTTP requests; now Fathom responds to deltas. Symmetric.
+    """
+    # Session-aware: create one if not provided
     session_id = req.session_id
     if session_id:
         session = await db.get_session(session_id)
         if not session:
             return {"error": f"Session {session_id} not found"}, 404
-        raw_history = await db.get_messages(session_id)
-        history = []
-        for m in raw_history:
-            if m["role"] not in ("user", "assistant"):
-                continue
-            content = m.get("content") or ""
-            if m.get("media_hash"):
-                content += f"\n[Image in this message: media_hash={m['media_hash']}]"
-            history.append({"role": m["role"], "content": content})
-        history = history[-SHORTTERM_TURNS:]
     else:
         session_data = await db.create_session()
         session_id = session_data["id"]
-        history = None
 
-    # Persist the user message(s) — skip if image upload already created the delta
-    latest_user_msg = ""
+    # Persist the user message(s). Image uploads already wrote their own
+    # delta via /v1/media so we skip writing a duplicate text delta when
+    # image_uploaded is set. The write itself is what triggers the chat
+    # listener to take a turn — no inference runs here synchronously.
     for m in req.messages:
         if m.role == "user" and m.content:
             content = m.content if isinstance(m.content, str) else json.dumps(m.content)
             if not req.image_uploaded:
                 await db.add_message(session_id, "user", content)
-            latest_user_msg = content
 
-    extra: dict = {}
-    if req.max_tokens:
-        extra["max_tokens"] = req.max_tokens
-    if req.temperature is not None:
-        extra["temperature"] = req.temperature
-
-    tool_events: list[dict] = []
-
-    def on_tool(kind: str, name: str, data: dict):
-        if kind == "result":
-            evt = {"name": name, "count": data.get("count")}
-            if data.get("media_hash"):
-                evt["media_hash"] = data["media_hash"]
-            tool_events.append(evt)
-
-    messages = await fathom_think(
-        user_message=latest_user_msg or _msg_dicts(req.messages)[-1].get("content", ""),
-        history=history,
-        recall=bool(latest_user_msg),
-        session_slug=session_id,
-        model=model,
-        on_tool_event=on_tool,
-        **extra,
-    )
-
-    # Extract assistant response text
-    last = messages[-1] if messages else {}
-    assistant_text = last.get("content", "")
-
-    # Persist assistant response
-    if assistant_text:
-        await db.add_message(session_id, "assistant", assistant_text)
-        await db.touch_session(session_id)
-
-    if req.stream:
-        return StreamingResponse(
-            _stream_response(messages, model, tool_events, session_id=session_id, **extra),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
-    else:
-        return {
-            "choices": [{
-                "index": 0,
-                "message": {"role": "assistant", "content": assistant_text},
-                "finish_reason": "stop",
-            }],
-            "model": model,
-            "session_id": session_id,
-        }
+    # Return session_id so the UI can lock onto it for its poll cycle.
+    # No streaming response — there's nothing to stream. The chat listener
+    # has already (or will shortly) pick up the user delta and write
+    # Fathom's reply, which the UI's 3-second poll will surface.
+    return {"session_id": session_id}
 
 
 @app.get("/v1/crystal")

@@ -4861,11 +4861,11 @@ GET  /v1/usage               Usage stats`,
     }
 
     // Pull fresh messages from the server and append any we haven't rendered.
-    // `silent_roles` is an escape hatch for the post-stream reconcile pass:
-    // the local render already shows the user+fathom turn that just finished,
-    // but the server now has authoritative IDs for them. We want to "seal
-    // off" those IDs (add to _renderedMessageIds) without re-rendering them,
-    // while still rendering any agent/other roles that arrived out of band.
+    // `silent_roles` is an escape hatch for the post-send reconcile pass:
+    // the local render already shows the user turn that just finished, but
+    // the server now has the authoritative ID. We want to "seal off" that
+    // ID (add to _renderedMessageIds) without re-rendering it, while
+    // still rendering any agent/fathom deltas that have landed.
     async function _reconcileChatMessages(silent_roles) {
       if (!currentSessionId) return;
       let data;
@@ -4880,6 +4880,19 @@ GET  /v1/usage               Usage stats`,
         _renderedMessageIds.add(m.id);
         if (silent.has(m.role)) continue;
         _renderMessageToStream(m);
+        // Remove any pending "typing" indicator — Fathom or a body has
+        // spoken, so the wait is over. Agent-signoff messages count too;
+        // they're a completion signal.
+        _maybeRemoveTyping(m);
+      }
+    }
+
+    function _maybeRemoveTyping(m) {
+      // Any message from Fathom or a body ends the "typing" state.
+      // (Pure agent signoff is also a completion signal.)
+      if (m.role === 'assistant' || m.role === 'agent') {
+        const t = chatStream.querySelector('.typing');
+        if (t) t.remove();
       }
     }
 
@@ -5049,7 +5062,11 @@ GET  /v1/usage               Usage stats`,
       chatStream.appendChild(userEl);
       scrollToBottomOfChat();
 
-      // Show typing indicator
+      // Show typing indicator. It stays until the poll reconcile sees a
+      // new Fathom (or body) message, then is removed by _maybeRemoveTyping.
+      // In the delta-driven world the server doesn't stream a reply back —
+      // it writes the user delta, the chat listener picks it up, Fathom's
+      // response lands as a new delta, and polling surfaces it.
       const typing = document.createElement('div');
       typing.className = 'typing';
       typing.innerHTML = '<span></span><span></span><span></span>';
@@ -5065,95 +5082,21 @@ GET  /v1/usage               Usage stats`,
               ? `${text || 'Attached image.'}\n[Image attached: media_hash=${uploadedMedia.media_hash}]`
               : text }],
             session_id: currentSessionId,
-            stream: true,
             image_uploaded: !!uploadedMedia,
           }),
         });
-
-        typing.remove();
-
-        const reader = r.body.getReader();
-        const decoder = new TextDecoder();
-        let assistantText = '';
-        let fathomEl = null;
-        let buffer = '';
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-
-          // Process SSE lines
-          const lines = buffer.split('\n');
-          buffer = lines.pop(); // keep incomplete last line
-
-          for (const line of lines) {
-            if (line.startsWith('event: tool_result')) {
-              // Next data line has the tool result
-              continue;
-            }
-            if (line.startsWith('event: meta')) {
-              continue;
-            }
-            if (!line.startsWith('data: ')) continue;
-            const payload = line.slice(6);
-            if (payload === '[DONE]') continue;
-
-            try {
-              const parsed = JSON.parse(payload);
-
-              // Tool result event — deltas or image view
-              if (parsed.name) {
-                if (parsed.media_hash) {
-                  // Image viewed by LLM — render as thumbnail in tool strip
-                  chatStream.appendChild(renderTurn({
-                    role: 'tool',
-                    meta: 'viewed',
-                    media_hash: parsed.media_hash,
-                  }));
-                  scrollToBottomOfChat();
-                  continue;
-                }
-                if (parsed.count != null) {
-                  chatStream.appendChild(renderTurn({
-                    role: 'tool', meta: `${parsed.count} deltas`,
-                  }));
-                  scrollToBottomOfChat();
-                  continue;
-                }
-              }
-
-              // Session ID from meta event
-              if (parsed.session_id && !currentSessionId) {
-                currentSessionId = parsed.session_id;
-              }
-
-              // Streaming text chunk
-              const delta = parsed.choices?.[0]?.delta;
-              if (delta?.content) {
-                if (!fathomEl) {
-                  fathomEl = document.createElement('div');
-                  fathomEl.className = 'msg msg-fathom';
-                  fathomEl.innerHTML = `<div class="msg-meta">Fathom · ${timeStr}</div><div class="msg-body"></div>`;
-                  chatStream.appendChild(fathomEl);
-                }
-                assistantText += delta.content;
-                fathomEl.querySelector('.msg-body').innerHTML = renderMd(assistantText);
-                scrollToBottomOfChat();
-              }
-            } catch (e) {
-              // Skip unparseable lines
-            }
-          }
+        const data = await r.json();
+        if (data.session_id && !currentSessionId) {
+          currentSessionId = data.session_id;
         }
 
-        // Refresh sidebar sessions after a new conversation
+        // Refresh sidebar in case this created a new session
         loadSessions();
 
-        // Seal off the just-streamed user+fathom turn so the next poll
-        // doesn't re-render them, and surface any agent deltas that arrived
-        // during the stream. Then resume polling so further agent outputs
-        // land live in the conversation.
+        // Silently reconcile so the user's just-sent delta (now in the
+        // lake) doesn't double-render. Resume polling — Fathom's reply,
+        // and any agent deltas triggered by its turn, will arrive via
+        // that poll cycle and the typing indicator clears with them.
         await _reconcileChatMessages(['user', 'assistant']);
         if (!_chatPollTimer) _startChatPoll();
         _chatPollPaused = false;
@@ -5165,8 +5108,8 @@ GET  /v1/usage               Usage stats`,
           html: `<p style="color: var(--danger);">Connection error: ${_esc(err.message)}</p>`,
         }));
         scrollToBottomOfChat();
-        // Resume polling even on error — the stream failing doesn't mean
-        // the agent on the other side has stopped writing back.
+        // Resume polling even on error — the server may still process
+        // the write, and Fathom might still reply via the listener.
         _chatPollPaused = false;
         if (currentSessionId && !_chatPollTimer) _startChatPoll();
       }
