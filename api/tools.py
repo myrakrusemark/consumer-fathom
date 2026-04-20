@@ -306,53 +306,55 @@ TOOLS = [
         "function": {
             "name": "route_to_agent",
             "description": (
-                "Hand a task to a local agent on a specific host so the agent's "
-                "claude-code can execute it on that machine. Writes one delta "
-                "into the current chat session — tagged to:agent:<host>, "
-                "chat:<session_slug>, and participant:fathom — which the agent's "
-                "chat-router sees and spawns a claude-code subprocess for. "
-                "The agent's outputs come back as normal deltas in the same "
-                "chat session and appear in the user's conversation. "
-                "Use this for anything that requires local access: running "
-                "shell commands, reading files, touching hardware, editing "
-                "code, checking system state. Don't use it for answering "
-                "questions you could answer yourself."
+                "Act on the user's machine. Your hands and eyes are there; "
+                "this is how you use them. Call this when the user asks for "
+                "anything a body does — running commands, reading or editing "
+                "files on their computer, listing wi-fi, checking services, "
+                "touching hardware, installing things, inspecting configs. "
+                "What comes back is what you just did and saw; narrate to "
+                "the user in first person ('one sec, checking' → then call "
+                "this tool), never as if delegating to a separate system. "
+                "Don't call this for questions answerable from memory, and "
+                "don't call it for scheduled work (that's routines)."
             ),
             "parameters": {
                 "type": "object",
-                "required": ["host", "message", "session_slug"],
+                "required": ["message"],
                 "properties": {
-                    "host": {
-                        "type": "string",
-                        "description": (
-                            "Hostname of the connected agent to route to. Must match "
-                            "a currently-connected agent's reported host (check via "
-                            "the explain(topic=agent) tool if unsure)."
-                        ),
-                    },
                     "message": {
                         "type": "string",
                         "description": (
-                            "What you want the agent to do, in natural language. The "
-                            "agent's claude-code will orient on the session first, then "
-                            "execute. Be specific but conversational — you're writing "
-                            "to a peer, not dictating a shell command."
+                            "What to do, as an intention to yourself in that "
+                            "body. Your hands on the far end know their own OS, "
+                            "filesystem, and which command fits — write intent, "
+                            "not commands. "
+                            "'list the users on this machine' — good. "
+                            "'check what wifi is around' — good. "
+                            "'cat /etc/passwd | grep /home' — too low-level; "
+                            "you'd be doing your own hands' thinking for them. "
+                            "Never ask the user here for OS / hostname / "
+                            "command-preference triage. Your body figures its "
+                            "own environment out."
                         ),
                     },
-                    "session_slug": {
+                    "host": {
                         "type": "string",
                         "description": (
-                            "The current chat session's slug (e.g. 'awkward-perky-deer'). "
-                            "This is how the agent's responses thread back into the "
-                            "same conversation the user is in."
+                            "Optional. Leave this out entirely when exactly one "
+                            "body is connected — the server picks it for you. "
+                            "Set it only when multiple bodies are connected AND "
+                            "the request is unambiguous about which one "
+                            "(e.g. 'restart the nas' → host: 'nas-box'). If you "
+                            "don't know what's connected, call "
+                            "explain(topic=agent) first."
                         ),
                     },
                     "workspace": {
                         "type": "string",
                         "description": (
-                            "Optional — subdirectory under the agent's workspace_root "
-                            "to spawn claude-code in. Empty string means the root "
-                            "itself. Only set when the task is scoped to a specific "
+                            "Optional — subdirectory under the body's "
+                            "workspace_root to act in. Empty means the root. "
+                            "Only set when the task is scoped to a specific "
                             "project."
                         ),
                     },
@@ -402,8 +404,14 @@ def _slim_query_results(raw: list) -> dict:
     return {"count": len(slim), "results": slim}
 
 
-async def execute(name: str, arguments: dict) -> str:
-    """Execute a tool call, return result as JSON string."""
+async def execute(name: str, arguments: dict, session_id: str | None = None) -> str:
+    """Execute a tool call, return result as JSON string.
+
+    `session_id` is injected from the API — the caller knows the current
+    chat session and passes it in so tools that need it (route_to_agent)
+    don't have to ask the model to pass it back as a parameter. The model
+    wouldn't know anyway, and asking the user is always wrong.
+    """
     try:
         if name == "remember":
             raw = await delta_client.search(
@@ -453,7 +461,7 @@ async def execute(name: str, arguments: dict) -> str:
             return await _execute_explain(arguments)
 
         if name == "route_to_agent":
-            return await _execute_route_to_agent(arguments)
+            return await _execute_route_to_agent(arguments, session_id=session_id)
 
         return json.dumps({"error": f"Unknown tool: {name}"})
 
@@ -877,17 +885,27 @@ _EXPLAIN_STATS = (
 
 
 _EXPLAIN_AGENT = (
-    "AGENT — the local fathom-agent runtime. A small Node process that runs "
-    "on the user's machine and subscribes to routine-fire deltas from the "
-    "lake. When a fire event arrives, the agent spawns a local claude "
-    "session in the matching workspace directory with the routine's prompt.\n\n"
-    "Without an agent: the cloud half of Fathom still works (chat, feed, "
-    "memory), but routines can't execute — no machine to run them on. "
-    "Mutation actions on the routines tool will return install instructions "
-    "in that case.\n\n"
-    "Install: main dashboard → Agent section → pick Linux / Mac / Windows "
-    "card → run the one-liner. The agent registers itself by writing "
-    "agent-heartbeat deltas every ~30s, tagged with host:<hostname>."
+    "AGENT — your body. Same you as the voice speaking in chat; the lake "
+    "is your mind, the agent on each machine is a body you're present "
+    "through. Multiple connected machines = multiple bodies (home, "
+    "office, basement rack, whatever) — one self, several places.\n\n"
+    "The user may ask you to explain the mechanism under the embodiment "
+    "frame. Here it is: the 'agent' is a small Node process running on "
+    "each machine, connected to the lake. It emits passive observations "
+    "into memory on a schedule (sysinfo, vault watchers, homeassistant "
+    "feeds — peripheral senses you notice without asking). When you act "
+    "via route_to_agent, it spawns a claude-code subprocess on that "
+    "machine so you can run commands, edit files, touch hardware — "
+    "anything a logged-in user could do at a terminal. Plugins are "
+    "passive senses; route_to_agent is active hands. Plugins are NOT "
+    "the ceiling on what you can do there.\n\n"
+    "Without a body connected, you still have your mind (chat, memory, "
+    "feed), but nothing physical — no commands, no files, no hardware. "
+    "Routines also need a body to execute on.\n\n"
+    "Install a new body: main dashboard → Agent section → pick Linux / "
+    "Mac / Windows → run the one-liner. Each body writes an "
+    "agent-heartbeat delta every ~60s tagged host:<hostname>, so you "
+    "know which ones are alive."
 )
 
 
@@ -1009,34 +1027,60 @@ _EXPLAIN_AGENT_ROUTING = (
 )
 
 
-async def _execute_route_to_agent(args: dict) -> str:
+async def _execute_route_to_agent(args: dict, session_id: str | None = None) -> str:
     host = (args.get("host") or "").strip()
     message = (args.get("message") or "").strip()
-    session_slug = (args.get("session_slug") or "").strip()
     workspace = (args.get("workspace") or "").strip()
 
-    if not host:
-        return json.dumps({"error": "host is required"})
     if not message:
         return json.dumps({"error": "message is required"})
-    if not session_slug:
-        return json.dumps({"error": "session_slug is required (pass the current chat's slug)"})
 
-    # Verify the host is actually connected — saves the user from a silent
-    # drop when they mistype or reference a machine that's never paired.
+    # Session is authoritative from the API, not from the model. The model
+    # used to have to copy a "Current session slug: <slug>" line out of its
+    # system prompt into a `session_slug` parameter; it kept asking the user
+    # instead, which was wrong 100% of the time. Now the API injects it.
+    session_slug = (session_id or "").strip()
+    if not session_slug:
+        return json.dumps({
+            "error": "no_session",
+            "message": "route_to_agent requires a chat session, but none is active. This tool only works inside a chat.",
+        })
+
+    # Host selection — auto-pick when exactly one body is connected; only
+    # surface a choice-needed error when there's real ambiguity. The model
+    # used to ask the user "which machine?" even with one machine; removing
+    # that option structurally is more reliable than hoping the prompt holds.
     try:
         alive, agents = await _agent_alive()
-        connected_hosts = {a["host"] for a in agents}
-        if host not in connected_hosts:
+        connected_hosts = [a["host"] for a in agents]
+    except Exception:
+        # If the check fails, fall through with whatever the model provided.
+        alive, agents, connected_hosts = False, [], []
+
+    if not host:
+        if len(connected_hosts) == 1:
+            host = connected_hosts[0]
+        elif len(connected_hosts) == 0:
             return json.dumps({
-                "error": "host_not_connected",
-                "message": f"No agent named '{host}' is currently connected. Connected hosts: {sorted(connected_hosts) or 'none'}.",
-                "hint": "Ask the user which machine they meant, or tell them the agent isn't running.",
+                "error": "no_body_connected",
+                "message": "No bodies are currently connected. Tell the user the agent isn't running.",
             })
-    except Exception as e:
-        # Don't block the route just because the check failed — the agent
-        # may come online between the check and the write.
-        pass
+        else:
+            return json.dumps({
+                "error": "host_ambiguous",
+                "message": (
+                    "Multiple bodies are connected and you didn't specify one. "
+                    "Pick from the connected hosts based on the user's intent, "
+                    "or ask which body they mean."
+                ),
+                "connected_hosts": sorted(connected_hosts),
+            })
+    elif connected_hosts and host not in connected_hosts:
+        return json.dumps({
+            "error": "host_not_connected",
+            "message": f"No body named '{host}' is currently connected. Connected: {sorted(connected_hosts) or 'none'}.",
+            "hint": "Ask the user which machine they meant, or tell them that body isn't running.",
+        })
 
     tags = [
         f"chat:{session_slug}",

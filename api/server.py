@@ -123,6 +123,7 @@ async def _resolve_tools(
     tools: list[dict] | None = None,
     on_tool_event: callable | None = None,
     max_rounds: int = MAX_TOOL_ROUNDS,
+    session_id: str | None = None,
     **kwargs,
 ) -> list[dict]:
     """Run the tool-calling loop until the LLM stops calling tools.
@@ -164,7 +165,7 @@ async def _resolve_tools(
             if on_tool_event:
                 on_tool_event("call", fn.name, args)
 
-            result_str = await execute(fn.name, args)
+            result_str = await execute(fn.name, args, session_id=session_id)
 
             # Image results become multimodal content blocks
             is_image = result_str.startswith(IMAGE_RESULT_PREFIX)
@@ -310,9 +311,15 @@ async def fathom_think(
         resolved_tools = resolved_tools + extra_tools
 
     # 1. Build system prompt — always the full Fathom voice
+    session_title: str | None = None
+    if session_slug:
+        sess = await db.get_session(session_slug)
+        if sess:
+            session_title = sess.get("title")
     system = build_system_prompt(
         crystal_text=crystal_text,
         session_slug=session_slug,
+        session_title=session_title,
         mood_carrier_wave=(current_mood or {}).get("carrier_wave"),
         mood_threads=(current_mood or {}).get("threads"),
     )
@@ -361,7 +368,7 @@ async def fathom_think(
     # 4. Run the tool loop
     messages = await _resolve_tools(
         messages, model, tools=resolved_tools, on_tool_event=on_tool_event,
-        max_rounds=max_rounds, **llm_kwargs,
+        max_rounds=max_rounds, session_id=session_slug, **llm_kwargs,
     )
 
     return messages
@@ -999,12 +1006,18 @@ async def agents_status():
                 payload = json.loads(d.get("content", "{}"))
             except Exception:
                 payload = {}
+            # Prefer `agent_version` (new, explicit). Fall back to `version`
+            # for older agents that only sent the combined field — old agents
+            # pinned `version` to the heartbeat schema version (0.10.0), which
+            # is what caused the dashboard to show a spurious update chip.
+            agent_version = payload.get("agent_version") or payload.get("version")
             by_host[host] = {
                 "host": host,
                 "timestamp": ts,
                 "delta_id": d.get("id"),
                 "expires_at": d.get("expires_at"),
-                "version": payload.get("version"),
+                "version": agent_version,
+                "schema_version": payload.get("schema_version"),
                 "plugins": payload.get("plugins") or {},
                 "uptime_s": payload.get("uptime_s"),
                 # Local management URL advertised by the agent's local-ui

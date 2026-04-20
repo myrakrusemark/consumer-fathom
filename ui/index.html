@@ -4807,7 +4807,103 @@ GET  /v1/usage               Usage stats`,
       session.turns.forEach(t => chatStream.appendChild(renderTurn(t)));
     }
 
+    // Chat message reconciliation state. `_renderedMessageIds` is the set of
+    // delta IDs already painted into the stream — any message returned by
+    // /v1/sessions/{id} whose ID is in this set is skipped on subsequent
+    // polls, so the same turn never renders twice. Cleared when the chat
+    // closes or switches to a different session.
+    let _renderedMessageIds = new Set();
+    let _chatPollTimer = null;
+    let _chatPollPaused = false;
+    const CHAT_POLL_MS = 3000;
+
+    function _renderMessageToStream(m) {
+      const time = m.created_at ? new Date(m.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
+      let el;
+      if (m.role === 'user') {
+        el = renderTurn({ role: 'user', time, text: m.content || '' });
+      } else if (m.role === 'assistant') {
+        el = renderTurn({ role: 'fathom', time, html: renderMd(m.content || '') });
+        if (el && m.routing) {
+          const chip = renderTurn({ role: 'routing', to_host: m.to_host, text: m.content || '' });
+          if (chip) {
+            const wrap = document.createElement('div');
+            wrap.className = 'msg-group';
+            wrap.appendChild(el);
+            wrap.appendChild(chip);
+            el = wrap;
+          }
+        }
+      } else if (m.role === 'agent') {
+        el = renderTurn({
+          role: 'agent', time,
+          text: m.content || '',
+          host: m.host,
+          signoff: !!m.signoff,
+        });
+      }
+      if (el && m.media_hash) {
+        const img = document.createElement('img');
+        img.className = 'msg-thumb';
+        img.src = `${API_BASE}/v1/media/${m.media_hash}`;
+        const body = el.querySelector ? el.querySelector('.msg-body') : null;
+        if (body) body.appendChild(img);
+      }
+      if (el) {
+        chatStream.appendChild(el);
+        scrollToBottomOfChat();
+      }
+    }
+
+    // Pull fresh messages from the server and append any we haven't rendered.
+    // `silent_roles` is an escape hatch for the post-stream reconcile pass:
+    // the local render already shows the user+fathom turn that just finished,
+    // but the server now has authoritative IDs for them. We want to "seal
+    // off" those IDs (add to _renderedMessageIds) without re-rendering them,
+    // while still rendering any agent/other roles that arrived out of band.
+    async function _reconcileChatMessages(silent_roles) {
+      if (!currentSessionId) return;
+      let data;
+      try {
+        data = await api(`/v1/sessions/${currentSessionId}`);
+      } catch {
+        return;
+      }
+      const silent = new Set(silent_roles || []);
+      for (const m of data.messages || []) {
+        if (!m.id || _renderedMessageIds.has(m.id)) continue;
+        _renderedMessageIds.add(m.id);
+        if (silent.has(m.role)) continue;
+        _renderMessageToStream(m);
+      }
+    }
+
+    function _startChatPoll() {
+      _stopChatPoll();
+      _chatPollTimer = setInterval(() => {
+        if (_chatPollPaused || document.hidden) return;
+        _reconcileChatMessages();
+      }, CHAT_POLL_MS);
+    }
+
+    function _stopChatPoll() {
+      if (_chatPollTimer) {
+        clearInterval(_chatPollTimer);
+        _chatPollTimer = null;
+      }
+    }
+
+    // Resume on tab becoming visible so an idle tab catches up quickly
+    // rather than waiting for the next setInterval tick.
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && _chatPollTimer && !_chatPollPaused) {
+        _reconcileChatMessages();
+      }
+    });
+
     async function openChatWithSession(sessionId, title) {
+      _stopChatPoll();
+      _renderedMessageIds = new Set();
       chatTitle.textContent = title || 'Session';
       currentSessionId = sessionId;
       chatStream.innerHTML = '<div class="session-stamp">Loading…</div>';
@@ -4822,53 +4918,20 @@ GET  /v1/usage               Usage stats`,
         stamp.textContent = data.session.title + (created ? ` · ${created}` : '');
         chatStream.appendChild(stamp);
 
-        for (const m of data.messages) {
-          const time = m.created_at ? new Date(m.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
-          let el;
-          if (m.role === 'user') {
-            el = renderTurn({ role: 'user', time, text: m.content || '' });
-          } else if (m.role === 'assistant') {
-            // A Fathom message can also carry routing metadata — render the
-            // hand-off chip inline after the normal reply.
-            el = renderTurn({
-              role: 'fathom', time,
-              html: renderMd(m.content || ''),
-            });
-            if (el && m.routing) {
-              const chip = renderTurn({ role: 'routing', to_host: m.to_host, text: m.content || '' });
-              if (chip) {
-                // Wrap fathom reply + routing chip in a tight group
-                const wrap = document.createElement('div');
-                wrap.className = 'msg-group';
-                wrap.appendChild(el);
-                wrap.appendChild(chip);
-                el = wrap;
-              }
-            }
-          } else if (m.role === 'agent') {
-            el = renderTurn({
-              role: 'agent', time,
-              text: m.content || '',
-              host: m.host,
-              signoff: !!m.signoff,
-            });
-          }
-          if (el && m.media_hash) {
-            const img = document.createElement('img');
-            img.className = 'msg-thumb';
-            img.src = `${API_BASE}/v1/media/${m.media_hash}`;
-            const body = el.querySelector ? el.querySelector('.msg-body') : null;
-            if (body) body.appendChild(img);
-          }
-          if (el) chatStream.appendChild(el);
+        for (const m of (data.messages || [])) {
+          if (m.id) _renderedMessageIds.add(m.id);
+          _renderMessageToStream(m);
         }
         scrollToBottomOfChat();
+        _startChatPoll();
       } catch (err) {
         chatStream.innerHTML = `<div class="session-stamp">Failed to load session</div>`;
       }
     }
 
     function openChatFresh() {
+      _stopChatPoll();
+      _renderedMessageIds = new Set();
       chatTitle.textContent = 'New session';
       currentSessionId = null;
       chatStream.innerHTML = '<div class="session-stamp">New session · just now</div>';
@@ -4884,6 +4947,8 @@ GET  /v1/usage               Usage stats`,
     }
 
     function closeChat() {
+      _stopChatPoll();
+      _renderedMessageIds = new Set();
       viewChat.hidden = true;
       viewMain.hidden = false;
       syncComposer();
@@ -4954,6 +5019,10 @@ GET  /v1/usage               Usage stats`,
       if (viewChat.hidden) {
         openChatFresh();
       }
+
+      // Pause polling while the stream is in flight so we don't double-render
+      // the user's message or interleave partial output with a poll result.
+      _chatPollPaused = true;
 
       const now = new Date();
       const timeStr = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -5076,6 +5145,14 @@ GET  /v1/usage               Usage stats`,
         // Refresh sidebar sessions after a new conversation
         loadSessions();
 
+        // Seal off the just-streamed user+fathom turn so the next poll
+        // doesn't re-render them, and surface any agent deltas that arrived
+        // during the stream. Then resume polling so further agent outputs
+        // land live in the conversation.
+        await _reconcileChatMessages(['user', 'assistant']);
+        if (!_chatPollTimer) _startChatPoll();
+        _chatPollPaused = false;
+
       } catch (err) {
         typing.remove();
         chatStream.appendChild(renderTurn({
@@ -5083,6 +5160,10 @@ GET  /v1/usage               Usage stats`,
           html: `<p style="color: var(--danger);">Connection error: ${_esc(err.message)}</p>`,
         }));
         scrollToBottomOfChat();
+        // Resume polling even on error — the stream failing doesn't mean
+        // the agent on the other side has stopped writing back.
+        _chatPollPaused = false;
+        if (currentSessionId && !_chatPollTimer) _startChatPoll();
       }
     }
 
@@ -5166,6 +5247,7 @@ GET  /v1/usage               Usage stats`,
       // A media ref can be a media_hash (hex string) or a URL
       if (!ref) return null;
       if (ref.startsWith('http://') || ref.startsWith('https://')) return ref;
+      if (ref.startsWith('delta:')) return `${API_BASE}/v1/media/${ref.slice(6)}`;
       if (/^[0-9a-f]+$/.test(ref)) return `${API_BASE}/v1/media/${ref}`;
       return ref;
     }
@@ -5173,6 +5255,7 @@ GET  /v1/usage               Usage stats`,
     function _isImageRef(ref) {
       if (!ref) return false;
       if (/^[0-9a-f]+$/.test(ref)) return true;  // media_hash = always image
+      if (ref.startsWith('delta:')) return true;  // delta: URI = always image
       return /\.(jpg|jpeg|png|gif|webp|svg|avif)(\?|$)/i.test(ref);
     }
 
