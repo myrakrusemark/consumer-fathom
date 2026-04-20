@@ -70,24 +70,18 @@ function workspacePath(workspaceRoot, workspace) {
   return join(workspaceRoot, safe);
 }
 
-async function fetchTagged(config, tag, since) {
-  const url = new URL(`${config.delta_store_url}/deltas`);
-  url.searchParams.set("tags_include", tag);
-  if (since) url.searchParams.append("time_start", since);
-  url.searchParams.set("limit", "50");
-  const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
-  if (!r.ok) throw new Error(`${r.status}`);
-  return await r.json();
-}
-
 async function pollOnce(config, pusher, state) {
   let fires, summaries;
   try {
     [fires, summaries] = await Promise.all([
-      fetchTagged(config, "routine-fire", state.last_seen),
+      pusher.query({ tags_include: "routine-fire", time_start: state.last_seen, limit: 50 }),
       // Summaries poll from the earliest open fire, so a slow routine whose
       // summary lands after state.last_seen advances still gets matched.
-      fetchTagged(config, "routine-summary", state.oldest_open_fire || state.last_seen),
+      pusher.query({
+        tags_include: "routine-summary",
+        time_start: state.oldest_open_fire || state.last_seen,
+        limit: 50,
+      }),
     ]);
   } catch (e) {
     console.error(`  kitty: poll failed: ${e.message}`);
@@ -128,7 +122,7 @@ async function pollOnce(config, pusher, state) {
     : null;
 }
 
-function closeWindow(socket) {
+export function closeWindow(socket) {
   if (!existsSync(socket)) return;
   runKitten(["@", "--to", `unix:${socket}`, "close-window"], (code, err) => {
     if (code !== 0) console.error(`  ✗ close-window failed (${code}): ${err.trim()}`);
@@ -357,7 +351,6 @@ export default {
   icon: "🐈",
   description: "Spawn kitty windows with claude when routines fire.",
   defaults: {
-    delta_store_url: "http://localhost:4246",
     workspace_root: join(homedir(), "Dropbox", "Work"),
     poll_interval_ms: 3000,
     inject_delay_ms: 3000,

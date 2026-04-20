@@ -1,6 +1,12 @@
 /**
- * Delta pusher — batches and POSTs deltas to the consumer API.
- * Logs every push with source, preview, and dedup status.
+ * Lake client — batches and POSTs deltas to the consumer API, and reads
+ * them back through the same authenticated surface.
+ *
+ * Named `Pusher` for backwards-compat; it's really the agent's single
+ * point of contact with the lake. Plugins that need to read (chat-router,
+ * kitty) call `.query()`; plugins that write (everything else) call
+ * `.push()`. Both paths use the same apiUrl + apiKey so there's one auth
+ * model and one endpoint the agent has to reach.
  */
 
 const BATCH_INTERVAL = 2000; // ms between flushes
@@ -27,12 +33,35 @@ export class Pusher {
     this.queue.push(delta);
   }
 
+  _authHeaders() {
+    const h = { "Content-Type": "application/json" };
+    if (this.apiKey) h["Authorization"] = `Bearer ${this.apiKey}`;
+    return h;
+  }
+
+  // GET /v1/deltas — for plugins that poll the lake (chat-router, kitty).
+  // Mirrors the delta-store's query shape but routes through the API so auth
+  // and any future filtering/caching applies. Throws on non-2xx so callers
+  // can distinguish transient failures from empty results.
+  async query({ tags_include, source, time_start, limit = 50, timeoutMs = 5000 } = {}) {
+    const url = new URL(`${this.apiUrl}/v1/deltas`);
+    if (tags_include) url.searchParams.set("tags_include", tags_include);
+    if (source) url.searchParams.set("source", source);
+    if (time_start) url.searchParams.set("time_start", time_start);
+    url.searchParams.set("limit", String(limit));
+    const r = await fetch(url, {
+      headers: this._authHeaders(),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!r.ok) throw new Error(`${r.status}`);
+    return await r.json();
+  }
+
   async flush() {
     if (!this.queue.length) return;
     const batch = this.queue.splice(0);
 
-    const headers = { "Content-Type": "application/json" };
-    if (this.apiKey) headers["Authorization"] = `Bearer ${this.apiKey}`;
+    const headers = this._authHeaders();
 
     for (const delta of batch) {
       const preview = (delta.content || "").slice(0, 50).replace(/\n/g, " ");

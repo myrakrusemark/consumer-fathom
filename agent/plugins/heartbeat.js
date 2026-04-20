@@ -20,7 +20,20 @@ import { dirname, join } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 
 const CONFIG_PATH = join(homedir(), ".fathom", "agent.json");
-const VERSION = "0.10.0"; // bumped when heartbeat shape changes
+const SCHEMA_VERSION = "0.10.0"; // bumped when heartbeat payload shape changes
+
+// Agent package version, read from the shipped package.json. Emitted in the
+// heartbeat as `agent_version` so the dashboard can compare against the
+// registry's "latest" tag and render an update chip when the installed
+// agent is behind.
+const AGENT_VERSION = (() => {
+  try {
+    const pkgPath = join(dirname(fileURLToPath(import.meta.url)), "..", "package.json");
+    return JSON.parse(readFileSync(pkgPath, "utf8")).version || "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+})();
 
 export const CONFIG_SHAPE = {
   interval_ms: { type: "number", required: false, help: "How often to emit a heartbeat (milliseconds). Default: 60000 (1 min)." },
@@ -148,7 +161,12 @@ async function emitHeartbeat(config, pusher, startedAt) {
 
   const payload = {
     host,
-    version: VERSION,
+    agent_version: AGENT_VERSION,
+    schema_version: SCHEMA_VERSION,
+    // Legacy alias — older dashboards read `version` and treated it as the
+    // agent version. Keep it populated with the agent version so an older
+    // UI + newer agent behaves correctly. The UI prefers `agent_version`.
+    version: AGENT_VERSION,
     plugins: await summarizePlugins(),
     uptime_s: Math.round((Date.now() - startedAt) / 1000),
     ...(agent_url ? { agent_url } : {}),
@@ -157,7 +175,7 @@ async function emitHeartbeat(config, pusher, startedAt) {
   // Tags: one per enabled plugin so queries like
   //   tags_include=[agent-heartbeat, plugin:kitty]
   // can find agents that currently have kitty on.
-  const tags = ["agent-heartbeat", "fathom-agent", `host:${host}`, `version:${VERSION}`];
+  const tags = ["agent-heartbeat", "fathom-agent", `host:${host}`, `version:${AGENT_VERSION}`];
   for (const [name, p] of Object.entries(payload.plugins)) {
     if (p.enabled) tags.push(`plugin:${name}`);
   }

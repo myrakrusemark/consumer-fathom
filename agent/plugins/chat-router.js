@@ -20,12 +20,11 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { homedir, hostname } from "os";
 import { join, dirname } from "path";
-import { spawnClaudeInKitty, kittySendText, kittySocketAlive } from "./kitty.js";
+import { spawnClaudeInKitty, kittySendText, kittySocketAlive, closeWindow } from "./kitty.js";
 
 const STATE_PATH = join(homedir(), ".fathom", "chat-router-state.json");
 
 export const CONFIG_SHAPE = {
-  delta_store_url: { type: "string", required: false, help: "Lake URL. Default: http://localhost:4246." },
   poll_interval_ms: { type: "number", required: false, help: "Ms between lake polls. Default: 2000." },
   workspace_root: { type: "string", required: false, help: "Base directory for chat-session spawns. Default: ~/Dropbox/Work." },
   default_workspace: { type: "string", required: false, help: "Fallback workspace subdir if the routing delta has no workspace: tag. Default: empty (workspace_root itself)." },
@@ -102,28 +101,17 @@ function framedMessage({ sessionSlug, participant, content }) {
   return `\nMessage from ${who} in chat:${sessionSlug}: ${content}\n`;
 }
 
-async function fetchTagged(config, tag, since) {
-  // The agent's plugin loader doesn't merge plugin.defaults into the
-  // runtime config — only what's in agent.json is passed through. Fall
-  // back to the built-in default URL here so a config that omits
-  // delta_store_url still works.
-  const base = config.delta_store_url || "http://localhost:4246";
-  const url = new URL(`${base}/deltas`);
-  url.searchParams.set("tags_include", tag);
-  if (since) url.searchParams.append("time_start", since);
-  url.searchParams.set("limit", "100");
-  const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
-  if (!r.ok) throw new Error(`${r.status}`);
-  return await r.json();
-}
-
-async function pollInvitations(config, state, host) {
-  // Fetch every delta that addresses this host. The delta-store's
-  // tags_include is AND-semantic per call, so one fetch per addressing tag
-  // is enough — we don't need a cross-product of chat:* × to:agent:host.
+async function pollInvitations(pusher, config, state, host) {
+  // Fetch every delta that addresses this host. The lake's tags_include is
+  // AND-semantic per call, so one fetch per addressing tag is enough — we
+  // don't need a cross-product of chat:* × to:agent:host.
   let invites;
   try {
-    invites = await fetchTagged(config, `to:agent:${host}`, state.last_seen);
+    invites = await pusher.query({
+      tags_include: `to:agent:${host}`,
+      time_start: state.last_seen,
+      limit: 100,
+    });
   } catch (e) {
     const cause = e.cause ? ` (cause: ${e.cause.code || e.cause.message})` : "";
     console.error(`  chat-router: invite poll failed: ${e.message}${cause}`);
@@ -227,7 +215,7 @@ async function injectIntoEngagement(sessionSlug, delta, host) {
   await kittySendText(engagement.socket, text);
 }
 
-async function pollLiveSessions(config, host) {
+async function pollLiveSessions(pusher, host) {
   // For each open engagement, pull deltas in its session newer than the
   // engagement's `since` marker. Deliver any that aren't from us.
   const now = Date.now();
@@ -242,23 +230,41 @@ async function pollLiveSessions(config, host) {
     if (inGrace) continue;
     let deltas;
     try {
-      deltas = await fetchTagged(config, `chat:${slug}`, eng.since);
+      deltas = await pusher.query({
+        tags_include: `chat:${slug}`,
+        time_start: eng.since,
+        limit: 100,
+      });
     } catch (e) {
       // Don't spam — transient network blips are fine
       continue;
     }
     deltas.sort((a, b) => (a.timestamp || "").localeCompare(b.timestamp || ""));
+    let signoffSeen = false;
     for (const d of deltas) {
       if (d.timestamp <= eng.since) continue;
-      // Don't re-inject the initial invitation (it's in the orient prompt).
-      // The first poll after spawn sees it because eng.since === invite.timestamp
-      // but our > check above handles that.
-      if ((d.source || "") === eng.ownSource) {
-        eng.since = d.timestamp;
+      eng.since = d.timestamp;
+      const tags = d.tags || [];
+      // Signoff delta from the body on this host — the engagement's own
+      // claude-code finished. Claude exits but kitty doesn't self-close:
+      // without an active close the window sits on an empty shell forever.
+      // Detect the signoff, close the window, drop the engagement.
+      if (
+        tags.includes("signoff") &&
+        tags.includes(`participant:agent:${host}`)
+      ) {
+        signoffSeen = true;
         continue;
       }
+      // Don't re-inject the initial invitation (it's in the orient prompt).
+      // Own writes also shouldn't loop back.
+      if ((d.source || "") === eng.ownSource) continue;
       await injectIntoEngagement(slug, d, host);
-      eng.since = d.timestamp;
+    }
+    if (signoffSeen) {
+      console.log(`  💬 engagement ${slug} signed off — closing window`);
+      try { closeWindow(eng.socket); } catch {}
+      engagements.delete(slug);
     }
   }
 }
@@ -274,7 +280,6 @@ export default {
     // agent ignores to:agent:<host> deltas entirely (Fathom can still
     // write them; they just sit in the lake without a pickup).
     enabled: true,
-    delta_store_url: "http://localhost:4246",
     poll_interval_ms: 2000,
     workspace_root: join(homedir(), "Dropbox", "Work"),
     default_workspace: "",
@@ -288,8 +293,8 @@ export default {
     console.log(`  chat-router: polling lake for to:agent:${host} deltas (since ${state.last_seen})`);
 
     const tick = async () => {
-      await pollInvitations(config, state, host);
-      await pollLiveSessions(config, host);
+      await pollInvitations(pusher, config, state, host);
+      await pollLiveSessions(pusher, host);
     };
 
     const timer = setInterval(() => {

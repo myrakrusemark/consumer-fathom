@@ -288,7 +288,12 @@ function promptChoice(question, choices, defaultKey) {
       rl.close();
       const a = (answer || "").trim().toLowerCase();
       const match = choices.find((c) => c.key.toLowerCase() === a);
-      resolve(match ? match.key : defaultKey);
+      const picked = match ? match : choices.find((c) => c.key === defaultKey);
+      // Return the choice's `value` when provided so callers can compare
+      // against readable names rather than single-letter keys. Falls back to
+      // the key itself for backwards compat with choices that don't define a
+      // value.
+      resolve(picked ? (picked.value ?? picked.key) : defaultKey);
     });
   });
 }
@@ -343,10 +348,14 @@ async function runInit(cliArgs, plugins, existingConfig) {
     } else {
       branch = await promptChoice(
         "(K)eep plugins & update url/key only, (O)verwrite with defaults (backup saved), or (Q)uit?",
-        [{ key: "k", label: "eep" }, { key: "o", label: "verwrite" }, { key: "q", label: "uit" }],
+        [
+          { key: "k", label: "eep", value: "keep" },
+          { key: "o", label: "verwrite", value: "overwrite" },
+          { key: "q", label: "uit", value: "quit" },
+        ],
         "k",
       );
-      if (branch === "q") { console.log("No changes written."); return; }
+      if (branch === "quit") { console.log("No changes written."); return; }
     }
   }
 
@@ -375,13 +384,21 @@ async function runInit(cliArgs, plugins, existingConfig) {
   let nextConfig;
   if (branch === "keep") {
     nextConfig = { ...existingConfig, api_url: apiUrl, api_key: apiKey, host };
-  } else if (branch === "overwrite" && configExists) {
-    const bak = `${CONFIG_PATH}.bak-${new Date().toISOString().replace(/[:.]/g, "-")}`;
-    copyFileSync(CONFIG_PATH, bak);
-    console.log(`Backed up existing config to ${bak}`);
+  } else if (branch === "overwrite" || branch === "fresh") {
+    // Always back up when overwriting an existing file. Previously this only
+    // ran in the "overwrite" branch, so any future branch-routing bug that
+    // landed here with configExists=true would silently destroy the user's
+    // config. The backup is cheap and defensive.
+    if (configExists) {
+      const bak = `${CONFIG_PATH}.bak-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+      copyFileSync(CONFIG_PATH, bak);
+      console.log(`Backed up existing config to ${bak}`);
+    }
     nextConfig = freshConfigFromPlugins(plugins, apiUrl, apiKey, host);
   } else {
-    nextConfig = freshConfigFromPlugins(plugins, apiUrl, apiKey, host);
+    // Unrecognized branch value — surface it rather than silently wiping.
+    console.error(`Internal error: unknown branch '${branch}'. Aborting without writing.`);
+    process.exit(1);
   }
 
   saveConfig(nextConfig);
