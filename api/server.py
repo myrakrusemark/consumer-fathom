@@ -53,14 +53,13 @@ class ChatRequest(BaseModel):
     # user delta with to:agent:<host> so the agent's chat-router picks it
     # up directly. Avoids Fathom having to decide to call route_to_agent —
     # useful with weaker models that don't reach for the body reliably.
+    # Force-route: tag the user delta with to:agent:<host> so chat-router on
+    # that host spawns claude-code as Fathom's substrate for this turn. CC
+    # has the full body (Bash, web, file edits) and writes as participant:fathom.
+    # chat_listener latches out of the session; a 15s fallback runs the turn
+    # through loop-api if CC doesn't answer.
     force_route: bool = False
     force_route_host: str | None = None
-    # Robot-icon toggle: when on, the user's delta is tagged `fathom-mode:cc`
-    # so chat-router engages a claude-code subprocess in Fathom-mode for the
-    # response. chat_listener latches out of the session while CC is engaged,
-    # falling back on a timeout. CC writes with participant:fathom — identity
-    # stays Fathom, substrate swaps to claude-code.
-    robot_mode: bool = False
 
 
 class SessionCreate(BaseModel):
@@ -422,7 +421,7 @@ async def chat_completions(req: ChatRequest):
     # and any subsequent logic see the same host. Auto-pick when exactly
     # one body is connected; fall through to None if the call fails, so
     # the message still lands (just without the route tag).
-    extra_tags: list[str] = []
+    force_route_tags: list[str] = []
     if req.force_route:
         from .tools import _agent_alive
 
@@ -436,12 +435,7 @@ async def chat_completions(req: ChatRequest):
             except Exception:
                 host = ""
         if host:
-            extra_tags.append(f"to:agent:{host}")
-
-    # Robot-mode toggle: tag the user delta so chat-router picks it up for
-    # a Fathom-mode CC spawn, and chat_listener latches out of the session.
-    if req.robot_mode:
-        extra_tags.append("fathom-mode:cc")
+            force_route_tags.append(f"to:agent:{host}")
 
     # Persist the user message(s). Image uploads already wrote their own
     # delta via /v1/media so we skip writing a duplicate text delta when
@@ -452,7 +446,7 @@ async def chat_completions(req: ChatRequest):
             content = m.content if isinstance(m.content, str) else json.dumps(m.content)
             if not req.image_uploaded:
                 await db.add_message(
-                    session_id, "user", content, extra_tags=extra_tags or None
+                    session_id, "user", content, extra_tags=force_route_tags or None
                 )
 
     # Return session_id so the UI can lock onto it for its poll cycle.

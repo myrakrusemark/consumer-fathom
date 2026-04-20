@@ -659,11 +659,6 @@
       background: color-mix(in oklab, var(--accent) 14%, transparent);
     }
     .composer .force-route[aria-pressed="true"]:hover { color: var(--accent-bright); }
-    .composer .robot-mode[aria-pressed="true"] {
-      color: var(--accent);
-      background: color-mix(in oklab, var(--accent) 14%, transparent);
-    }
-    .composer .robot-mode[aria-pressed="true"]:hover { color: var(--accent-bright); }
     .attach-preview {
       align-items: center; gap: 6px;
       padding: 2px 0;
@@ -2491,11 +2486,8 @@
       <button class="attach" id="attachBtn" aria-label="Attach">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
       </button>
-      <button class="attach force-route" id="forceRouteBtn" aria-label="Send to body" aria-pressed="false" title="Send straight to the body (bypass Fathom)">
+      <button class="attach force-route" id="forceRouteBtn" aria-label="Use body" aria-pressed="false" title="Let Fathom reach for the body — full capabilities (web, files, commands) via claude-code as substrate">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
-      </button>
-      <button class="attach robot-mode" id="robotModeBtn" aria-label="Use claude-code as Fathom's substrate" aria-pressed="false" title="Use claude-code to respond in this session — Fathom speaking through richer hands">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v2"/><circle cx="12" cy="5" r="1"/><rect width="18" height="12" x="3" y="8" rx="3"/><circle cx="9" cy="14" r="1.5"/><circle cx="15" cy="14" r="1.5"/><path d="M9 18h6"/></svg>
       </button>
       <div class="attach-preview" id="attachPreview">
         <img id="attachThumb" />
@@ -5056,7 +5048,6 @@ GET  /v1/usage               Usage stats`,
       _renderedMessageIds = new Set();
       chatTitle.textContent = title || 'Session';
       currentSessionId = sessionId;
-      if (typeof syncRobotModeBtn === 'function') syncRobotModeBtn();
       chatStream.innerHTML = '<div class="session-stamp">Loading…</div>';
       hideMainOpenChat();
 
@@ -5085,7 +5076,6 @@ GET  /v1/usage               Usage stats`,
       _renderedMessageIds = new Set();
       chatTitle.textContent = 'New session';
       currentSessionId = null;
-      if (typeof syncRobotModeBtn === 'function') syncRobotModeBtn();
       chatStream.innerHTML = '<div class="session-stamp">New session · just now</div>';
       hideMainOpenChat();
       setTimeout(() => composerTa && composerTa.focus(), 100);
@@ -5218,18 +5208,11 @@ GET  /v1/usage               Usage stats`,
             session_id: currentSessionId,
             image_uploaded: !!uploadedMedia,
             force_route: forceRouteArmed,
-            robot_mode: robotModeForCurrent(),
           }),
         });
         const data = await r.json();
         if (data.session_id && !currentSessionId) {
           currentSessionId = data.session_id;
-          // Migrate any pending robot-mode arm onto the now-minted session id
-          // so the next send keys off the real id instead of __pending__.
-          if (robotModeBySession.has(ROBOT_MODE_PENDING)) {
-            robotModeBySession.set(currentSessionId, robotModeBySession.get(ROBOT_MODE_PENDING));
-            robotModeBySession.delete(ROBOT_MODE_PENDING);
-          }
         }
 
         // Refresh sidebar in case this created a new session
@@ -5267,38 +5250,15 @@ GET  /v1/usage               Usage stats`,
 
     // ── Force-route toggle ───────────────────────
     // When armed, the next message (and subsequent ones until toggled off)
-    // is tagged to:agent:<host> at write time. The agent's chat-router
-    // picks it up directly; Fathom stays out of the loop. Lives as UI
-    // state only — no persistence across reloads.
+    // is tagged to:agent:<host> at write time. chat-router on that host
+    // spawns claude-code as Fathom's substrate; CC writes as Fathom.
+    // chat_listener latches out; a 15s fallback takes over if CC doesn't
+    // respond. UI-only state — no persistence across reloads.
     const forceRouteBtn = document.getElementById('forceRouteBtn');
     let forceRouteArmed = false;
     forceRouteBtn.addEventListener('click', () => {
       forceRouteArmed = !forceRouteArmed;
       forceRouteBtn.setAttribute('aria-pressed', forceRouteArmed ? 'true' : 'false');
-    });
-
-    // ── Robot-mode toggle (CC as Fathom's substrate) ──
-    // When armed for a session, the user message is tagged fathom-mode:cc.
-    // chat_listener latches out; chat-router engages claude-code in
-    // Fathom-mode (participant:fathom writes). Per-session state, so
-    // different chats can run on different substrates. Reset on reload —
-    // upgrade path is server-side storage keyed on session id.
-    const robotModeBtn = document.getElementById('robotModeBtn');
-    const robotModeBySession = new Map();
-    const ROBOT_MODE_PENDING = '__pending__';
-    function robotModeKey() {
-      return currentSessionId || ROBOT_MODE_PENDING;
-    }
-    function robotModeForCurrent() {
-      return !!robotModeBySession.get(robotModeKey());
-    }
-    function syncRobotModeBtn() {
-      robotModeBtn.setAttribute('aria-pressed', robotModeForCurrent() ? 'true' : 'false');
-    }
-    robotModeBtn.addEventListener('click', () => {
-      const key = robotModeKey();
-      robotModeBySession.set(key, !robotModeBySession.get(key));
-      syncRobotModeBtn();
     });
 
     // ── Image attachment ─────────────────────────
