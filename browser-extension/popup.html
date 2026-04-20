@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Follow Me</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Follow Me</h1>
+      <span class="subtitle">browsing → Fathom's lake</span>
+    </header>
+
+    <section class="mode">
+      <label>
+        <input type="radio" name="mode" value="off" />
+        <span>Off</span>
+      </label>
+      <label>
+        <input type="radio" name="mode" value="this_tab" />
+        <span>This tab only</span>
+      </label>
+      <label>
+        <input type="radio" name="mode" value="follow_me" />
+        <span>Follow me (all tabs)</span>
+      </label>
+    </section>
+
+    <section class="ttl">
+      <label for="ttl-slider">Keep captures for <span id="ttl-label">30</span> min</label>
+      <input id="ttl-slider" type="range" min="5" max="240" step="5" value="30" />
+    </section>
+
+    <section class="actions">
+      <button id="capture-now">Capture this page now</button>
+      <a id="open-options" href="#">Settings</a>
+    </section>
+
+    <section class="recents">
+      <h2>Recent</h2>
+      <ul id="recents-list">
+        <li class="empty">no recent captures</li>
+      </ul>
+    </section>
+
+    <section class="status">
+      <span id="status-text"></span>
+    </section>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

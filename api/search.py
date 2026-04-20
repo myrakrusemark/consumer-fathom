@@ -160,7 +160,7 @@ def _delta_line(d: dict) -> str:
     ts = (d.get("timestamp") or "")[:16]
     tags = ", ".join((d.get("tags") or [])[:4])
     media = (
-        f"\n[has image: media_hash={d['media_hash']}]" if d.get("media_hash") else ""
+        f"\n[Image attached: media_hash={d['media_hash']}]" if d.get("media_hash") else ""
     )
     content = (d.get("content") or "")[:_MAX_CONTENT_CHARS]
     return f"[{src} · {ts} · {tags}]{media}\n{content}"
