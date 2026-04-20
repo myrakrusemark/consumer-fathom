@@ -173,9 +173,27 @@ async def drift(text: str, since: str | None = None) -> dict:
     Returns {drift, new_deltas, total_deltas}. Drift is cosine distance
     (0 = aligned, ~2 = opposite) between the supplied text's embedding
     and the lake's exponentially-decayed centroid (7-day half-life).
+
+    Used at crystal-write time to validate that a candidate crystal
+    actually describes the lake — drift outside the accept band (see
+    api.server.refresh_crystal) means the LLM produced an artifact that
+    doesn't reflect current mental state.
     """
     c = await _get()
     body = {"text": text, "since": since or ""}
     r = await c.post("/drift", json=body, timeout=20)
+    r.raise_for_status()
+    return r.json()
+
+
+async def centroid() -> dict:
+    """Fetch the raw lake centroid vector from delta-store.
+
+    Returns {centroid: [floats]|None, dim, total_deltas}. Called at
+    crystal-write time to snapshot the anchor, and at each drift tick
+    to compute how far the lake has moved since the anchor was set.
+    """
+    c = await _get()
+    r = await c.get("/centroid", timeout=20)
     r.raise_for_status()
     return r.json()

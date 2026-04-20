@@ -167,14 +167,17 @@ async def add_message(
     content: str | None = None,
     tool_calls: str | None = None,
     tool_call_id: str | None = None,
+    extra_tags: list[str] | None = None,
 ) -> str:
     """Write a chat message as a delta.
 
     Tags the delta with the canonical participant marker so downstream
-    readers (chat-router, UI, other listeners) can identify who wrote
-    it. The legacy role tag (user/assistant) is still emitted for
-    backwards compat with earlier sessions and the existing get_messages
-    fallback path — new code should key on participant:* tags.
+    readers (UI, listeners) can identify who wrote it. The legacy role
+    tag (user/assistant) is still emitted for backwards compat with
+    earlier sessions and the existing get_messages fallback path — new
+    code should key on participant:* tags.
+
+    extra_tags: optional caller-provided tags appended verbatim.
     """
     participant_tag = {
         "user": "participant:user",
@@ -183,6 +186,8 @@ async def add_message(
     tags = [LAKE_CHAT_TAG, f"chat:{session_id}", role]
     if participant_tag:
         tags.append(participant_tag)
+    if extra_tags:
+        tags.extend(extra_tags)
     result = await delta_client.write(
         content=content or "",
         tags=tags,
@@ -277,14 +282,6 @@ async def get_messages(session_id: str, limit: int = 200) -> list[dict]:
             msg["host"] = host
         if "signoff" in tags:
             msg["signoff"] = True
-        if any(t.startswith("to:agent:") for t in tags):
-            # Fathom's delegation message — surface it so the UI can render
-            # "Fathom → agent" inline in the conversation.
-            msg["routing"] = True
-            msg["to_host"] = next(
-                (t[len("to:agent:"):] for t in tags if t.startswith("to:agent:")),
-                None,
-            )
         if d.get("media_hash"):
             msg["media_hash"] = d["media_hash"]
         messages.append(msg)

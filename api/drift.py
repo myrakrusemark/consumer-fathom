@@ -1,9 +1,12 @@
-"""Crystal drift snapshots — sampled lazily, persisted to a small JSON file.
+"""Crystal drift snapshots — anchor-based.
 
-Drift is cosine distance between the current identity crystal and the lake's
-exponentially-decayed centroid. Each /v1/drift call samples and appends a
-record so the ECG widget can render an actual line over time instead of a
-single live value.
+Drift is cosine distance between the lake centroid right now and the
+anchor centroid snapshotted at the last accepted crystal regen. This
+decouples drift from the crystal's own text embedding, so a short or
+failure-mode crystal can no longer self-trigger a runaway regen loop.
+
+Each /v1/drift call samples the current centroid, compares to the
+anchor, and appends a point to drift-history.json for the ECG widget.
 """
 
 from __future__ import annotations
@@ -16,6 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import crystal as crystal_module
+from . import crystal_anchor
 from . import delta_client
 from .settings import settings
 
@@ -65,17 +69,45 @@ def _save_raw(state: dict) -> None:
 
 
 async def sample() -> dict:
-    """Sample current drift, append to history, return the snapshot.
+    """Sample current drift against the anchor, append to history.
 
-    If no crystal exists or the delta-store call fails, returns a zero
-    sample but still records the timestamp so gaps don't appear in the ECG.
+    Returns a snapshot dict with at least {drift, sampled_at}. Optional
+    flags: no_crystal (no crystal ever generated), no_anchor (crystal
+    exists but anchor file missing — usually a pre-anchor-era install
+    or a corrupted sidecar), error (centroid fetch failed).
     """
-    current = await crystal_module.latest()
+    try:
+        current = await crystal_module.latest()
+    except Exception:
+        # Lake unreachable — do NOT return no_crystal (would spuriously
+        # trigger a bootstrap-fire in auto_regen on a transient hiccup).
+        entry_t = _iso(_now())
+        return {"drift": 0.0, "new_deltas": 0, "total_deltas": 0, "error": True, "sampled_at": entry_t}
+    anchor = await crystal_anchor.load()
+
     if not current or not current.get("text"):
         snapshot = {"drift": 0.0, "new_deltas": 0, "total_deltas": 0, "no_crystal": True}
+    elif not anchor:
+        # Crystal present but no anchor — don't signal drift (the
+        # auto-regen poller reads no_anchor and skips, rather than
+        # firing a bootstrap regen against a state that isn't actually
+        # empty). Operator intervention or next accepted regen will
+        # populate the anchor.
+        snapshot = {"drift": 0.0, "new_deltas": 0, "total_deltas": 0, "no_anchor": True}
     else:
         try:
-            snapshot = await delta_client.drift(current["text"], since=current.get("created_at"))
+            c = await delta_client.centroid()
+            vec = c.get("centroid")
+            total = int(c.get("total_deltas") or 0)
+            if not vec:
+                snapshot = {"drift": 0.0, "new_deltas": 0, "total_deltas": total, "empty_lake": True}
+            else:
+                d = crystal_anchor.cosine_distance(anchor["centroid"], vec)
+                snapshot = {
+                    "drift": round(d, 4),
+                    "new_deltas": 0,
+                    "total_deltas": total,
+                }
         except Exception:
             snapshot = {"drift": 0.0, "new_deltas": 0, "total_deltas": 0, "error": True}
 

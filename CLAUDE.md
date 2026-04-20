@@ -1,7 +1,7 @@
 # consumer-fathom — conventions
 
-Project-specific conventions and lake tag contracts. Read when working on chat,
-routing, or agent plumbing.
+Project-specific conventions and lake tag contracts. Read when working on
+chat, routines, or agent plumbing.
 
 ## Chat sessions
 
@@ -10,66 +10,53 @@ including its tag on a delta. The session IS the timestream of all such
 deltas. There is no session roster, no message schema, and no central
 coordinator — just the lake and these conventions.
 
+Chat is a memory-query interface. The consumer-api's loop-LLM re-orients
+each turn by searching the lake, then answers. For body work (running
+commands, editing files, web access), open claude-code directly in a
+kitty terminal. Chat does not route to local agents — that path was
+removed because the cross-talk polluted the lake with process-lifecycle
+sediment (signoffs, silence-acks, brain-switches) that aren't memories.
+
 ### Tags
 
 | Tag | Meaning |
 |---|---|
 | `chat:<slug>` | This delta belongs to that session. |
-| `to:agent:<host>` | Routing — invites/addresses the named agent. Multiple `to:` tags are allowed on one delta for broadcast invites. |
 | `participant:user` | Writer is the human. |
 | `participant:fathom` | Writer is the Fathom consumer-api LLM. |
-| `participant:agent:<host>` | Writer is a local agent (or claude-code subprocess spawned by it). |
-| `workspace:<name>` | Optional. On a routing delta, selects the workspace directory the agent should spawn claude-code in. |
-| `signoff` | Agent's final delta in an engagement — paired with `chat:<slug>`. UI renders it as "agent <host> signed off." |
+| `chat-event` | Ephemeral UI signal (tool use, silence-ack). Short-lived; reaped by `expires_at`. |
+| `event:<kind>` | Companion to `chat-event` — names what happened (remember, recall, silence, see_image, …). |
+| `chat-name` | A session-rename delta. Latest wins. |
+| `chat-deleted` | Tombstone for a session. |
 
 ### Membership
 
-Implicit. You're a member of a session if you've ever (a) appeared in a `to:`
-of a delta in it, or (b) written a delta to it. Once in, always in. No
-tombstones yet.
-
-### Routing (`to:agent:<host>`)
-
-The agent's `chat-router` plugin polls the lake for deltas where its own host
-appears in a `to:` tag. On each such delta:
-
-1. Extract the `chat:<slug>` tag. If absent, skip (non-chat routing is future work).
-2. If no engagement exists for that slug, spawn a claude-code subprocess
-   (via the kitty plugin) with an **orient prompt** that tells it: the
-   session slug, how to search the lake to catch up, how to tag outgoing
-   deltas, and how to signoff.
-3. If an engagement already exists, inject the new delta into the running
-   subprocess as a framed user message (`Message from <participant> in
-   chat:<slug>: …`) via `kitty @ send-text`.
-
-The engagement subprocess is transient — when claude-code exits, the router
-forgets the session. A future `to:agent:<host>` in the same session spawns
-fresh; the lake provides continuity, not the process.
-
-### Output convention (for the agent's claude-code)
-
-Every delta the agent writes during a chat engagement **must** include the
-session tag(s) so it surfaces in chat. Tool outputs, observations, and the
-final signoff delta all piggyback on the normal delta write path — the `chat:`
-tag is what makes them chat messages.
-
-### Liveness and signoff
-
-- Claude-code exits naturally when its task is done.
-- Its final delta should include both `chat:<slug>` and `signoff`. The
-  dashboard renders that as a soft "signed off" line.
-- If claude-code crashes without writing a signoff, the dashboard still has
-  the last delta from that participant — the session just continues without
-  a clean goodbye. Acceptable for V1.
-
-### One host, many sessions
-
-A single agent host can be engaged with N sessions simultaneously — one
-claude-code subprocess per session, one kitty window per subprocess. The
-router keys everything by session slug. Session IS the address.
+Implicit. You're a member of a session if you've ever written a delta
+into it. Once in, always in. No tombstones on membership.
 
 ## Polling
 
-Chat-router polls every 2 seconds. Dashboard chat already polls on a similar
-cadence. Postgres `LISTEN/NOTIFY` + SSE is a future perf optimization, not a
+The consumer-api's chat listener polls the lake every ~3 seconds for new
+user deltas in any chat session. For each session with fresh user
+activity, it fires one inference turn through `fathom_think` — the
+unified reasoning loop that searches the lake, composes, and writes a
+`participant:fathom` reply delta. Silence is an option: if the model
+returns `<...>`, the listener writes a short-lived silence-ack event
+instead of a durable reply.
+
+Postgres `LISTEN/NOTIFY` + SSE is a future perf optimization, not a
 structural requirement.
+
+## Routines (separate from chat)
+
+Routines are scheduled prompts that fire on a local machine via the
+agent's `kitty` plugin. They're independent of chat sessions — a routine
+lands in the lake as a `routine-fire` delta that the agent picks up and
+executes by spawning claude-code in a kitty window. The model running in
+that kitty window is free to write deltas back to the lake (tagged with
+whatever the routine's prompt instructs), and the dashboard pairs the
+fire to its summary delta by routine-id.
+
+Routines do NOT write into chat sessions. If a user wants to see what a
+routine produced, they look at the routines page or search the lake by
+`routine-id:<id>`.

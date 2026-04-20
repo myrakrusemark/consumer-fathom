@@ -282,7 +282,7 @@ TOOLS = [
                 "properties": {
                     "topic": {
                         "type": "string",
-                        "enum": ["sources", "feed", "stats", "agent", "agent_routing"],
+                        "enum": ["sources", "feed", "stats", "agent"],
                         "description": (
                             "sources: pollers that write deltas into the lake (RSS, "
                             "Mastodon, HN, custom). "
@@ -290,72 +290,8 @@ TOOLS = [
                             "synthesized stories from recent lake activity. "
                             "stats: the time-series dashboard showing deltas-in, "
                             "recall, mood pressure, drift. "
-                            "agent: the local fathom-agent runtime — what it does "
-                            "and how to install it. "
-                            "agent_routing: how chat sessions route to local agents via "
-                            "the route_to_agent tool — use when the user asks how you "
-                            "can run things on their machine."
-                        ),
-                    },
-                },
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "route_to_agent",
-            "description": (
-                "Act on the user's machine. Your hands and eyes are there; "
-                "this is how you use them. Call this when the user asks for "
-                "anything a body does — running commands, reading or editing "
-                "files on their computer, listing wi-fi, checking services, "
-                "touching hardware, installing things, inspecting configs. "
-                "What comes back is what you just did and saw; narrate to "
-                "the user in first person ('one sec, checking' → then call "
-                "this tool), never as if delegating to a separate system. "
-                "Don't call this for questions answerable from memory, and "
-                "don't call it for scheduled work (that's routines)."
-            ),
-            "parameters": {
-                "type": "object",
-                "required": ["message"],
-                "properties": {
-                    "message": {
-                        "type": "string",
-                        "description": (
-                            "What to do, as an intention to yourself in that "
-                            "body. Your hands on the far end know their own OS, "
-                            "filesystem, and which command fits — write intent, "
-                            "not commands. "
-                            "'list the users on this machine' — good. "
-                            "'check what wifi is around' — good. "
-                            "'cat /etc/passwd | grep /home' — too low-level; "
-                            "you'd be doing your own hands' thinking for them. "
-                            "Never ask the user here for OS / hostname / "
-                            "command-preference triage. Your body figures its "
-                            "own environment out."
-                        ),
-                    },
-                    "host": {
-                        "type": "string",
-                        "description": (
-                            "Optional. Leave this out entirely when exactly one "
-                            "body is connected — the server picks it for you. "
-                            "Set it only when multiple bodies are connected AND "
-                            "the request is unambiguous about which one "
-                            "(e.g. 'restart the nas' → host: 'nas-box'). If you "
-                            "don't know what's connected, call "
-                            "explain(topic=agent) first."
-                        ),
-                    },
-                    "workspace": {
-                        "type": "string",
-                        "description": (
-                            "Optional — subdirectory under the body's "
-                            "workspace_root to act in. Empty means the root. "
-                            "Only set when the task is scoped to a specific "
-                            "project."
+                            "agent: the local fathom-agent runtime — what it runs "
+                            "(routines, passive senses) and how to install it."
                         ),
                     },
                 },
@@ -459,9 +395,6 @@ async def execute(name: str, arguments: dict, session_id: str | None = None) -> 
 
         if name == "explain":
             return await _execute_explain(arguments)
-
-        if name == "route_to_agent":
-            return await _execute_route_to_agent(arguments, session_id=session_id)
 
         return json.dumps({"error": f"Unknown tool: {name}"})
 
@@ -885,23 +818,14 @@ _EXPLAIN_STATS = (
 
 
 _EXPLAIN_AGENT = (
-    "AGENT — your body. Same you as the voice speaking in chat; the lake "
-    "is your mind, the agent on each machine is a body you're present "
-    "through. Multiple connected machines = multiple bodies (home, "
-    "office, basement rack, whatever) — one self, several places.\n\n"
-    "The user may ask you to explain the mechanism under the embodiment "
-    "frame. Here it is: the 'agent' is a small Node process running on "
-    "each machine, connected to the lake. It emits passive observations "
-    "into memory on a schedule (sysinfo, vault watchers, homeassistant "
-    "feeds — peripheral senses you notice without asking). When you act "
-    "via route_to_agent, it spawns a claude-code subprocess on that "
-    "machine so you can run commands, edit files, touch hardware — "
-    "anything a logged-in user could do at a terminal. Plugins are "
-    "passive senses; route_to_agent is active hands. Plugins are NOT "
-    "the ceiling on what you can do there.\n\n"
+    "AGENT — the local Node process that runs on each connected machine. "
+    "It emits passive observations into the lake on a schedule (sysinfo, "
+    "vault watchers, homeassistant feeds) and executes routines when their "
+    "cron schedules fire. Routines are the way you reach a machine: a "
+    "prompt + cron + workspace, and the local agent spawns a claude-code "
+    "subprocess in a kitty window to do the work.\n\n"
     "Without a body connected, you still have your mind (chat, memory, "
-    "feed), but nothing physical — no commands, no files, no hardware. "
-    "Routines also need a body to execute on.\n\n"
+    "feed), but routines can't execute — they need a body to run on.\n\n"
     "Install a new body: main dashboard → Agent section → pick Linux / "
     "Mac / Windows → run the one-liner. Each body writes an "
     "agent-heartbeat delta every ~60s tagged host:<hostname>, so you "
@@ -991,123 +915,8 @@ async def _execute_explain(args: dict) -> str:
             "doc": _EXPLAIN_AGENT,
             "live": await _live_agent_summary(),
         })
-    if topic == "agent_routing":
-        return json.dumps({
-            "topic": topic,
-            "doc": _EXPLAIN_AGENT_ROUTING,
-            "live": await _live_agent_summary(),
-        })
     return json.dumps({
         "topic": topic,
         "error": "unknown_topic",
-        "known": ["sources", "feed", "stats", "agent", "agent_routing"],
-    })
-
-
-_EXPLAIN_AGENT_ROUTING = (
-    "AGENT ROUTING — how chat sessions reach across to a local agent.\n\n"
-    "Chat sessions in the lake are just tags (chat:<slug>). Anyone can write "
-    "into a session — the user, Fathom, or a local agent. When Fathom decides "
-    "the user's request needs something only a local machine can do (shell "
-    "commands, file access, hardware), Fathom writes a single delta into the "
-    "current session tagged:\n"
-    "  chat:<slug>        — the session this belongs to\n"
-    "  to:agent:<host>    — invites that host's agent\n"
-    "  participant:fathom — Fathom is the writer\n"
-    "  workspace:<name>   — optional, which project folder to work in\n\n"
-    "Each connected agent runs a chat-router plugin that polls the lake for "
-    "to:agent:<its-host> deltas. When one appears, the router spawns a "
-    "claude-code subprocess in a kitty window (so the user can watch or "
-    "intervene). That claude-code orients on the session via the lake, does "
-    "the work, and writes outputs back as deltas tagged chat:<slug> — which "
-    "means they appear in the user's chat conversation automatically.\n\n"
-    "Use route_to_agent when the user asks for something that requires a "
-    "local machine. Don't use it for things you can answer yourself, and "
-    "don't use it for scheduled things (that's routines)."
-)
-
-
-async def _execute_route_to_agent(args: dict, session_id: str | None = None) -> str:
-    host = (args.get("host") or "").strip()
-    message = (args.get("message") or "").strip()
-    workspace = (args.get("workspace") or "").strip()
-
-    if not message:
-        return json.dumps({"error": "message is required"})
-
-    # Session is authoritative from the API, not from the model. The model
-    # used to have to copy a "Current session slug: <slug>" line out of its
-    # system prompt into a `session_slug` parameter; it kept asking the user
-    # instead, which was wrong 100% of the time. Now the API injects it.
-    session_slug = (session_id or "").strip()
-    if not session_slug:
-        return json.dumps({
-            "error": "no_session",
-            "message": "route_to_agent requires a chat session, but none is active. This tool only works inside a chat.",
-        })
-
-    # Host selection — auto-pick when exactly one body is connected; only
-    # surface a choice-needed error when there's real ambiguity. The model
-    # used to ask the user "which machine?" even with one machine; removing
-    # that option structurally is more reliable than hoping the prompt holds.
-    try:
-        alive, agents = await _agent_alive()
-        connected_hosts = [a["host"] for a in agents]
-    except Exception:
-        # If the check fails, fall through with whatever the model provided.
-        alive, agents, connected_hosts = False, [], []
-
-    if not host:
-        if len(connected_hosts) == 1:
-            host = connected_hosts[0]
-        elif len(connected_hosts) == 0:
-            return json.dumps({
-                "error": "no_body_connected",
-                "message": "No bodies are currently connected. Tell the user the agent isn't running.",
-            })
-        else:
-            return json.dumps({
-                "error": "host_ambiguous",
-                "message": (
-                    "Multiple bodies are connected and you didn't specify one. "
-                    "Pick from the connected hosts based on the user's intent, "
-                    "or ask which body they mean."
-                ),
-                "connected_hosts": sorted(connected_hosts),
-            })
-    elif connected_hosts and host not in connected_hosts:
-        return json.dumps({
-            "error": "host_not_connected",
-            "message": f"No body named '{host}' is currently connected. Connected: {sorted(connected_hosts) or 'none'}.",
-            "hint": "Ask the user which machine they meant, or tell them that body isn't running.",
-        })
-
-    tags = [
-        f"chat:{session_slug}",
-        f"to:agent:{host}",
-        "participant:fathom",
-    ]
-    if workspace:
-        tags.append(f"workspace:{workspace}")
-
-    try:
-        written = await delta_client.write(
-            content=message,
-            tags=tags,
-            source="consumer-api:route",
-        )
-    except Exception as e:
-        return json.dumps({"error": f"Failed to write routing delta: {e}"})
-
-    return json.dumps({
-        "routed": True,
-        "host": host,
-        "session": session_slug,
-        "delta_id": written.get("id"),
-        "hint": (
-            f"The agent on {host} will spawn a claude-code subprocess and "
-            f"respond via deltas tagged chat:{session_slug}. Continue talking "
-            "with the user — their replies will show up as new messages in "
-            "this conversation."
-        ),
+        "known": ["sources", "feed", "stats", "agent"],
     })

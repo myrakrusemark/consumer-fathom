@@ -1253,18 +1253,6 @@
       letter-spacing: 0.02em;
     }
 
-    /* Routing delta from Fathom — shown inline as a soft hand-off line
-       under Fathom's normal reply. Not a separate message card. */
-    .msg-routing {
-      align-self: flex-start;
-      display: inline-flex; align-items: center; gap: 8px;
-      font-family: var(--mono); font-size: 11px;
-      color: var(--ink-soft);
-      padding: 4px 10px; border-radius: 999px;
-      background: rgba(120,160,200,0.08);
-      border: 1px dashed rgba(120,160,200,0.3);
-    }
-    .msg-routing .arrow { opacity: 0.6; }
 
     /* Tool activity strip */
     .tool-strip {
@@ -1546,8 +1534,12 @@
     }
     .agent-connected-status .host {
       font-family: var(--mono); font-size: 13px; color: var(--ink);
+      display: inline-flex; align-items: center; gap: 6px;
     }
     .agent-connected-status .host { cursor: help; }
+    .agent-connected-status .host .bot-icon {
+      color: var(--ink-soft); flex-shrink: 0;
+    }
     .agent-connected-status .agent-version {
       font-family: var(--mono); font-size: 11px;
       color: var(--ink-faint); letter-spacing: 0.02em;
@@ -3339,7 +3331,7 @@
           return `
             <div class="agent-connected">
               <div class="agent-connected-status">
-                <span class="host"${hostTooltip ? ` title="${_esc(hostTooltip)}"` : ''}>${_esc(a.host)}</span>
+                <span class="host"${hostTooltip ? ` title="${_esc(hostTooltip)}"` : ''}><svg class="bot-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>${_esc(a.host)}</span>
                 <span class="source-count">${_esc(sourceCountText)}</span>
                 ${updateChipHtml}
                 ${configureHtml}
@@ -4760,13 +4752,6 @@ GET  /v1/usage               Usage stats`,
         el.innerHTML = `<div class="msg-meta">Fathom${host} · ${turn.time}</div><div class="msg-body">${body}</div>`;
         return el;
       }
-      if (turn.role === 'routing') {
-        const el = document.createElement('div');
-        el.className = 'msg-routing';
-        el.innerHTML = `<span>Fathom</span><span class="arrow">→</span><span>${_esc(turn.to_host || 'agent')}</span>`;
-        if (turn.text) el.title = turn.text;
-        return el;
-      }
       if (turn.role === 'tool') {
         const el = document.createElement('div');
         el.className = 'tool-strip';
@@ -4840,16 +4825,6 @@ GET  /v1/usage               Usage stats`,
         el = renderTurn({ role: 'user', time, text: m.content || '' });
       } else if (m.role === 'assistant') {
         el = renderTurn({ role: 'fathom', time, html: renderMd(m.content || '') });
-        if (el && m.routing) {
-          const chip = renderTurn({ role: 'routing', to_host: m.to_host, text: m.content || '' });
-          if (chip) {
-            const wrap = document.createElement('div');
-            wrap.className = 'msg-group';
-            wrap.appendChild(el);
-            wrap.appendChild(chip);
-            el = wrap;
-          }
-        }
       } else if (m.role === 'agent') {
         el = renderTurn({
           role: 'agent', time,
@@ -4954,7 +4929,6 @@ GET  /v1/usage               Usage stats`,
         return `${data.count} ${noun}`;
       }
       if (kind === 'write') return 'wrote a memory';
-      if (kind === 'route_to_agent') return 'routed to body';
       if (kind === 'explain') return `explained ${data.topic || ''}`.trim();
       return kind;
     }
@@ -5185,6 +5159,7 @@ GET  /v1/usage               Usage stats`,
         sendFromComposer();
       }
     });
+
 
     // ── Image attachment ─────────────────────────
     const fileInput = document.getElementById('fileInput');

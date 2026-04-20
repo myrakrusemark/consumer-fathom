@@ -71,20 +71,19 @@ async def _fetch_latest_uncached() -> dict | None:
 
     Strategy: prefer the new tag (cheap, exact). Fall back to the legacy
     tag with source filtering applied client-side.
+
+    Raises on transport failure. Callers MUST distinguish "query failed"
+    from "genuinely empty" — treating a transient lake hiccup as
+    "there is no crystal" is what triggers runaway bootstrap regens
+    (the failure mode we hit on 2026-04-19).
     """
     # Preferred path — anything written under the new convention.
-    try:
-        results = await delta_client.query(tags_include=[REGEN_TAG], limit=1)
-    except Exception:
-        results = []
+    results = await delta_client.query(tags_include=[REGEN_TAG], limit=1)
     if results:
         return _to_crystal(results[0])
 
     # Back-compat path — pull recent identity-crystal deltas, source-filter.
-    try:
-        legacy = await delta_client.query(tags_include=[LEGACY_TAG], limit=50)
-    except Exception:
-        legacy = []
+    legacy = await delta_client.query(tags_include=[LEGACY_TAG], limit=50)
     for d in legacy:
         if matches_regen(d):
             return _to_crystal(d)
@@ -117,8 +116,17 @@ async def latest(force: bool = False) -> dict | None:
 
 
 async def latest_text() -> str | None:
-    """Convenience: just the crystal text, for prompt injection."""
-    c = await latest()
+    """Convenience: just the crystal text, for prompt injection.
+
+    Error-tolerant — callers (fathom_think, system prompt) can live
+    without a crystal for one turn if the lake is briefly unreachable.
+    For the auto-regen path use latest() directly so transport errors
+    surface and we don't falsely bootstrap-fire.
+    """
+    try:
+        c = await latest()
+    except Exception:
+        return None
     return c.get("text") if c else None
 
 
@@ -127,10 +135,11 @@ async def write(text: str, source: str = "consumer-api") -> dict:
 
     Carries both tags: identity-crystal (legacy compat for any consumer
     that filters by it) and crystal-regen (the new canonical filter).
-    Invalidates the cache so the next read sees the fresh write. Then
-    fires a drift sample so the ECG drift line gets an immediate
-    "drift = ~0" anchor at the regen point — every regen visibly drops
-    the drift line, and the sawtooth pattern materializes.
+    Invalidates the cache so the next read sees the fresh write.
+
+    The caller is responsible for (a) validating the text before calling
+    this and (b) snapshotting the drift anchor + sampling drift after.
+    See api.server.refresh_crystal for the full flow.
     """
     global _cache, _cache_at
     written = await delta_client.write(
@@ -140,15 +149,6 @@ async def write(text: str, source: str = "consumer-api") -> dict:
     )
     _cache = None
     _cache_at = 0.0
-
-    # Best-effort drift snapshot — a fresh crystal should align with the
-    # current lake centroid, so this anchors a low point in the history.
-    try:
-        from . import drift as _drift
-        await _drift.sample()
-    except Exception:
-        pass
-
     return written
 
 

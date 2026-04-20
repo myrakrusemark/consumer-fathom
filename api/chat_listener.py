@@ -2,18 +2,15 @@
 
 Fathom's identity is "a distributed system that thinks, remembers, reflects,
 acts, and speaks." Until now, Fathom only spoke in response to an HTTP
-request. The agent side already lived in the lake — polling for deltas
-addressed to it and reacting. This module is the symmetric half:
-Fathom-the-mind also lives in the lake now, listening for any new delta
-in any chat session, and taking a turn per delta.
+request. This module is the symmetric half: Fathom-the-mind lives in the
+lake, listening for any new chat delta in any session and taking a turn
+per delta.
 
 The trigger layer is uniform: every new chat delta is a potential turn.
 The response layer is where choice lives — Fathom can speak, or answer
 with `<...>` to stay silent. Silence is the default; speaking is a choice.
 
-One process, one listener. No distributed locks, no dedup protocol. If
-Fathom ever fan-outs (Accelerando-style), that's a conscious merge point,
-not a race condition.
+One process, one listener. No distributed locks, no dedup protocol.
 """
 from __future__ import annotations
 
@@ -49,18 +46,14 @@ EVENT_TTL_SECONDS = 300
 
 # Sources whose deltas should NOT trigger a Fathom turn:
 #   - fathom-chat-event: our own ephemeral tool/silence events.
-#   - fathom-mood, fathom-feed, consumer-api:route: other consumer-api
-#     writes. These are side effects, not conversation.
-# NOTE: `fathom-chat` is NOT in this list. Both user messages and
-# Fathom's own replies use that source (db.add_message writes with
-# LAKE_CHAT_SOURCE="fathom-chat"), so filtering by source would miss
-# legitimate user turns. Fathom's own writes are filtered by the
-# participant:fathom tag check below instead.
+#   - fathom-mood, fathom-feed: other consumer-api writes, side-effects,
+#     not conversation.
+# `fathom-chat` is NOT in this list: both user and Fathom messages use
+# it; own-writes are filtered by the participant:fathom tag check below.
 IGNORED_SOURCES = {
     "fathom-chat-event",
     "fathom-mood",
     "fathom-feed",
-    "consumer-api:route",  # Fathom's own route_to_agent writes
 }
 
 
@@ -69,9 +62,9 @@ class ChatListener:
 
     Holds a single `last_seen` timestamp across all sessions. Starts at
     process boot time so a restart doesn't retrigger historical messages.
-    Each tick: query deltas with chat:* tags newer than last_seen, group
-    by session, fire one turn per session (not one per delta — many deltas
-    in a short window should produce one response, not many).
+    Each tick: query deltas newer than last_seen, group by session, fire
+    one turn per session (not one per delta — many deltas in a short
+    window should produce one response, not many).
     """
 
     def __init__(self) -> None:
@@ -198,10 +191,6 @@ class ChatListener:
         # UI's existing poll picks them up — same visual trail users had
         # when tool use streamed over SSE, now just routed through the
         # lake with a TTL. Deltas reap automatically after EVENT_TTL.
-        # _resolve_tools calls this synchronously, so we fire-and-forget
-        # the write as a background task to avoid blocking the tool loop
-        # on a lake write — the write is best-effort UI signal, not a
-        # correctness dependency.
         def on_tool_event(kind: str, name: str, data: dict) -> None:
             if kind != "result":
                 return
@@ -209,9 +198,9 @@ class ChatListener:
 
         history_msgs = await db.get_messages(slug)
         # Map the session history into OpenAI-ish {role, content} pairs.
-        # Agent messages come back with role='agent' — present them to the
-        # LLM as assistant-side context (they're Fathom's body's speech,
-        # which Fathom should read as its own prior turns).
+        # Any legacy 'agent' deltas in the lake (from before the routing
+        # path was removed) are surfaced as assistant-side context with a
+        # host annotation so Fathom reads them as its own prior speech.
         history: list[dict] = []
         for m in history_msgs:
             role = m.get("role")

@@ -602,27 +602,20 @@ class DriftRequest(_BaseModel):
     since: str
 
 
-@app.post("/drift")
-async def drift(req: DriftRequest):
+async def _compute_lake_centroid():
+    """Return (embedded_list, centroid_unit_vec | None).
+
+    Exponentially-decayed weighted mean of all embedded delta vectors,
+    7-day half-life, L2-normalized. Shared by /drift (which also needs
+    the raw embedded list for the new-delta count) and /centroid.
+    """
     import numpy as np
-
-    from deltas.embedder import embed_text as _embed
-
-    anchor_emb = await asyncio.to_thread(_embed, req.text)
-    anchor_arr = np.array(anchor_emb, dtype=np.float32)
-    anchor_norm = np.linalg.norm(anchor_arr)
-    if anchor_norm > 0:
-        anchor_arr = anchor_arr / anchor_norm
+    from datetime import UTC, datetime
 
     all_deltas = await store.query(limit=5000)
     embedded = [d for d in all_deltas if d.get("embedding")]
-
     if not embedded:
-        return {"drift": 0.0, "new_deltas": 0, "total_deltas": 0}
-
-    new_count = sum(1 for d in embedded if d["timestamp"] > req.since)
-
-    from datetime import UTC, datetime
+        return embedded, None
 
     now_ts = datetime.now(UTC).timestamp()
     half_life_sec = 7 * 24 * 3600
@@ -645,12 +638,49 @@ async def drift(req: DriftRequest):
     norm = np.linalg.norm(centroid)
     if norm > 0:
         centroid = centroid / norm
+    return embedded, centroid
 
+
+@app.post("/drift")
+async def drift(req: DriftRequest):
+    import numpy as np
+
+    from deltas.embedder import embed_text as _embed
+
+    anchor_emb = await asyncio.to_thread(_embed, req.text)
+    anchor_arr = np.array(anchor_emb, dtype=np.float32)
+    anchor_norm = np.linalg.norm(anchor_arr)
+    if anchor_norm > 0:
+        anchor_arr = anchor_arr / anchor_norm
+
+    embedded, centroid = await _compute_lake_centroid()
+    if centroid is None:
+        return {"drift": 0.0, "new_deltas": 0, "total_deltas": 0}
+
+    new_count = sum(1 for d in embedded if d["timestamp"] > req.since)
     cos_dist = float(1.0 - np.dot(anchor_arr, centroid))
 
     return {
         "drift": round(cos_dist, 4),
         "new_deltas": new_count,
+        "total_deltas": len(embedded),
+    }
+
+
+@app.get("/centroid")
+async def centroid():
+    """Return the raw decayed lake centroid vector.
+
+    Used by consumer-fathom to snapshot an "anchor" at crystal-write time —
+    drift is then the distance this anchor has drifted from the current
+    centroid, independent of the crystal's own text embedding.
+    """
+    embedded, vec = await _compute_lake_centroid()
+    if vec is None:
+        return {"centroid": None, "dim": 0, "total_deltas": 0}
+    return {
+        "centroid": [float(x) for x in vec.tolist()],
+        "dim": int(vec.shape[0]),
         "total_deltas": len(embedded),
     }
 

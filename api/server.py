@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -16,7 +17,9 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import auth, auto_regen, crystal, db, delta_client, drift, mood, pairing, pressure, recall, routines as routines_mod, usage as usage_module
+from . import auth, auto_regen, crystal, crystal_anchor, db, delta_client, drift, mood, pairing, pressure, recall, routines as routines_mod, usage as usage_module
+
+log = logging.getLogger(__name__)
 from .prompt import (
     CRYSTAL_DIRECTIVE,
     FEED_DIRECTIVE,
@@ -436,38 +439,140 @@ async def get_crystal():
     }
 
 
-@app.post("/v1/crystal/refresh")
-async def refresh_crystal():
-    """Regenerate the identity crystal via LLM + delta lake tools.
+CRYSTAL_MIN_CHARS = 800
+CRYSTAL_ACCEPT_MIN = 0.05
+CRYSTAL_ACCEPT_MAX = 0.5
 
-    The lake is the source of truth — the regen delta itself becomes the
-    new canonical crystal on the next load. No on-disk file involved.
-    """
+
+async def _generate_crystal_candidate(retry_hint: str | None = None) -> str:
+    """Run one fathom_think pass for crystal regen. Returns the text."""
+    directive = CRYSTAL_DIRECTIVE
+    if retry_hint:
+        directive += (
+            "\n\nYour previous attempt was rejected: "
+            f"{retry_hint}. Read more from the lake before writing, and "
+            "produce a grounded, multi-section synthesis."
+        )
     messages = await fathom_think(
         user_message=ORIENT_PROMPT,
-        directive=CRYSTAL_DIRECTIVE,
+        directive=directive,
         recall=False,  # crystal does its own deep searching via tools
         max_rounds=20,
     )
     last = messages[-1] if messages else {}
-    crystal_text = last.get("content", "")
+    return last.get("content", "") or ""
 
-    if crystal_text:
-        await crystal.write(crystal_text, source="consumer-api")
 
-        # Push facets to delta store for activation hooks (best-effort)
-        facets = _split_facets(crystal_text)
-        if facets:
-            try:
-                c = await delta_client._get()
-                await c.post(
-                    "/hooks/activation/facets",
-                    json={"facets": facets},
-                )
-            except Exception:
-                pass
+async def _validate_crystal_candidate(text: str) -> str | None:
+    """Return a rejection reason or None if the candidate passes gates.
 
-    return {"status": "ok", "length": len(crystal_text)}
+    Gate 1 — length: failure-mode outputs tend to be short paragraphs
+    (200-500 chars). Real crystals are multi-section (1500-3000+).
+
+    Gate 2 — semantic band: cosine distance from the lake centroid must
+    sit in a reasonable window. Too low (< 0.05) means the text parrots
+    the lake without synthesis; too high (> 0.5) means the text doesn't
+    describe what's in the lake at all (e.g. the "I can't remember my
+    memories" failure mode). Values come from observed good-crystal
+    distances clustering around 0.2-0.3.
+    """
+    if len(text) < CRYSTAL_MIN_CHARS:
+        return f"too short ({len(text)} chars, need {CRYSTAL_MIN_CHARS})"
+    try:
+        d = await delta_client.drift(text)
+    except Exception as e:
+        return f"drift check failed: {type(e).__name__}: {e}"
+    drift_value = float(d.get("drift", 0.0))
+    if drift_value < CRYSTAL_ACCEPT_MIN:
+        return (
+            f"too aligned with lake (drift={drift_value:.3f} < "
+            f"{CRYSTAL_ACCEPT_MIN}, looks like a parroted summary)"
+        )
+    if drift_value > CRYSTAL_ACCEPT_MAX:
+        return (
+            f"too far from lake (drift={drift_value:.3f} > "
+            f"{CRYSTAL_ACCEPT_MAX}, doesn't describe current state)"
+        )
+    return None
+
+
+async def _record_rejected_candidate(text: str, reason: str) -> None:
+    """Preserve a rejected candidate in the lake for forensics.
+
+    Tagged crystal-reject — invisible to the crystal-regen detection
+    rule so it doesn't show up on the identity ECG, but searchable
+    later to diagnose what the LLM produced.
+    """
+    try:
+        await delta_client.write(
+            content=(text or "(empty)")[:4000] + f"\n\n[rejected: {reason}]",
+            tags=["crystal-reject"],
+            source="consumer-api",
+        )
+    except Exception:
+        log.exception("failed to record rejected crystal candidate")
+
+
+@app.post("/v1/crystal/refresh")
+async def refresh_crystal():
+    """Regenerate the identity crystal via LLM + delta lake tools.
+
+    Gates a candidate through length + drift-band validation before
+    persisting. On accept: writes the crystal to the lake, snapshots
+    the current lake centroid as the drift anchor (so drift ≡ 0 by
+    construction right after regen), and samples drift to seed the
+    ECG history. On reject: runs one retry with a corrective hint;
+    if that also fails, preserves both candidates as crystal-reject
+    deltas for forensics and returns without writing a crystal.
+    """
+    text = await _generate_crystal_candidate()
+    reason = await _validate_crystal_candidate(text)
+
+    if reason:
+        log.warning("crystal regen attempt 1 rejected: %s", reason)
+        await _record_rejected_candidate(text, reason)
+        text = await _generate_crystal_candidate(retry_hint=reason)
+        reason = await _validate_crystal_candidate(text)
+        if reason:
+            log.warning("crystal regen attempt 2 rejected: %s", reason)
+            await _record_rejected_candidate(text, reason)
+            return {
+                "status": "rejected",
+                "reason": reason,
+                "length": len(text),
+            }
+
+    # Accepted — persist crystal first, then snapshot anchor against the
+    # post-write lake (one new delta barely perturbs the centroid, so the
+    # ECG's first drift tick reads ~0 as intended).
+    written = await crystal.write(text, source="consumer-api")
+    try:
+        c = await delta_client.centroid()
+        vec = c.get("centroid")
+        if vec:
+            await crystal_anchor.save(vec, (written or {}).get("id"))
+    except Exception:
+        log.exception("failed to snapshot crystal anchor")
+
+    # Seed the drift history with the fresh zero-ish reading.
+    try:
+        await drift.sample()
+    except Exception:
+        log.exception("failed to seed post-regen drift sample")
+
+    # Push facets to delta store for activation hooks (best-effort)
+    facets = _split_facets(text)
+    if facets:
+        try:
+            c = await delta_client._get()
+            await c.post(
+                "/hooks/activation/facets",
+                json={"facets": facets},
+            )
+        except Exception:
+            pass
+
+    return {"status": "ok", "length": len(text)}
 
 
 @app.post("/v1/feed/refresh")

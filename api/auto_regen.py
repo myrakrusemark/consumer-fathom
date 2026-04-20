@@ -16,7 +16,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from . import crystal, drift
+from . import crystal, crystal_anchor, delta_client, drift
 from .settings import settings
 
 log = logging.getLogger(__name__)
@@ -32,7 +32,11 @@ def _now() -> datetime:
 
 
 async def _within_cooldown() -> bool:
-    """True if a regen happened recently enough to skip this tick."""
+    """True if a regen happened recently enough to skip this tick.
+
+    On lake unreachable, returns True — fail safe. We'd rather miss a
+    needed regen than fire another runaway while the lake is flaky.
+    """
     global _last_fired_at
     cooldown = settings.crystal_regen_cooldown_seconds
     if cooldown <= 0:
@@ -45,7 +49,11 @@ async def _within_cooldown() -> bool:
             return True
 
     # Fall back to the lake — covers restarts and multi-process cases
-    current = await crystal.latest()
+    try:
+        current = await crystal.latest()
+    except Exception:
+        log.warning("auto-regen cooldown check: lake unreachable, failing safe (treating as within cooldown)")
+        return True
     if current and current.get("created_at"):
         try:
             ts = datetime.fromisoformat(current["created_at"].replace("Z", "+00:00"))
@@ -75,22 +83,59 @@ async def _trigger_regen() -> None:
         _in_flight = False
 
 
+async def _self_heal_anchor() -> bool:
+    """Crystal exists but anchor is missing — snapshot current centroid.
+
+    This covers (a) installs from before anchors existed, (b) a wiped
+    /data volume, (c) a corrupted sidecar. Self-heal rather than fire a
+    regen, because the crystal itself is fine — we just lost the ruler.
+    Returns True on success.
+    """
+    try:
+        c = await delta_client.centroid()
+        vec = c.get("centroid")
+        if not vec:
+            return False
+        try:
+            current = await crystal.latest()
+        except Exception:
+            current = None
+        await crystal_anchor.save(vec, (current or {}).get("id"))
+        log.info("auto-regen self-healed missing crystal anchor from current centroid")
+        return True
+    except Exception:
+        log.exception("auto-regen anchor self-heal failed")
+        return False
+
+
 async def _check_once() -> dict:
     """One pass: sample drift, decide, maybe fire. Returns the snapshot."""
     snap = await drift.sample()
     threshold = settings.crystal_drift_threshold
     ratio = settings.crystal_drift_red_ratio
 
-    # Bootstrap case — no crystal exists yet. drift.sample() reports drift=0
-    # with no_crystal=True in that state, which would leave the ratio test
-    # permanently below threshold. Fire unconditionally so fresh installs
-    # get a first crystal without requiring drift to grow from a zero
-    # baseline (which it can't, because there's nothing to drift from).
+    # Lake-unreachable — skip the tick rather than fire. This is the
+    # guardrail against the 2026-04-19 runaway: transport errors must
+    # never be interpreted as "no crystal" or "drift high."
+    if snap.get("error"):
+        return {**snap, "auto_regen": "skipped-lake-unreachable", "score": 0.0}
+
+    # Bootstrap case — no crystal has ever been generated. Under the
+    # anchor-based drift design this is the ONLY condition that fires
+    # unconditionally; a crystal that merely has a missing anchor is
+    # self-healed (see below) rather than regenerated.
     if snap.get("no_crystal"):
         decision = "cooldown" if await _within_cooldown() else "firing-bootstrap"
         if decision == "firing-bootstrap":
             asyncio.create_task(_trigger_regen())
         return {**snap, "auto_regen": decision, "score": 0.0}
+
+    # Crystal exists but anchor file is missing — self-heal by snapshotting
+    # the current centroid. Do NOT fire a regen: the crystal itself is fine,
+    # we only lost the measurement baseline.
+    if snap.get("no_anchor"):
+        healed = await _self_heal_anchor()
+        return {**snap, "auto_regen": "self-healed-anchor" if healed else "no-anchor-heal-failed", "score": 0.0}
 
     if threshold <= 0:
         return {**snap, "auto_regen": "disabled-no-threshold"}
