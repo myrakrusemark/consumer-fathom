@@ -167,6 +167,7 @@ async def add_message(
     content: str | None = None,
     tool_calls: str | None = None,
     tool_call_id: str | None = None,
+    extra_tags: list[str] | None = None,
 ) -> str:
     """Write a chat message as a delta.
 
@@ -175,6 +176,11 @@ async def add_message(
     it. The legacy role tag (user/assistant) is still emitted for
     backwards compat with earlier sessions and the existing get_messages
     fallback path — new code should key on participant:* tags.
+
+    extra_tags: optional caller-provided tags appended verbatim — used by
+    the force-route path in chat_completions to attach to:agent:<host>
+    directly to a user delta so the agent's chat-router plugin picks it
+    up without Fathom having to decide.
     """
     participant_tag = {
         "user": "participant:user",
@@ -183,6 +189,8 @@ async def add_message(
     tags = [LAKE_CHAT_TAG, f"chat:{session_id}", role]
     if participant_tag:
         tags.append(participant_tag)
+    if extra_tags:
+        tags.extend(extra_tags)
     result = await delta_client.write(
         content=content or "",
         tags=tags,

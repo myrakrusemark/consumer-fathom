@@ -120,11 +120,13 @@ services:
     networks:
       - fathom
     ports:
-      # Bind to both v4 and v6 loopback — Node's fetch resolves localhost to
-      # ::1 first on dual-stack systems, so an IPv4-only binding would break
-      # `fathom-agent init --api-url http://localhost:8201` out of the box.
-      - "127.0.0.1:8201:8200"
-      - "[::1]:8201:8200"
+      # Bind on all interfaces so phones / other devices on the LAN can
+      # reach the dashboard. The auth token protects the API; only open
+      # this up on trusted networks. One v4-wildcard entry covers both
+      # IPv4 LAN traffic and local IPv6 access via the dual-stack
+      # rootlessport mapping — adding a separate [::] entry conflicts
+      # with the wildcard on rootless podman.
+      - "0.0.0.0:8201:8200"
     volumes:
       - ${LAKE_DIR}/api:/data
     environment:

@@ -48,6 +48,12 @@ class ChatRequest(BaseModel):
     max_tokens: int | None = None
     temperature: float | None = None
     image_uploaded: bool = False  # Skip user message persist — image upload already wrote it
+    # Cow-path override: when the UI's "send to body" toggle is on, tag the
+    # user delta with to:agent:<host> so the agent's chat-router picks it
+    # up directly. Avoids Fathom having to decide to call route_to_agent —
+    # useful with weaker models that don't reach for the body reliably.
+    force_route: bool = False
+    force_route_host: str | None = None
 
 
 class SessionCreate(BaseModel):
@@ -405,6 +411,26 @@ async def chat_completions(req: ChatRequest):
         session_data = await db.create_session()
         session_id = session_data["id"]
 
+    # Resolve the force-route target host up front so both the user delta
+    # and any subsequent logic see the same host. Auto-pick when exactly
+    # one body is connected; fall through to None if the call fails, so
+    # the message still lands (just without the route tag).
+    force_route_tags: list[str] = []
+    if req.force_route:
+        from .tools import _agent_alive
+
+        host = (req.force_route_host or "").strip()
+        if not host:
+            try:
+                _alive, agents = await _agent_alive()
+                connected = [a["host"] for a in agents]
+                if len(connected) == 1:
+                    host = connected[0]
+            except Exception:
+                host = ""
+        if host:
+            force_route_tags.append(f"to:agent:{host}")
+
     # Persist the user message(s). Image uploads already wrote their own
     # delta via /v1/media so we skip writing a duplicate text delta when
     # image_uploaded is set. The write itself is what triggers the chat
@@ -413,7 +439,9 @@ async def chat_completions(req: ChatRequest):
         if m.role == "user" and m.content:
             content = m.content if isinstance(m.content, str) else json.dumps(m.content)
             if not req.image_uploaded:
-                await db.add_message(session_id, "user", content)
+                await db.add_message(
+                    session_id, "user", content, extra_tags=force_route_tags or None
+                )
 
     # Return session_id so the UI can lock onto it for its poll cycle.
     # No streaming response — there's nothing to stream. The chat listener

@@ -85,6 +85,13 @@ class ChatListener:
         # processed serially — avoids overlapping inference for one chat.
         # Separate sessions can still run concurrently.
         self._session_locks: dict[str, asyncio.Lock] = {}
+        # Sessions where the user has most recently force-routed to a body.
+        # While latched, Fathom stays out — the agent answers, and a quiet
+        # silence-ack is written so the UI shows Fathom heard. A fresh
+        # non-force-routed user message clears the latch. Structural
+        # enforcement of the prompt's "silence when body answers" rule —
+        # models like Gemini don't reliably follow the prompt on this.
+        self._force_routed_sessions: set[str] = set()
 
     def start(self) -> None:
         if self._task and not self._task.done():
@@ -150,6 +157,39 @@ class ChatListener:
             # IGNORED_SOURCES catches them by source, but a manually written
             # delta tagged participant:fathom should also be skipped).
             if "participant:fathom" in (d.get("tags") or []):
+                continue
+            # Agent signoffs are acknowledgements, not conversation. The
+            # prompt tells Fathom to stay silent on them, but even a silent
+            # turn is a full inference round-trip — and the model doesn't
+            # always obey. Skip them at the trigger layer.
+            if "signoff" in (d.get("tags") or []):
+                continue
+            tags = d.get("tags") or []
+            is_user = "participant:user" in tags
+            is_force_routed = any(t.startswith("to:agent:") for t in tags)
+
+            # Latch / unlatch force-route mode on user turns:
+            #   force-routed user delta → latch on (and skip the delta itself)
+            #   normal user delta       → latch off, Fathom engages as usual
+            if is_user:
+                if is_force_routed:
+                    self._force_routed_sessions.add(session_slug)
+                    # Write a quiet ack so the UI shows Fathom received it.
+                    asyncio.create_task(write_chat_event(session_slug, "silence", {}))
+                    continue
+                else:
+                    self._force_routed_sessions.discard(session_slug)
+
+            # While latched, skip everything in this session — the body is
+            # handling the turn end-to-end; Fathom stays out. The ack written
+            # at latch time is enough receipt; no need to ack each agent
+            # delta that flows through.
+            if session_slug in self._force_routed_sessions:
+                continue
+
+            # Fathom's own route_to_agent writes also carry to:agent:<host>.
+            # Those are already filtered by source above, but guard anyway.
+            if is_force_routed:
                 continue
             by_session.setdefault(session_slug, []).append(d)
 
