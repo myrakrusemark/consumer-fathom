@@ -18,6 +18,7 @@ cp .env.example .env
 # Point LAKE_DIR at your user's home (compose doesn't expand ~ inside .env).
 sed -i "s|^LAKE_DIR=.*|LAKE_DIR=$HOME/.fathom/fathom|" .env
 mkdir -p "$HOME/.fathom/fathom"/{deltas,backups,source-runner,api}
+cp scripts/lake-dir-README.md "$HOME/.fathom/fathom/README.md"
 ```
 
 Open `.env` and set `LLM_API_KEY` (the key for your LLM provider — Gemini, OpenAI, etc). If you want a provider other than Gemini, change `LLM_PROVIDER` too (`openai` or `ollama`).

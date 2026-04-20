@@ -52,6 +52,15 @@ if [[ -d "$OLD_DATA_DIR" ]]; then
   echo "  ✓ copied. Review ${NEW_LAKE_DIR} and then delete ${OLD_DATA_DIR} manually."
 else
   echo "→ no ${OLD_DATA_DIR} to migrate (skipping)"
+  mkdir -p "${NEW_LAKE_DIR}"
+fi
+
+# ── Drop a README into LAKE_DIR so the split between this dir and the
+#    named postgres volume is discoverable (stumbling into ~/.fathom/fathom/
+#    should answer "where's the live DB?" without reading code).
+if [[ -f "${REPO_DIR}/scripts/lake-dir-README.md" && ! -f "${NEW_LAKE_DIR}/README.md" ]]; then
+  cp "${REPO_DIR}/scripts/lake-dir-README.md" "${NEW_LAKE_DIR}/README.md"
+  echo "→ wrote ${NEW_LAKE_DIR}/README.md"
 fi
 
 # ── Postgres: rename the named volume ───────────────────────────────────────
