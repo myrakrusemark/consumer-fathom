@@ -4825,7 +4825,9 @@ GET  /v1/usage               Usage stats`,
     function _renderMessageToStream(m) {
       const time = m.created_at ? new Date(m.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
       let el;
-      if (m.role === 'user') {
+      if (m.role === 'event') {
+        el = _renderChatEvent(m);
+      } else if (m.role === 'user') {
         el = renderTurn({ role: 'user', time, text: m.content || '' });
       } else if (m.role === 'assistant') {
         el = renderTurn({ role: 'fathom', time, html: renderMd(m.content || '') });
@@ -4888,12 +4890,59 @@ GET  /v1/usage               Usage stats`,
     }
 
     function _maybeRemoveTyping(m) {
-      // Any message from Fathom or a body ends the "typing" state.
-      // (Pure agent signoff is also a completion signal.)
-      if (m.role === 'assistant' || m.role === 'agent') {
+      // Any signal from Fathom (message, silence ack, or a body's
+      // signoff) ends the "typing" state. Tool-use events also count —
+      // they mean Fathom is actively thinking rather than just stuck.
+      const isFathomSignal =
+        m.role === 'assistant' ||
+        m.role === 'agent' ||
+        (m.role === 'event' && (m.kind === 'silence' || m.kind === 'remember' || m.kind === 'recall'));
+      if (isFathomSignal) {
         const t = chatStream.querySelector('.typing');
         if (t) t.remove();
       }
+    }
+
+    // Render a chat-event delta as a subtle inline strip. Events are
+    // ephemeral (TTL'd in the lake) and mirror the old streamed
+    // tool-chips the UI showed before inference moved to the listener.
+    function _renderChatEvent(m) {
+      const kind = m.kind || 'event';
+      const data = m.data || {};
+
+      if (kind === 'silence') {
+        const el = document.createElement('div');
+        el.className = 'msg-signoff';
+        el.textContent = 'Fathom acknowledged · stayed quiet';
+        return el;
+      }
+
+      if (kind === 'see_image' && data.media_hash) {
+        return renderTurn({
+          role: 'tool',
+          meta: 'viewed',
+          media_hash: data.media_hash,
+        });
+      }
+
+      // Generic tool result — show a count or the bare name. Mirrors
+      // the old "37 deltas" style.
+      const label = _eventLabel(kind, data);
+      return renderTurn({ role: 'tool', meta: label });
+    }
+
+    function _eventLabel(kind, data) {
+      if (data.count != null) {
+        const noun =
+          kind === 'remember' || kind === 'recall' ? 'deltas' :
+          kind === 'mind_tags' ? 'tags' :
+          'results';
+        return `${data.count} ${noun}`;
+      }
+      if (kind === 'write') return 'wrote a memory';
+      if (kind === 'route_to_agent') return 'routed to body';
+      if (kind === 'explain') return `explained ${data.topic || ''}`.trim();
+      return kind;
     }
 
     function _startChatPoll() {

@@ -216,6 +216,34 @@ async def get_messages(session_id: str, limit: int = 200) -> list[dict]:
         if "chat-name" in tags or "chat-deleted" in tags:
             continue
 
+        # Chat-event deltas (tool uses, silent acks, image views) are
+        # short-lived and get surfaced with role='event'. The UI renders
+        # them as strips rather than as messages. They'll disappear on
+        # their own once expires_at passes and the delta-store reaps.
+        if "chat-event" in tags:
+            kind = next(
+                (t[len("event:"):] for t in tags if t.startswith("event:")),
+                "event",
+            )
+            data: dict = {}
+            content = d.get("content") or ""
+            if content:
+                try:
+                    import json as _json
+                    parsed = _json.loads(content)
+                    if isinstance(parsed, dict):
+                        data = parsed
+                except Exception:
+                    pass
+            messages.append({
+                "id": d.get("id"),
+                "role": "event",
+                "kind": kind,
+                "data": data,
+                "created_at": d.get("timestamp"),
+            })
+            continue
+
         # Derive role. Prefer participant:* tag (new convention). Fall back
         # to legacy role tags (user/assistant) for older sessions.
         role = None

@@ -18,8 +18,9 @@ not a race condition.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from . import db, delta_client
 
@@ -40,6 +41,12 @@ log = logging.getLogger(__name__)
 # conversation feels live; long enough to avoid spinning on an empty lake.
 POLL_INTERVAL_SECONDS = 3
 
+# How long ephemeral chat-event deltas (tool uses, silent acks, image
+# views) stick around in the lake before the delta-store reaps them.
+# Long enough that a user who just switched tabs and comes back sees the
+# trail; short enough that they don't accumulate and clutter queries.
+EVENT_TTL_SECONDS = 300
+
 # Sources whose deltas should NOT trigger a Fathom turn:
 #   - fathom-chat: Fathom's own chat writes. Would loop forever.
 #   - fathom-mood, fathom-feed, consumer-api:route: other consumer-api
@@ -48,6 +55,7 @@ POLL_INTERVAL_SECONDS = 3
 # participant's message and fires a turn.
 IGNORED_SOURCES = {
     "fathom-chat",
+    "fathom-chat-event",  # ephemeral tool/silence events Fathom wrote
     "fathom-mood",
     "fathom-feed",
     "consumer-api:route",  # Fathom's own route_to_agent writes
@@ -183,6 +191,20 @@ class ChatListener:
             flush=True,
         )
 
+        # Tool events (remember / recall / image_view / etc.) are
+        # surfaced as short-lived deltas tagged with this session so the
+        # UI's existing poll picks them up — same visual trail users had
+        # when tool use streamed over SSE, now just routed through the
+        # lake with a TTL. Deltas reap automatically after EVENT_TTL.
+        # _resolve_tools calls this synchronously, so we fire-and-forget
+        # the write as a background task to avoid blocking the tool loop
+        # on a lake write — the write is best-effort UI signal, not a
+        # correctness dependency.
+        def on_tool_event(kind: str, name: str, data: dict) -> None:
+            if kind != "result":
+                return
+            asyncio.create_task(write_chat_event(slug, name, data))
+
         history_msgs = await db.get_messages(slug)
         # Map the session history into OpenAI-ish {role, content} pairs.
         # Agent messages come back with role='agent' — present them to the
@@ -212,11 +234,18 @@ class ChatListener:
             history=history,
             recall=True,
             session_slug=slug,
+            on_tool_event=on_tool_event,
         )
         reply_text = (messages[-1].get("content") or "").strip() if messages else ""
         if not reply_text or reply_text == "<...>":
-            # Active silence — Fathom heard, chose not to speak.
+            # Active silence — Fathom heard, chose not to speak. Write a
+            # short-lived ack delta so the UI knows the turn happened.
+            # No persistence value, just a live receipt.
             print(f"chat-listener: silence in {slug} (<...>)", flush=True)
+            try:
+                await write_chat_event(slug, "silence", {})
+            except Exception as e:
+                print(f"chat-listener: silence ack failed: {e}", flush=True)
             return
 
         # Persist Fathom's reply the same way the old chat endpoint did.
@@ -231,6 +260,43 @@ def _chat_slug(tags: list[str]) -> str | None:
         if t.startswith("chat:"):
             return t[len("chat:"):]
     return None
+
+
+async def write_chat_event(session_slug: str, kind: str, data: dict) -> None:
+    """Drop an ephemeral chat-event delta into the session.
+
+    Tool uses (remember/recall/see_image/etc.) and silent acks all go
+    through this. It's a normal lake delta with an expires_at window so
+    the delta-store's reap loop cleans it up — no separate transport,
+    no in-memory state, the UI just polls /v1/sessions/{id} like
+    always and renders events alongside messages.
+
+    Tag contract:
+      fathom-chat           — so it's findable with the same chat query
+      chat:<slug>           — session membership
+      chat-event            — distinguishes from durable user/fathom messages
+      event:<kind>          — the kind of thing that happened
+      participant:fathom    — Fathom did this (keeps own-writes filter honest)
+    """
+    expires_at = (
+        datetime.now(timezone.utc) + timedelta(seconds=EVENT_TTL_SECONDS)
+    ).isoformat()
+    tags = [
+        "fathom-chat",
+        f"chat:{session_slug}",
+        "chat-event",
+        f"event:{kind}",
+        "participant:fathom",
+    ]
+    # Extra fields per event shape — a media_hash for image views, a
+    # count for recall/remember, etc. Callers pass whatever matters.
+    content = json.dumps({"kind": kind, **data})
+    await delta_client.write(
+        content=content,
+        tags=tags,
+        source="fathom-chat-event",
+        expires_at=expires_at,
+    )
 
 
 # Module-level singleton — one listener per process.

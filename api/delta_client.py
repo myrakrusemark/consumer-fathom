@@ -54,9 +54,12 @@ async def write(
     content: str,
     tags: list[str] | None = None,
     source: str = "consumer-api",
+    expires_at: str | None = None,
 ) -> dict:
     c = await _get()
     body = {"content": content, "source": source, "tags": tags or []}
+    if expires_at:
+        body["expires_at"] = expires_at
     r = await c.post("/deltas", json=body)
     r.raise_for_status()
     return r.json()
