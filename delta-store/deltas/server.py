@@ -331,6 +331,7 @@ class MediaDeltaIn(_BaseModel):
     tags: list[str] = []
     source: str = "unknown"
     image_base64: str
+    expires_at: str | None = None
 
 
 @app.post("/deltas/media", response_model=WriteResult)
@@ -350,6 +351,7 @@ async def write_media_delta_b64(req: MediaDeltaIn):
         tags=req.tags,
         source=req.source,
         media_hash=media_hash,
+        expires_at=req.expires_at,
     )
     return WriteResult(id=delta_id, media_hash=media_hash)
 
@@ -360,6 +362,7 @@ async def write_media_delta_upload(
     content: str = Form(""),
     tags: str = Form(""),
     source: str = Form("unknown"),
+    expires_at: str = Form(""),
 ):
     from deltas.media import ingest
 
@@ -376,6 +379,7 @@ async def write_media_delta_upload(
         tags=tag_list,
         source=source,
         media_hash=media_hash,
+        expires_at=expires_at or None,
     )
     return WriteResult(id=delta_id, media_hash=media_hash)
 

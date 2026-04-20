@@ -1116,8 +1116,15 @@ async def upload_media(
     file: UploadFile = File(...),
     session_id: str = Form(""),
     content: str = Form(""),
+    expires_at: str = Form(""),
 ):
-    """Upload an image as a session-tagged delta. Returns {id, media_hash}."""
+    """Upload an image as a session-tagged delta. Returns {id, media_hash}.
+
+    ``expires_at`` (optional ISO timestamp) makes the media delta
+    short-lived — the delta-store reaper deletes on/after that time.
+    Callers compute the absolute timestamp themselves, matching the
+    heartbeat / sysinfo / chat-event pattern used elsewhere.
+    """
     file_bytes = await file.read()
     tags = [db.LAKE_CHAT_TAG, "user", "participant:user", "image"]
     if session_id:
@@ -1128,6 +1135,7 @@ async def upload_media(
         content=content,
         tags=tags,
         source=db.LAKE_CHAT_SOURCE,
+        expires_at=expires_at or None,
     )
     return result
 
@@ -1137,6 +1145,7 @@ class CaptureContext(BaseModel):
     content: str = ""
     tags: list[str] = []
     source: str = "browser-capture"
+    expires_at: str | None = None
 
 
 @app.post("/v1/media/capture-context")
@@ -1146,15 +1155,21 @@ async def capture_context(req: CaptureContext):
     The image is already in delta-store (uploaded via /v1/media/upload).
     This writes a companion text delta linking the media_hash to the
     story content so the lake knows what the image means.
+
+    ``expires_at`` (optional ISO timestamp) makes the context delta
+    short-lived alongside the image — both should expire together so
+    browse captures don't leave dangling context in the lake.
     """
     c = await delta_client._get()
-    body = {
+    body: dict = {
         "content": req.content or f"[captured image:{req.media_hash}]",
         "tags": req.tags or ["browser-capture"],
         "source": req.source,
         "media_hash": req.media_hash,
         "modality": "image",
     }
+    if req.expires_at:
+        body["expires_at"] = req.expires_at
     r = await c.post("/deltas", json=body)
     r.raise_for_status()
     return r.json()

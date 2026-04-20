@@ -200,16 +200,19 @@ async def upload_media(
     content: str = "",
     tags: list[str] | None = None,
     source: str = "fathom-chat",
+    expires_at: str | None = None,
 ) -> dict:
     """Upload an image to the delta store, returns {id, media_hash}."""
     import io
     c = await _get()
     files = {"file": (filename, io.BytesIO(file_bytes), "application/octet-stream")}
-    data = {
+    data: dict = {
         "content": content,
         "tags": ",".join(tags or []),
         "source": source,
     }
+    if expires_at:
+        data["expires_at"] = expires_at
     r = await c.post("/deltas/media/upload", files=files, data=data, timeout=30)
     r.raise_for_status()
     return r.json()
