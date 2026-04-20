@@ -13,7 +13,7 @@ Every create/update/delete = write a new spec delta with the same `routine-id`
 tag. Scheduler and dashboard take latest per id. Deletion = tombstone with
 `deleted: true`. No deltas are ever actually removed from the lake.
 
-See fathom2/docs/routine-spec.md for the canonical field reference.
+See docs/routine-spec.md for the canonical field reference.
 """
 from __future__ import annotations
 

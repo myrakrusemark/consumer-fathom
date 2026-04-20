@@ -1,6 +1,6 @@
 """Background poller that auto-regenerates the crystal when drift crosses red.
 
-Mirrors the trigger fathom2's dashboard used:
+Mirrors the trigger the dashboard used:
   - poll drift every ~60s
   - if drift / threshold >= red_ratio (default 0.55, 0.9 → fires at 0.495)
   - and the last regen was at least cooldown ago

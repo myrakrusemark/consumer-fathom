@@ -229,7 +229,7 @@ async def run_cycle(pool, store) -> dict:
         )
         log.error(msg)
         await _write_delta_safe(
-            store, msg, ["blocker", "backup-incident", "fathom2"],
+            store, msg, ["blocker", "backup-incident", "fathom"],
         )
         return state
 
@@ -256,7 +256,7 @@ async def run_cycle(pool, store) -> dict:
         )
         log.warning(msg)
         await _write_delta_safe(
-            store, msg, ["backup-warning", "observation", "fathom2"],
+            store, msg, ["backup-warning", "observation", "fathom"],
         )
     else:
         log.info(

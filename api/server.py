@@ -938,7 +938,7 @@ async def source_detail(source_id: str):
 # Routines are spec deltas in the lake with YAML frontmatter + prompt body.
 # Tagged `[spec, routine, routine-id:<id>]`. CRUD operations here write new
 # spec deltas with the same routine-id; scheduler + dashboard take latest.
-# See fathom2/docs/routine-spec.md for the canonical field reference.
+# See docs/routine-spec.md for the canonical field reference.
 
 
 @app.get("/v1/routines")
