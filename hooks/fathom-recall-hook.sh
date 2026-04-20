@@ -52,6 +52,7 @@ if [ -n "$ASSISTANT" ]; then
 fi
 QUERY="${QUERY}$(echo "$PROMPT" | head -c 1000)"
 
+export DEPTH LIMIT THRESHOLD
 SEARCH_BODY=$(python3 -c "
 import json, os, sys
 print(json.dumps({
@@ -61,7 +62,6 @@ print(json.dumps({
     'threshold': float(os.environ['THRESHOLD']),
 }))
 " <<< "$QUERY")
-export DEPTH LIMIT THRESHOLD
 
 AUTH_HEADER=""
 [ -n "$FATHOM_API_KEY" ] && AUTH_HEADER="-H \"Authorization: Bearer ${FATHOM_API_KEY}\""
