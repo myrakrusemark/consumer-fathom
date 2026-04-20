@@ -1,6 +1,6 @@
 {
   "name": "fathom-agent",
-  "version": "0.11.6",
+  "version": "0.11.7",
   "description": "Local agent for Fathom — watches files and pushes deltas to your lake",
   "bin": {
     "fathom-agent": "index.js"
