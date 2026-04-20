@@ -168,8 +168,21 @@ async def add_message(
     tool_calls: str | None = None,
     tool_call_id: str | None = None,
 ) -> str:
-    """Write a chat message as a delta — same tag format as loop-api."""
+    """Write a chat message as a delta.
+
+    Tags the delta with the canonical participant marker so downstream
+    readers (chat-router, UI, other listeners) can identify who wrote
+    it. The legacy role tag (user/assistant) is still emitted for
+    backwards compat with earlier sessions and the existing get_messages
+    fallback path — new code should key on participant:* tags.
+    """
+    participant_tag = {
+        "user": "participant:user",
+        "assistant": "participant:fathom",
+    }.get(role)
     tags = [LAKE_CHAT_TAG, f"chat:{session_id}", role]
+    if participant_tag:
+        tags.append(participant_tag)
     result = await delta_client.write(
         content=content or "",
         tags=tags,

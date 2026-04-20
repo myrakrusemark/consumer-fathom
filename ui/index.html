@@ -4733,17 +4733,22 @@ GET  /v1/usage               Usage stats`,
         return el;
       }
       if (turn.role === 'agent') {
-        // Agent signoff lands as a soft italic system line, not a message.
+        // Signoff lands as a soft italic system line, not a message.
         if (turn.signoff) {
           const el = document.createElement('div');
           el.className = 'msg-signoff';
-          el.textContent = `agent ${turn.host || 'unknown'} signed off — ${(turn.text || '').trim()}`;
+          el.textContent = `${turn.host || 'body'} signed off — ${(turn.text || '').trim()}`;
           return el;
         }
+        // Body-written messages render the same way Fathom's do — same
+        // identity, different hands. The host shows as a subtle meta
+        // annotation so you can tell which body spoke, but there's no
+        // distinct card or host-prefix; it's all one voice.
         const el = document.createElement('div');
-        el.className = 'msg msg-agent';
-        const host = turn.host || 'agent';
-        el.innerHTML = `<div class="msg-meta">${_esc(host)} · ${turn.time}</div><div class="msg-body"><span class="host-prefix">${_esc(host)}</span>${_esc(turn.text || '')}</div>`;
+        el.className = 'msg msg-fathom';
+        const host = turn.host ? ` · ${_esc(turn.host)}` : '';
+        const body = renderMd(turn.text || '');
+        el.innerHTML = `<div class="msg-meta">Fathom${host} · ${turn.time}</div><div class="msg-body">${body}</div>`;
         return el;
       }
       if (turn.role === 'routing') {

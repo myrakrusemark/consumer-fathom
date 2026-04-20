@@ -1051,7 +1051,7 @@ async def upload_media(
 ):
     """Upload an image as a session-tagged delta. Returns {id, media_hash}."""
     file_bytes = await file.read()
-    tags = [db.LAKE_CHAT_TAG, "user", "image"]
+    tags = [db.LAKE_CHAT_TAG, "user", "participant:user", "image"]
     if session_id:
         tags.append(f"chat:{session_id}")
     result = await delta_client.upload_media(
