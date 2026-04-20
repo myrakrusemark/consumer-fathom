@@ -29,6 +29,7 @@ const SOCKET_DIR = "/tmp";
 // Everything else is UI-editable.
 export const CONFIG_SHAPE = {
   workspace_root: { type: "string", required: false, help: "Base directory for workspace-pinned routines. Default: ~/Dropbox/Work." },
+  default_workspace: { type: "string", required: false, help: "Directory claude opens in when a routine fires without a pinned workspace. Absolute path, or a ~-prefix for $HOME (e.g. '~/code/project', '/opt/apps'). Empty = $HOME." },
   claude_command: { type: "string", required: false, help: "Claude CLI binary. Default: 'claude'." },
   kitty_command: { type: "string", required: false, help: "Kitty binary. Default: 'kitty'." },
   kitty_background: { type: "string", required: false, help: "Background hex color for the spawned kitty window. Default: #17303a." },
@@ -68,6 +69,15 @@ function workspacePath(workspaceRoot, workspace) {
   // Avoid path traversal — workspace is a tag value, treat as literal segment
   const safe = workspace.replace(/[^a-zA-Z0-9_-]/g, "");
   return join(workspaceRoot, safe);
+}
+
+// Expand ~ / ~/ prefixes. Everything else passes through as-is; the path
+// is whatever the user put in default_workspace, which they own. Empty
+// string falls back to $HOME — claude-code needs somewhere to run.
+function expandDefaultDir(p) {
+  if (!p || p === "~") return homedir();
+  if (p.startsWith("~/")) return join(homedir(), p.slice(2));
+  return p;
 }
 
 async function pollOnce(config, pusher, state) {
@@ -129,7 +139,7 @@ export function closeWindow(socket) {
   });
 }
 
-// ── Public helpers (used by chat-router + any future engagement plugin) ──
+// ── Public helpers — exported for future engagement plugins. ──
 
 /**
  * Spawn a detached kitty window running `claude` in the given workspace and
@@ -228,7 +238,12 @@ function claudeArgsForMode(mode) {
 
 function fire(delta, config, pusher) {
   const routineId = tag(delta, "routine-id:") || "unknown";
-  const workspace = tag(delta, "workspace:") || "";
+  // Two different kinds of "where to run this":
+  //   - a routine-pinned workspace tag → a subdir under workspace_root
+  //     (the existing routine contract, preserved)
+  //   - no tag → the agent's default_workspace, which is a full path the
+  //     user chose at pair time (absolute or ~-prefixed)
+  const routineWorkspace = tag(delta, "workspace:") || "";
   const requestedMode = tag(delta, "permission-mode:") || "auto";
   const targetHost = tag(delta, "host:") || "";
 
@@ -261,7 +276,9 @@ function fire(delta, config, pusher) {
     return;
   }
 
-  const cwd = workspacePath(config.workspace_root, workspace);
+  const cwd = routineWorkspace
+    ? workspacePath(config.workspace_root, routineWorkspace)
+    : expandDefaultDir(config.default_workspace);
   const body = (delta.content || "").trim();
   const footer = [
     "",
@@ -271,7 +288,7 @@ function fire(delta, config, pusher) {
   ].join("\n");
   const prompt = `${body}\n${footer}`;
 
-  console.log(`  🐈 fire ${routineId} (ws: ${workspace || "default"}, mode: ${requestedMode})`);
+  console.log(`  🐈 fire ${routineId} (cwd: ${cwd}, mode: ${requestedMode})`);
 
   const { socket, spawnedAt } = spawnClaudeInKitty({
     workspaceCwd: cwd,
@@ -323,9 +340,9 @@ function injectPrompt(socket, prompt, routineId, fireDeltaId, pusher, autoSubmit
           return;
         }
         console.log(`  ✓ injected + submitted ${prompt.length}-char prompt → ${routineId}`);
-        // Receipt only makes sense for routine-fire-driven spawns; chat-router
-        // spawns pass fireDeltaId=null and shouldn't pollute the lake with a
-        // fake fire-delta: tag.
+        // Receipt only makes sense for routine-fire-driven spawns. Callers
+        // that spawn outside the routine-fire path pass fireDeltaId=null so
+        // they don't pollute the lake with a fake fire-delta: tag.
         if (fireDeltaId && pusher?.push) {
           pusher.push({
             content: `[kitty-fire] routine ${routineId} launched. Prompt: ${prompt.slice(0, 200)}${prompt.length > 200 ? "…" : ""}`,
@@ -352,6 +369,11 @@ export default {
   description: "Spawn kitty windows with claude when routines fire.",
   defaults: {
     workspace_root: join(homedir(), "Dropbox", "Work"),
+    // Directory claude opens in when a routine fires without a pinned
+    // workspace. A full path — absolute (/opt/apps) or ~-prefixed
+    // (~/code/project). Empty string or "~" falls back to $HOME, since
+    // claude-code still has to run somewhere.
+    default_workspace: "",
     poll_interval_ms: 3000,
     inject_delay_ms: 3000,
     auto_submit: true,

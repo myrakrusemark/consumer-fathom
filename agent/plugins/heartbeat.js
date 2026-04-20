@@ -122,6 +122,10 @@ async function summarizePlugins() {
     if ("allowed_permission_modes" in pc) slim.allowed_permission_modes = pc.allowed_permission_modes;
     if ("paths" in pc) slim.path_count = Array.isArray(pc.paths) ? pc.paths.length : 0;
     if ("interval" in pc) slim.interval = pc.interval;
+    // Agent-level default workspace (kitty plugin). The dashboard reads
+    // this to prefill the routine form so the LLM doesn't have to ask
+    // "which directory?" — the answer travels with the agent.
+    if ("default_workspace" in pc) slim.default_workspace = pc.default_workspace;
 
     // Multi-instance plugins (e.g. homeassistant) surface their scrubbed
     // instances array so the dashboard can render one chip per instance

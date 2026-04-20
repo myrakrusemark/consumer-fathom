@@ -447,7 +447,11 @@ Fields (used with action=create or action=update):
   schedule        (cron, 5 fields)        "0 * * * *" hourly · "*/5 * * * *" every 5 min
   prompt          (the work)              what claude should do when fired
   permission_mode auto | normal           auto = classifier guardrails · normal = user approves each tool
-  workspace                                directory under ~/Dropbox/Work/ (e.g. "fathom2")
+  workspace                                directory under ~/Dropbox/Work/ (e.g. "fathom"). Leave
+                                           blank — the target agent advertises a default_workspace
+                                           in its heartbeat (set during `fathom-agent init`) that
+                                           fills in automatically. Only ask the user when no
+                                           default exists and you can't infer one from context.
   enabled         bool (default true)
   single_fire     bool (default false, not yet honored by scheduler)
 
@@ -550,6 +554,24 @@ async def _known_workspaces() -> list[str]:
     return sorted(seen)
 
 
+async def _host_default_workspace(host: str) -> str:
+    """Look up an agent's configured default_workspace from heartbeat.
+
+    The kitty plugin surfaces this in its heartbeat summary when the user
+    set one during `fathom-agent init`. Returns empty string when unknown
+    or when the host hasn't configured one.
+    """
+    if not host:
+        return ""
+    _alive, agents = await _agent_alive()
+    for a in agents:
+        if a.get("host") != host:
+            continue
+        kitty = (a.get("plugins") or {}).get("kitty") or {}
+        return (kitty.get("default_workspace") or "").strip()
+    return ""
+
+
 async def _gather_create_gaps(args: dict) -> dict:
     """Return {missing: [...], hint: '...'} describing what's incomplete.
 
@@ -580,18 +602,25 @@ async def _gather_create_gaps(args: dict) -> dict:
         hints.append("No prompt. Ask the user what claude should do when this routine fires.")
 
     if not (args.get("workspace") or "").strip():
-        missing.append("workspace")
-        known = await _known_workspaces()
-        if known:
-            hints.append(
-                f"No workspace. Known workspaces from existing routines: {', '.join(known)}. "
-                "Ask the user which directory under ~/Dropbox/Work/ the routine should run in."
-            )
+        # Before declaring a workspace gap, see if the target host has one
+        # configured via `fathom-agent init`. That default travels with the
+        # agent's heartbeat, so the LLM shouldn't have to ask if it's set.
+        host_default = await _host_default_workspace((args.get("host") or "").strip())
+        if host_default:
+            args["workspace"] = host_default
         else:
-            hints.append(
-                "No workspace. Ask the user which directory under ~/Dropbox/Work/ "
-                "the routine should run in (e.g. 'fathom2', 'applications')."
-            )
+            missing.append("workspace")
+            known = await _known_workspaces()
+            if known:
+                hints.append(
+                    f"No workspace. Known workspaces from existing routines: {', '.join(known)}. "
+                    "Ask the user which directory under ~/Dropbox/Work/ the routine should run in."
+                )
+            else:
+                hints.append(
+                    "No workspace. Ask the user which directory under ~/Dropbox/Work/ "
+                    "the routine should run in (e.g. 'fathom', 'applications')."
+                )
 
     # `host` is only a "gap" when there are 2+ live machines — the user has
     # to pick. With exactly one, it's silently defaulted further down. With

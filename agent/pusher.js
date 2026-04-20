@@ -3,10 +3,10 @@
  * them back through the same authenticated surface.
  *
  * Named `Pusher` for backwards-compat; it's really the agent's single
- * point of contact with the lake. Plugins that need to read (chat-router,
- * kitty) call `.query()`; plugins that write (everything else) call
- * `.push()`. Both paths use the same apiUrl + apiKey so there's one auth
- * model and one endpoint the agent has to reach.
+ * point of contact with the lake. Plugins that need to read (kitty) call
+ * `.query()`; plugins that write (everything else) call `.push()`. Both
+ * paths use the same apiUrl + apiKey so there's one auth model and one
+ * endpoint the agent has to reach.
  */
 
 const BATCH_INTERVAL = 2000; // ms between flushes
@@ -39,7 +39,7 @@ export class Pusher {
     return h;
   }
 
-  // GET /v1/deltas — for plugins that poll the lake (chat-router, kitty).
+  // GET /v1/deltas — for plugins that poll the lake (kitty).
   // Mirrors the delta-store's query shape but routes through the API so auth
   // and any future filtering/caching applies. Throws on non-2xx so callers
   // can distinguish transient failures from empty results.

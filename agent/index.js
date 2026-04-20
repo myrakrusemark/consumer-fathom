@@ -380,6 +380,29 @@ async function runInit(cliArgs, plugins, existingConfig) {
     process.exit(1);
   }
 
+  // Ask for a default workspace (only on fresh/overwrite — "keep" leaves
+  // existing config alone). Used as the routine form's prefilled workspace
+  // value and as the fallback directory when kitty fires an unpinned
+  // routine. Blank is fine — when the field is absent or empty, kitty
+  // opens claude in $HOME as the "always exists" fallback.
+  //
+  // --default-workspace=<dir> on the CLI skips the prompt entirely. That
+  // flag is what the dashboard's pair modal injects so the whole install
+  // is one copy-paste — no second interactive step on the target machine.
+  let defaultWorkspace = "";
+  if (branch !== "keep") {
+    const existingDefault = ((existingConfig.plugins || {}).kitty || {}).default_workspace || "";
+    const flagValue = overrides["default-workspace"];
+    if (typeof flagValue === "string") {
+      defaultWorkspace = flagValue.trim();
+    } else {
+      defaultWorkspace = await prompt(
+        "Default directory for this agent's routines (absolute path or ~-prefix, blank = ~)",
+        existingDefault,
+      );
+    }
+  }
+
   const apiKey = redemption.token;
   let nextConfig;
   if (branch === "keep") {
@@ -395,6 +418,9 @@ async function runInit(cliArgs, plugins, existingConfig) {
       console.log(`Backed up existing config to ${bak}`);
     }
     nextConfig = freshConfigFromPlugins(plugins, apiUrl, apiKey, host);
+    if (defaultWorkspace && nextConfig.plugins?.kitty) {
+      nextConfig.plugins.kitty.default_workspace = defaultWorkspace;
+    }
   } else {
     // Unrecognized branch value — surface it rather than silently wiping.
     console.error(`Internal error: unknown branch '${branch}'. Aborting without writing.`);
