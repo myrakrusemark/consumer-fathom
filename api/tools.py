@@ -364,6 +364,37 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "rename_session",
+            "description": (
+                "Rename the current chat session. The name you pass becomes "
+                "the title shown in the sidebar. Use this in two cases: "
+                "(1) the session is still showing its raw slug (e.g. "
+                "'cross-bold-goldfinch') — pick a short descriptive title; "
+                "(2) the user explicitly asks to name or rename the "
+                "conversation (\"name this X\", \"rename to X\", \"call "
+                "this X\") — use their requested string verbatim, even if "
+                "it's silly. Never refuse a rename request by saying you "
+                "can't; this tool is how you do it."
+            ),
+            "parameters": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": (
+                            "The new title, 1-6 words, lowercase, no "
+                            "slug-style hyphens. For explicit user requests, "
+                            "pass their requested string as-is."
+                        ),
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "explain",
             "description": (
                 "Explain a part of the Fathom dashboard to the user. Call this "
@@ -515,6 +546,21 @@ async def execute(name: str, arguments: dict, session_id: str | None = None) -> 
                     "Reject (keeps the proposal as sediment)."
                 ),
             })
+
+        if name == "rename_session":
+            if not session_id:
+                return json.dumps({
+                    "error": "rename_session can only be called inside a chat session",
+                })
+            new_name = (arguments.get("name") or "").strip()
+            if not new_name:
+                return json.dumps({"error": "name is required"})
+            await delta_client.write(
+                content=new_name,
+                tags=["fathom-chat", f"chat:{session_id}", "chat-name"],
+                source="consumer-api",
+            )
+            return json.dumps({"ok": True, "session_id": session_id, "name": new_name})
 
         if name == "explain":
             return await _execute_explain(arguments)
