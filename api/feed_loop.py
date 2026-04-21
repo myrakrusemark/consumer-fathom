@@ -53,12 +53,41 @@ def _empty_status() -> dict[str, Any]:
         "lines_total": 0,
         "lines_done": 0,
         "last_reason": None,
+        # True only while an LLM call is actually in flight (crystal
+        # synthesis or card production via fathom_think). Distinct from
+        # `generating` — a no-op run where all directive lines are fresh
+        # never fires an LLM, so `llm_active` stays false throughout and
+        # the UI pulse correctly doesn't flash.
+        "llm_active": False,
+        "llm_active_count": 0,  # counter so concurrent calls nest cleanly
+        # Short human-readable label of what the current LLM call is
+        # actually doing — "Updating feed directive", "Generating card:
+        # wolves-of-yellowstone", etc. Set before entering an LLM-bounded
+        # section, cleared when llm_active_count returns to zero.
+        "activity_label": None,
         # Populated when a run finishes. Tells the UI what the most recent
         # visit actually produced — often zero cards (all topics fresh, no
         # directive lines yet), which without this field is indistinguishable
         # from "the system is broken" to anyone watching the page.
         "last_outcome": None,  # {summary, detail, cards_written, at}
     }
+
+
+def _llm_active_enter(contact_slug: str, label: str | None = None) -> None:
+    st = _status.setdefault(contact_slug, _empty_status())
+    st["llm_active_count"] = st.get("llm_active_count", 0) + 1
+    st["llm_active"] = True
+    if label:
+        st["activity_label"] = label
+
+
+def _llm_active_exit(contact_slug: str) -> None:
+    st = _status.setdefault(contact_slug, _empty_status())
+    n = max(0, st.get("llm_active_count", 0) - 1)
+    st["llm_active_count"] = n
+    st["llm_active"] = n > 0
+    if n == 0:
+        st["activity_label"] = None
 
 
 # Per-run tallies, reset in _run_once and folded into last_outcome at the
@@ -281,6 +310,7 @@ async def _do_run(contact_slug: str, reason: str, run_facts: dict) -> None:
         flush=True,
     )
     if should:
+        _llm_active_enter(contact_slug, label="Rederiving feed directive from engagement")
         try:
             await feed_crystal.synthesize(contact_slug)
         except Exception as e:
@@ -288,6 +318,8 @@ async def _do_run(contact_slug: str, reason: str, run_facts: dict) -> None:
                 f"feed_loop[{contact_slug}]: crystal synthesize failed: {type(e).__name__}: {e}; using stale crystal",
                 flush=True,
             )
+        finally:
+            _llm_active_exit(contact_slug)
 
     crystal = await feed_crystal.latest(contact_slug, force=True)
     if not crystal:
@@ -370,6 +402,7 @@ async def _cold_start_fire(contact_slug: str) -> None:
         "source, and produce a single feed card.\n\n"
         + _CARD_OUTPUT_INSTRUCTIONS
     )
+    _llm_active_enter(contact_slug, label="First card — picking something curious")
     try:
         await asyncio.wait_for(
             _produce_card(contact_slug, line=None, crystal=None, directive=directive),
@@ -377,6 +410,8 @@ async def _cold_start_fire(contact_slug: str) -> None:
         )
     except asyncio.TimeoutError:
         log.info("feed_loop: cold-start fire timed out (contact=%s)", contact_slug)
+    finally:
+        _llm_active_exit(contact_slug)
 
 
 async def _fetch_line_candidates(line: dict, limit: int = 20) -> list[dict]:
@@ -597,6 +632,8 @@ async def _fire_line(contact_slug: str, line: dict, crystal: dict) -> None:
         + _CARD_OUTPUT_INSTRUCTIONS
     )
 
+    label_topic = topic or line_id
+    _llm_active_enter(contact_slug, label=f"Generating card: {label_topic}")
     try:
         await asyncio.wait_for(
             _produce_card(
@@ -611,6 +648,8 @@ async def _fire_line(contact_slug: str, line: dict, crystal: dict) -> None:
     except asyncio.TimeoutError:
         print(f"feed_loop[{contact_slug}]: line {line_id} timed out", flush=True)
         _tally_inc(contact_slug, "lines_timed_out")
+    finally:
+        _llm_active_exit(contact_slug)
 
 
 def _strip_fences(text: str) -> str:
