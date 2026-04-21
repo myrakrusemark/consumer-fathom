@@ -49,7 +49,7 @@ export async function saveSettings(patch) {
   await chrome.storage.sync.set(patch);
 }
 
-const LOCAL_KEYS = ["mode", "activeTabs", "recents"];
+const LOCAL_KEYS = ["mode", "activeTabs", "recents", "preferredMode"];
 
 export const MODE = {
   OFF: "off",
@@ -62,7 +62,8 @@ export async function getRuntime() {
   return {
     mode: stored.mode ?? MODE.OFF,
     activeTabs: stored.activeTabs ?? [],
-    recents: stored.recents ?? []
+    recents: stored.recents ?? [],
+    preferredMode: stored.preferredMode ?? MODE.THIS_TAB
   };
 }
 

@@ -1,4 +1,11 @@
-import { MODE, getRuntime, loadSettings, saveSettings } from "./lib/config.js";
+import {
+  MODE,
+  getRuntime,
+  hostnameOf,
+  loadSettings,
+  saveSettings,
+  setRuntime
+} from "./lib/config.js";
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -12,26 +19,52 @@ function fmtRelative(iso) {
   return `${hours}h ago`;
 }
 
-function setStatus(text, { warn = false } = {}) {
+function setStatus(text, kind = "") {
   const el = $("#status-text");
-  el.textContent = text;
-  el.style.color = warn ? "var(--warn)" : "var(--muted)";
+  el.textContent = text || "";
+  el.classList.remove("warn", "ok");
+  if (kind) el.classList.add(kind);
+}
+
+async function activeTab() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab || null;
+}
+
+function paintStartStop(mode) {
+  const btn = $("#start-stop");
+  if (mode === MODE.OFF) {
+    btn.textContent = "Start capture";
+    btn.classList.remove("stop");
+    btn.classList.add("start");
+  } else {
+    btn.textContent = "Stop capture";
+    btn.classList.remove("start");
+    btn.classList.add("stop");
+  }
+}
+
+function paintToggle(preferred) {
+  for (const b of document.querySelectorAll(".toggle-btn")) {
+    const on = b.dataset.mode === preferred;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-selected", on ? "true" : "false");
+  }
 }
 
 async function render() {
   const settings = await loadSettings();
   const runtime = await getRuntime();
 
-  for (const radio of document.querySelectorAll("input[name=mode]")) {
-    radio.checked = radio.value === runtime.mode;
-  }
-
-  const ttlMin = Math.round(settings.ttlSeconds / 60);
-  $("#ttl-slider").value = String(ttlMin);
-  $("#ttl-label").textContent = String(ttlMin);
+  paintStartStop(runtime.mode);
+  paintToggle(runtime.preferredMode);
 
   if (!settings.apiToken) {
-    setStatus("paste an API token in Settings →", { warn: true });
+    setStatus("paste an API token in settings →", "warn");
+  } else if (runtime.mode === MODE.OFF) {
+    setStatus("paused");
+  } else {
+    setStatus(runtime.mode === MODE.FOLLOW_ME ? "following all tabs" : "capturing this tab", "ok");
   }
 
   const list = $("#recents-list");
@@ -71,49 +104,85 @@ async function render() {
   }
 }
 
+async function setMode(nextMode) {
+  await chrome.runtime.sendMessage({ type: "runtime.setMode", mode: nextMode });
+}
+
+async function onStartStop() {
+  const runtime = await getRuntime();
+  if (runtime.mode === MODE.OFF) {
+    await setMode(runtime.preferredMode);
+  } else {
+    await setMode(MODE.OFF);
+  }
+  render();
+}
+
+async function onToggle(e) {
+  const next = e.currentTarget.dataset.mode;
+  if (!next) return;
+  await setRuntime({ preferredMode: next });
+  const runtime = await getRuntime();
+  if (runtime.mode !== MODE.OFF) {
+    await setMode(next);
+  }
+  render();
+}
+
+async function onCaptureNow() {
+  const btn = $("#capture-now");
+  btn.disabled = true;
+  setStatus("capturing…");
+  const resp = await chrome.runtime.sendMessage({ type: "capture.manual" });
+  if (resp?.ok) {
+    setStatus("captured", "ok");
+  } else if (resp?.reason === "blocked") {
+    setStatus("this page is on the blocklist", "warn");
+  } else if (resp?.reason === "no-token") {
+    setStatus("paste an API token in settings →", "warn");
+  } else {
+    setStatus("capture failed — check settings", "warn");
+  }
+  btn.disabled = false;
+  render();
+}
+
+async function onBlockPage() {
+  const tab = await activeTab();
+  if (!tab || !tab.url) {
+    setStatus("no active page", "warn");
+    return;
+  }
+  const host = hostnameOf(tab.url);
+  if (host === "unknown") {
+    setStatus("can't read hostname", "warn");
+    return;
+  }
+  const settings = await loadSettings();
+  const blocklist = Array.isArray(settings.blocklist) ? settings.blocklist.slice() : [];
+  const already = blocklist.some((h) => (h || "").trim().toLowerCase() === host);
+  if (already) {
+    setStatus(`${host} already blocked`);
+    return;
+  }
+  blocklist.push(host);
+  await saveSettings({ blocklist });
+  setStatus(`blocked ${host}`, "ok");
+}
+
+function onOpenOptions(e) {
+  e.preventDefault();
+  chrome.runtime.openOptionsPage();
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   await render();
 
-  for (const radio of document.querySelectorAll("input[name=mode]")) {
-    radio.addEventListener("change", async (e) => {
-      const mode = e.target.value;
-      await chrome.runtime.sendMessage({ type: "runtime.setMode", mode });
-      setStatus(`mode: ${mode.replace("_", " ")}`);
-      render();
-    });
+  $("#start-stop").addEventListener("click", onStartStop);
+  for (const b of document.querySelectorAll(".toggle-btn")) {
+    b.addEventListener("click", onToggle);
   }
-
-  $("#ttl-slider").addEventListener("input", (e) => {
-    $("#ttl-label").textContent = e.target.value;
-  });
-
-  $("#ttl-slider").addEventListener("change", async (e) => {
-    const minutes = parseInt(e.target.value, 10);
-    await saveSettings({ ttlSeconds: minutes * 60 });
-    setStatus(`TTL: ${minutes}m`);
-  });
-
-  $("#capture-now").addEventListener("click", async () => {
-    $("#capture-now").disabled = true;
-    setStatus("capturing…");
-    const resp = await chrome.runtime.sendMessage({ type: "capture.manual" });
-    if (resp?.ok) {
-      setStatus("captured");
-    } else if (resp?.reason === "blocked") {
-      setStatus("this page is on the blocklist", { warn: true });
-    } else if (resp?.reason === "no-token") {
-      setStatus("paste an API token in Settings →", { warn: true });
-    } else {
-      setStatus("capture failed — check Settings → API URL/token", { warn: true });
-    }
-    $("#capture-now").disabled = false;
-    render();
-  });
-
-  $("#open-options").addEventListener("click", (e) => {
-    e.preventDefault();
-    chrome.runtime.openOptionsPage();
-  });
+  $("#capture-now").addEventListener("click", onCaptureNow);
+  $("#block-page").addEventListener("click", onBlockPage);
+  $("#open-options").addEventListener("click", onOpenOptions);
 });
-
-void MODE;

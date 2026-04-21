@@ -3,38 +3,45 @@
   <head>
     <meta charset="utf-8" />
     <title>Follow Me</title>
+    <link rel="stylesheet" href="lib/tokens.css" />
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
-    <header>
-      <h1>Follow Me</h1>
-      <span class="subtitle">browsing → Fathom's lake</span>
+    <header class="brand">
+      <img src="icons/fathom-logo.svg" alt="" class="mark" />
+      <div class="brand-text">
+        <h1>Follow Me</h1>
+        <span class="tag">browsing → Fathom's lake</span>
+      </div>
     </header>
 
-    <section class="mode">
-      <label>
-        <input type="radio" name="mode" value="off" />
-        <span>Off</span>
-      </label>
-      <label>
-        <input type="radio" name="mode" value="this_tab" />
-        <span>This tab only</span>
-      </label>
-      <label>
-        <input type="radio" name="mode" value="follow_me" />
-        <span>Follow me (all tabs)</span>
-      </label>
+    <section class="control">
+      <button id="start-stop" class="big-btn start" type="button">Start capture</button>
+
+      <div class="mode-toggle" role="tablist" aria-label="Capture scope">
+        <button class="toggle-btn active" data-mode="this_tab" role="tab" aria-selected="true" type="button">
+          This tab
+        </button>
+        <button class="toggle-btn" data-mode="follow_me" role="tab" aria-selected="false" type="button">
+          Follow me
+        </button>
+      </div>
     </section>
 
-    <section class="ttl">
-      <label for="ttl-slider">Keep captures for <span id="ttl-label">30</span> min</label>
-      <input id="ttl-slider" type="range" min="5" max="240" step="5" value="30" />
-    </section>
-
-    <section class="actions">
-      <button id="capture-now">Capture this page now</button>
-      <a id="open-options" href="#">Settings</a>
-    </section>
+    <div class="action-row">
+      <button id="capture-now" class="action" type="button">
+        <span class="action-label">Capture now</span>
+        <span class="action-hint">one-shot</span>
+      </button>
+      <button id="block-page" class="action" type="button">
+        <span class="action-label">Block page</span>
+        <span class="action-hint">add to list</span>
+      </button>
+      <button id="open-options" class="action" type="button">
+        <span class="action-label">Settings</span>
+        <span class="action-hint">full config</span>
+      </button>
+    </div>
 
     <section class="recents">
       <h2>Recent</h2>

@@ -3,25 +3,50 @@
   <head>
     <meta charset="utf-8" />
     <title>Follow Me — Settings</title>
+    <link rel="stylesheet" href="lib/tokens.css" />
     <link rel="stylesheet" href="options.css" />
   </head>
   <body>
     <main>
-      <h1>Follow Me — Settings</h1>
-      <p class="subtitle">
-        Capture browsing screenshots as short-lived Fathom deltas. The delta-store
-        reaper deletes captures automatically when they expire.
-      </p>
+      <header class="page-head">
+        <div class="brand">
+          <img src="icons/fathom-logo.svg" alt="" class="mark" />
+          <div class="brand-text">
+            <h1>Follow Me</h1>
+            <p class="tag">browsing → Fathom's lake</p>
+          </div>
+        </div>
+        <p class="subtitle">
+          Capture browsing screenshots as short-lived Fathom deltas. The delta-store
+          reaper deletes captures automatically when they expire.
+        </p>
+      </header>
 
-      <section>
-        <h2>Fathom API</h2>
-        <label>
-          <span>API URL</span>
+      <section class="card">
+        <div class="card-head">
+          <h2>Blocklist</h2>
+          <p class="section-hint">
+            Hostnames Fathom never captures. One per line. Exact hostname and
+            subdomains match (e.g. <code>bank.com</code> also blocks
+            <code>my.bank.com</code>). Banking, password managers, and login
+            portals are blocked by default.
+          </p>
+        </div>
+        <textarea id="blocklist" rows="14" spellcheck="false"></textarea>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Fathom API</h2>
+          <p class="section-hint">Where your captures go.</p>
+        </div>
+        <label class="field">
+          <span class="label">API URL</span>
           <input id="api-url" type="url" placeholder="http://localhost:8201" />
           <em class="hint">your Fathom dashboard — the UI you've already been using</em>
         </label>
-        <label>
-          <span>API token</span>
+        <label class="field">
+          <span class="label">API token</span>
           <input id="api-token" type="password" placeholder="fth_…" />
           <em class="hint">
             mint one in the dashboard's Tokens page with the <code>lake:write</code> scope
@@ -29,39 +54,32 @@
         </label>
       </section>
 
-      <section>
-        <h2>Capture</h2>
-        <label>
-          <span>Default TTL (seconds)</span>
+      <section class="card">
+        <div class="card-head">
+          <h2>Capture cadence</h2>
+          <p class="section-hint">How often and how long.</p>
+        </div>
+        <label class="field">
+          <span class="label">Default TTL (seconds)</span>
           <input id="ttl-seconds" type="number" min="60" max="86400" step="60" />
           <em class="hint">how long captures stay in the lake before the reaper deletes them</em>
         </label>
-        <label>
-          <span>Scroll debounce (ms)</span>
+        <label class="field">
+          <span class="label">Scroll debounce (ms)</span>
           <input id="scroll-debounce" type="number" min="200" max="10000" step="100" />
           <em class="hint">capture only after scrolling stops for this long</em>
         </label>
-        <label>
-          <span>Scroll threshold (%)</span>
+        <label class="field">
+          <span class="label">Scroll threshold (%)</span>
           <input id="scroll-threshold" type="number" min="10" max="100" step="5" />
           <em class="hint">also capture once this much new content has been scrolled past</em>
         </label>
       </section>
 
-      <section>
-        <h2>Blocklist</h2>
-        <p class="subtitle">
-          Hostnames to never capture. One per line. Matches exact hostname and subdomains
-          (e.g. <code>bank.com</code> blocks <code>my.bank.com</code> too). Banking,
-          password managers, and login portals are blocked by default.
-        </p>
-        <textarea id="blocklist" rows="12" spellcheck="false"></textarea>
-      </section>
-
       <section class="actions">
-        <button id="save">Save</button>
-        <button id="reset" class="secondary">Reset to defaults</button>
-        <span id="save-status"></span>
+        <button id="save" class="btn btn-primary">Save</button>
+        <button id="reset" class="btn btn-ghost">Reset to defaults</button>
+        <span id="save-status" class="save-status"></span>
       </section>
     </main>
 
