@@ -2416,6 +2416,11 @@
           <input type="text" id="pairWorkspaceInput" placeholder="e.g. ~/code/project, /opt/apps" autocomplete="off" spellcheck="false" maxlength="255" />
           <div class="pair-host-help" id="pairWorkspaceHelp">Where this agent's routines open claude when no workspace is pinned. Absolute path, or a <code>~</code>-prefix for home. Blank uses <code>~</code>.</div>
         </div>
+        <div class="pair-host-field">
+          <label for="pairAdvertiseUrlInput">Agent dashboard URL <span class="pair-optional">(optional)</span></label>
+          <input type="text" id="pairAdvertiseUrlInput" placeholder="e.g. http://home-server.local:8202" autocomplete="off" spellcheck="false" maxlength="255" />
+          <div class="pair-host-help" id="pairAdvertiseUrlHelp">Where <em>this</em> browser can reach the agent's on-machine dashboard. Leave blank for loopback (works only when the dashboard runs on the same machine as the agent). Set to a LAN hostname/IP for cross-machine access — also widen <code>localui.bind</code> to <code>0.0.0.0</code> in the agent's config.</div>
+        </div>
         <div class="pair-cmd-wrap">
           <pre class="pair-cmd" id="pairCmd">generating…</pre>
           <button class="btn" id="pairCopyBtn" disabled>Copy</button>
@@ -4760,6 +4765,8 @@
     const pairHostHelp = document.getElementById('pairHostHelp');
     const pairWorkspaceInput = document.getElementById('pairWorkspaceInput');
     const pairWorkspaceHelp = document.getElementById('pairWorkspaceHelp');
+    const pairAdvertiseUrlInput = document.getElementById('pairAdvertiseUrlInput');
+    const pairAdvertiseUrlHelp = document.getElementById('pairAdvertiseUrlHelp');
     const pairKittyBanner = document.getElementById('pairKittyBanner');
     const pairKittyBannerBody = document.getElementById('pairKittyBannerBody');
 
@@ -4802,6 +4809,21 @@
       return true;
     }
 
+    // Advertise-URL validation: must parse as http(s) with a host, no quotes.
+    // Single-quoted in the generated command like the workspace path, so a
+    // literal single quote would break quoting; reject up front.
+    function _validAdvertiseUrl(v) {
+      const s = (v || '').trim();
+      if (s === '') return true;
+      if (s.includes("'") || /\s/.test(s)) return false;
+      try {
+        const u = new URL(s);
+        if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+        if (!u.hostname) return false;
+        return true;
+      } catch { return false; }
+    }
+
     function _renderPairCmd() {
       if (!_pairState) return;
       const h = (pairHostInput.value || '').trim();
@@ -4810,11 +4832,14 @@
       const ws = (pairWorkspaceInput.value || '').trim();
       const wsOk = _validWorkspace(ws);
       const wsFlag = (ws && wsOk) ? ` --default-workspace '${ws}'` : '';
+      const adv = (pairAdvertiseUrlInput.value || '').trim();
+      const advOk = _validAdvertiseUrl(adv);
+      const advFlag = (adv && advOk) ? ` --localui-advertise-url '${adv}'` : '';
       // Chain init → install so the paired agent is running as a service
       // after one copy-paste. `install` auto-runs systemctl/launchctl/schtasks
       // on the respective OS (agent >= 0.11.1). If install fails (e.g. user
       // wanted foreground only), the pairing is still intact from `init`.
-      const cmd = `npx -y fathom-agent@latest init --api-url ${_pairState.apiUrl} --pair-code ${_pairState.code} --host ${hostArg}${wsFlag} && npx -y fathom-agent install`;
+      const cmd = `npx -y fathom-agent@latest init --api-url ${_pairState.apiUrl} --pair-code ${_pairState.code} --host ${hostArg}${wsFlag}${advFlag} && npx -y fathom-agent install`;
       pairCmdEl.textContent = cmd;
       pairCmdEl.dataset.pending = ok ? 'false' : 'true';
       pairCopyBtn.disabled = !ok;
@@ -4841,10 +4866,23 @@
         pairWorkspaceHelp.textContent = `Routines will open in ${ws} unless they pin elsewhere.`;
         pairWorkspaceHelp.dataset.state = '';
       }
+
+      pairAdvertiseUrlInput.dataset.invalid = (adv && !advOk) ? 'true' : 'false';
+      if (!adv) {
+        pairAdvertiseUrlHelp.innerHTML = 'Where <em>this</em> browser can reach the agent\'s on-machine dashboard. Leave blank for loopback (works only when the dashboard runs on the same machine as the agent). Set to a LAN hostname/IP for cross-machine access — also widen <code>localui.bind</code> to <code>0.0.0.0</code> in the agent\'s config.';
+        pairAdvertiseUrlHelp.dataset.state = '';
+      } else if (!advOk) {
+        pairAdvertiseUrlHelp.textContent = 'Must be an http:// or https:// URL with a host — no spaces or single quotes.';
+        pairAdvertiseUrlHelp.dataset.state = 'error';
+      } else {
+        pairAdvertiseUrlHelp.textContent = `Dashboard's "configure ↗" link will point to ${adv}.`;
+        pairAdvertiseUrlHelp.dataset.state = '';
+      }
     }
 
     pairHostInput.addEventListener('input', _renderPairCmd);
     pairWorkspaceInput.addEventListener('input', _renderPairCmd);
+    pairAdvertiseUrlInput.addEventListener('input', _renderPairCmd);
 
     function closePairModal() {
       pairModal.hidden = true;
@@ -4871,6 +4909,8 @@
       pairHostInput.dataset.invalid = 'false';
       pairWorkspaceInput.value = '';
       pairWorkspaceInput.dataset.invalid = 'false';
+      pairAdvertiseUrlInput.value = '';
+      pairAdvertiseUrlInput.dataset.invalid = 'false';
       pairCopyBtn.disabled = true;
       const depHint = PAIR_DEP_HINTS[os];
       if (depHint) {

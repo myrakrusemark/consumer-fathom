@@ -403,6 +403,18 @@ async function runInit(cliArgs, plugins, existingConfig) {
     }
   }
 
+  // --localui-advertise-url=<url> lets the dashboard link the "configure ↗"
+  // chip to a cross-machine-reachable URL for this agent. Loopback is fine
+  // for same-machine dashboards; set this when the dashboard runs elsewhere.
+  // Non-interactive: no prompt, flag-only, blank is valid (skip override).
+  let advertiseUrl = "";
+  if (branch !== "keep") {
+    const flagValue = overrides["localui-advertise-url"];
+    if (typeof flagValue === "string") {
+      advertiseUrl = flagValue.trim();
+    }
+  }
+
   const apiKey = redemption.token;
   let nextConfig;
   if (branch === "keep") {
@@ -420,6 +432,9 @@ async function runInit(cliArgs, plugins, existingConfig) {
     nextConfig = freshConfigFromPlugins(plugins, apiUrl, apiKey, host);
     if (defaultWorkspace && nextConfig.plugins?.kitty) {
       nextConfig.plugins.kitty.default_workspace = defaultWorkspace;
+    }
+    if (advertiseUrl && nextConfig.plugins?.localui) {
+      nextConfig.plugins.localui.advertise_url = advertiseUrl;
     }
   } else {
     // Unrecognized branch value — surface it rather than silently wiping.
