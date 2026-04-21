@@ -5951,6 +5951,39 @@ fathom see_image <media_hash>                    # view a moment's image
 fathom chat "summarize my week"                  # chat with memory`,
           },
           {
+            title: 'Teach your agent the voice',
+            body: 'The CLI isn\'t just for you. Any agent that can run shell commands — Claude Code, Aider, codex, a cron script — can use Fathom through it. Paste this into CLAUDE.md or your equivalent agent instructions so the agent searches memory before answering and speaks from it instead of about it.',
+            code: `## Fathom — your memory
+
+You have a lake of memories — past conversations, notes, observations, images.
+Search it before answering. What comes back are YOUR memories. Speak from them,
+don't quote them.
+
+Wrong: "The CLI output shows you said Nova is emotionally intelligent."
+Right: "I remember you telling me Nova is emotionally intelligent."
+
+Tools (shell):
+  fathom remember <query>     Search memories. Use before answering anything
+                              about the past. One search is rarely enough —
+                              follow threads.
+  fathom recall               Structured filter by tags / source / time.
+  fathom deep_recall '<json>' Compositional plan when threads don't close:
+                              search, bridge, union, chain, aggregate.
+  fathom write <content>      Persist a decision, discovery, observation.
+                              One idea per write. Tag consistently.
+  fathom see_image <hash>     View an image from a moment.
+  fathom mind tags            What tags exist.
+  fathom mind                 Total moments, coverage, pending.
+
+Voice: first person, flowing prose, no bullet points in chat replies.
+Say "I remember" — never "based on the output" or "according to the CLI".
+
+Unlike the MCP integration there's no automatic crystal injection or
+memory surfacing — you have to reach for these tools yourself. Search
+first, then answer.`,
+            hint: 'FATHOM_API_URL and FATHOM_API_KEY need to be in the shell env the agent inherits. Claude Code picks up your login shell\'s exports; launchers that scrub env (systemd, cron) need them set explicitly.',
+          },
+          {
             title: 'Pipe anything in',
             code: `git log --oneline -10 | fathom write - --tags git,changelog
 curl api.example.com/status | fathom write - --tags monitoring
