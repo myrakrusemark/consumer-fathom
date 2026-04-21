@@ -122,16 +122,21 @@ services:
     ports:
       # IPv4 wildcard exposes the dashboard to LAN (phones, other
       # devices). The auth token protects the API; only open this up on
-      # trusted networks. The second entry binds IPv6 loopback so
-      # in-host clients like `npx fathom-agent` — whose Node fetch
-      # resolves `localhost` to ::1 first — can reach the API without
-      # a v4-only fallback. Loopback-only on v6 keeps the LAN surface
-      # IPv4-only while fixing pair-code and npx flows inside the
-      # machine. Rootless podman users: if the [::1] entry conflicts
-      # with the v4 wildcard on your platform, drop it — rootlessport
-      # already synthesizes dual-stack loopback from 0.0.0.0.
+      # trusted networks. Rootless podman's rootlessport synthesizes
+      # IPv6 loopback from this 0.0.0.0 entry, so in-host clients like
+      # `npx fathom-agent` (whose Node fetch resolves `localhost` to
+      # ::1 first) can reach the API without help.
+      #
+      # Docker on Linux does NOT auto-synthesize v6 from v4, so if
+      # you're running compose under docker (e.g. inside a VM) and your
+      # agent pairing fails with "fetch failed", drop a
+      # docker-compose.override.yml alongside this file adding
+      #   api:
+      #     ports:
+      #       - "[::1]:8201:8200"
+      # Adding that same line here breaks rootless podman — so we keep
+      # it out of the base compose and let docker users opt in.
       - "0.0.0.0:8201:8200"
-      - "[::1]:8201:8200"
     volumes:
       - ${LAKE_DIR}/api:/data
     environment:

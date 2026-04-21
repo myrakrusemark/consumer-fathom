@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Follow Me</title>
+    <link rel="stylesheet" href="lib/tokens.css" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="brand">
+      <img src="icons/fathom-logo.svg" alt="" class="mark" />
+      <div class="brand-text">
+        <h1>Follow Me</h1>
+        <span class="tag">browsing → Fathom's lake</span>
+      </div>
+    </header>
+
+    <section class="control">
+      <button id="start-stop" class="big-btn start" type="button">Start capture</button>
+      <p class="control-hint">
+        Follow Me watches every tab — except anything on your blocklist. Hit
+        <strong>Block page</strong> below to add the current site.
+      </p>
+    </section>
+
+    <section class="ttl">
+      <div class="ttl-head">
+        <span class="ttl-label">Keep for <span id="ttl-value">1 day</span></span>
+        <label class="never-expire">
+          <input type="checkbox" id="never-expire" />
+          <span>never expire</span>
+        </label>
+      </div>
+      <input
+        id="ttl-slider"
+        type="range"
+        min="1"
+        max="180"
+        step="1"
+        value="1"
+        aria-label="TTL in days"
+      />
+    </section>
+
+    <div class="action-row">
+      <button id="capture-now" class="action" type="button">
+        <span class="action-label">Capture now</span>
+        <span class="action-hint">one-shot</span>
+      </button>
+      <button id="block-page" class="action" type="button">
+        <span class="action-label">Block page</span>
+        <span class="action-hint">add to list</span>
+      </button>
+      <button id="open-options" class="action" type="button">
+        <span class="action-label">Settings</span>
+        <span class="action-hint">full config</span>
+      </button>
+    </div>
+
+    <section class="recents">
+      <h2>Recent</h2>
+      <ul id="recents-list">
+        <li class="empty">no recent captures</li>
+      </ul>
+    </section>
+
+    <section class="status">
+      <span id="status-text"></span>
+    </section>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

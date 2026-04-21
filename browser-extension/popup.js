@@ -1,0 +1,209 @@
+import {
+  getRuntime,
+  hostnameOf,
+  loadSettings,
+  saveSettings
+} from "./lib/config.js";
+
+const $ = (sel) => document.querySelector(sel);
+
+function fmtRelative(iso) {
+  const then = new Date(iso).getTime();
+  const delta = Date.now() - then;
+  const minutes = Math.round(delta / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  return `${hours}h ago`;
+}
+
+function setStatus(text, kind = "") {
+  const el = $("#status-text");
+  el.textContent = text || "";
+  el.classList.remove("warn", "ok");
+  if (kind) el.classList.add(kind);
+}
+
+async function activeTab() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab || null;
+}
+
+function paintStartStop(enabled) {
+  const btn = $("#start-stop");
+  if (!enabled) {
+    btn.textContent = "Start capture";
+    btn.classList.remove("stop");
+    btn.classList.add("start");
+  } else {
+    btn.textContent = "Stop capture";
+    btn.classList.remove("start");
+    btn.classList.add("stop");
+  }
+}
+
+function fmtDays(days) {
+  if (days === 1) return "1 day";
+  if (days < 7) return `${days} days`;
+  if (days === 7) return "1 week";
+  if (days % 7 === 0 && days < 30) return `${days / 7} weeks`;
+  if (days === 30 || days === 31) return "1 month";
+  if (days % 30 === 0 && days < 365) return `${days / 30} months`;
+  return `${days} days`;
+}
+
+function paintTtl(settings) {
+  const ttlSection = document.querySelector(".ttl");
+  const slider = $("#ttl-slider");
+  const never = $("#never-expire");
+  const value = $("#ttl-value");
+
+  const expires = settings.expires !== false;
+  never.checked = !expires;
+
+  const days = Math.max(1, Math.round((settings.ttlSeconds || 86400) / 86400));
+  slider.value = String(Math.min(180, days));
+  slider.disabled = !expires;
+
+  if (expires) {
+    value.textContent = fmtDays(days);
+    ttlSection.classList.remove("forever");
+  } else {
+    value.textContent = "forever";
+    ttlSection.classList.add("forever");
+  }
+}
+
+async function render() {
+  const settings = await loadSettings();
+  const runtime = await getRuntime();
+
+  paintStartStop(runtime.enabled);
+  paintTtl(settings);
+
+  if (!settings.apiToken) {
+    setStatus("paste an API token in settings →", "warn");
+  } else if (!runtime.enabled) {
+    setStatus("paused");
+  } else {
+    setStatus("following you", "ok");
+  }
+
+  const list = $("#recents-list");
+  list.innerHTML = "";
+  if (!runtime.recents || runtime.recents.length === 0) {
+    const li = document.createElement("li");
+    li.className = "empty";
+    li.textContent = "no recent captures";
+    list.appendChild(li);
+  } else {
+    for (const r of runtime.recents) {
+      const li = document.createElement("li");
+
+      const left = document.createElement("div");
+      left.className = "title";
+      left.textContent = r.title || r.url || "(untitled)";
+      left.title = r.url;
+
+      const meta = document.createElement("span");
+      meta.className = "meta";
+      meta.textContent = `${r.reason} · ${fmtRelative(r.at)}`;
+
+      const btn = document.createElement("button");
+      btn.className = "revoke";
+      btn.textContent = "×";
+      btn.title = "Hide from recents";
+      btn.addEventListener("click", async () => {
+        await chrome.runtime.sendMessage({ type: "runtime.revokeRecent", id: r.id });
+        render();
+      });
+
+      li.appendChild(left);
+      li.appendChild(meta);
+      li.appendChild(btn);
+      list.appendChild(li);
+    }
+  }
+}
+
+async function onStartStop() {
+  const runtime = await getRuntime();
+  await chrome.runtime.sendMessage({
+    type: "runtime.setEnabled",
+    enabled: !runtime.enabled
+  });
+  render();
+}
+
+async function onCaptureNow() {
+  const btn = $("#capture-now");
+  btn.disabled = true;
+  setStatus("capturing…");
+  const resp = await chrome.runtime.sendMessage({ type: "capture.manual" });
+  if (resp?.ok) {
+    setStatus("captured", "ok");
+  } else if (resp?.reason === "blocked") {
+    setStatus("this page is on the blocklist", "warn");
+  } else if (resp?.reason === "no-token") {
+    setStatus("paste an API token in settings →", "warn");
+  } else {
+    setStatus("capture failed — check settings", "warn");
+  }
+  btn.disabled = false;
+  render();
+}
+
+async function onBlockPage() {
+  const tab = await activeTab();
+  if (!tab || !tab.url) {
+    setStatus("no active page", "warn");
+    return;
+  }
+  const host = hostnameOf(tab.url);
+  if (host === "unknown") {
+    setStatus("can't read hostname", "warn");
+    return;
+  }
+  const settings = await loadSettings();
+  const blocklist = Array.isArray(settings.blocklist) ? settings.blocklist.slice() : [];
+  const already = blocklist.some((h) => (h || "").trim().toLowerCase() === host);
+  if (already) {
+    setStatus(`${host} already blocked`);
+    return;
+  }
+  blocklist.push(host);
+  await saveSettings({ blocklist });
+  setStatus(`blocked ${host}`, "ok");
+}
+
+function onOpenOptions(e) {
+  e.preventDefault();
+  chrome.runtime.openOptionsPage();
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+  await render();
+
+  $("#start-stop").addEventListener("click", onStartStop);
+  $("#capture-now").addEventListener("click", onCaptureNow);
+  $("#block-page").addEventListener("click", onBlockPage);
+  $("#open-options").addEventListener("click", onOpenOptions);
+
+  $("#ttl-slider").addEventListener("input", (e) => {
+    const days = parseInt(e.target.value, 10) || 1;
+    $("#ttl-value").textContent = fmtDays(days);
+  });
+
+  $("#ttl-slider").addEventListener("change", async (e) => {
+    const days = parseInt(e.target.value, 10) || 1;
+    await saveSettings({ ttlSeconds: days * 86400 });
+    setStatus(`TTL: ${fmtDays(days)}`);
+  });
+
+  $("#never-expire").addEventListener("change", async (e) => {
+    const never = e.target.checked;
+    await saveSettings({ expires: !never });
+    render();
+    setStatus(never ? "captures won't expire" : "captures will expire");
+  });
+});

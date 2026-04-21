@@ -1,0 +1,17 @@
+# Drop-in override for Docker-on-Linux installs (e.g. VMs).
+#
+# Rename this to `docker-compose.override.yml` in the same directory as
+# docker-compose.yml and docker-compose will auto-merge it.
+#
+# Why: docker doesn't synthesize IPv6 loopback from an IPv4 wildcard the
+# way rootless podman does. On a dual-stack system, Node's fetch resolves
+# `localhost` to ::1 first, and `npx fathom-agent ... --api-url
+# http://localhost:8201` fails with "fetch failed" unless the api is
+# bound on v6 loopback explicitly. This override adds that binding.
+#
+# Do NOT enable this on rootless podman — it conflicts with podman's
+# automatic v4→v6 synthesis and the api container fails to start.
+services:
+  api:
+    ports:
+      - "[::1]:8201:8200"

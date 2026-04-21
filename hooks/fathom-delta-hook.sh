@@ -14,9 +14,9 @@
 
 set -euo pipefail
 
-FATHOM_API_URL="${FATHOM_API_URL:-http://localhost:8201}"
-FATHOM_API_KEY="${FATHOM_API_KEY:-}"
-MAX_CHARS="${FATHOM_MAX_CHARS:-4000}"
+export FATHOM_API_URL="${FATHOM_API_URL:-http://localhost:8201}"
+export FATHOM_API_KEY="${FATHOM_API_KEY:-}"
+export MAX_CHARS="${FATHOM_MAX_CHARS:-4000}"
 IMAGE_CACHE_DIR="${HOME}/.claude/image-cache"
 STATE_DIR="${HOME}/.claude/.fathom-hook-state"
 

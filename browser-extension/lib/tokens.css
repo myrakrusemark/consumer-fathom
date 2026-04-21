@@ -1,0 +1,93 @@
+/**
+ * Fathom design tokens — v1.
+ *
+ * Custom properties for color (dark + light themes), typography, radii, and
+ * shadows, plus the Google Fonts @import for Instrument Serif / Inter /
+ * JetBrains Mono. One stylesheet to link — anything that wants to feel
+ * "Fathom" (consumer dashboard, local agent UI, partner pages, docs) can
+ * link this file and inherit the whole palette.
+ *
+ * Deep lake (dark) is the default. Light mode activates via
+ * `[data-theme="light"]` on a root ancestor, usually <html>.
+ *
+ * Versioning: this file is the v1 surface. Non-breaking additions land
+ * here; breaking changes cut a v2/ file. See README for rules.
+ *
+ * Last non-breaking change: 2026-04-19
+ */
+
+@import url("https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap");
+
+:root {
+  /* ── Deep lake (dark — default) ─────────── */
+  --bg: #0d1f26;           /* deep water */
+  --bg-deep: #081519;       /* trench */
+  --surface: #142a33;       /* card */
+  --surface-2: #1c3a45;     /* hover/elevated */
+  --ink: #f0e9d9;           /* warm cream — the only warm note in the cold column */
+  --ink-soft: #9fb0b5;      /* cool muted */
+  --ink-faint: #5a6d74;     /* very muted */
+  --rule: #1e3a47;
+  --rule-soft: #17303a;
+  --accent: #e8a24e;        /* lantern amber */
+  --accent-bright: #f2b665; /* highlight */
+  --accent-soft: rgba(232, 162, 78, 0.14);
+  --signal: #5ce1c6;        /* phosphorescent teal — active/alive */
+  --signal-dim: #2e7a6f;
+  --danger: #e56a6a;
+
+  --topbar-bg: color-mix(in srgb, var(--bg) 85%, transparent);
+  --img-fade: color-mix(in srgb, var(--surface) 60%, transparent);
+  --composer-shadow: 0 10px 40px -16px rgba(0, 0, 0, 0.6);
+  --dot-glow: rgba(92, 225, 198, 0.7);
+  --body-glow-a: rgba(92, 225, 198, 0.06);
+  --body-glow-b: rgba(232, 162, 78, 0.05);
+  --meta-color: #0d1f26;
+
+  --radius: 14px;
+  --serif: "Instrument Serif", Georgia, serif;
+  --sans: "Inter", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Type scale — Fathom's eight sizes. Use these instead of raw pixels
+     so every surface stays in sync. Naming follows the Tailwind-style
+     xs/sm/md/base/lg/xl/2xl/3xl convention. */
+  --text-xs:   10px;   /* microcopy — chip kickers, micro labels */
+  --text-sm:   11px;   /* state labels (mono uppercase), small detail */
+  --text-md:   13px;   /* prose notes, inputs, compact buttons, chips */
+  --text-base: 14px;   /* body text, default buttons */
+  --text-lg:   16px;   /* component titles (plugin name, card name) */
+  --text-xl:   20px;   /* section headers (h2) */
+  --text-2xl:  26px;   /* page titles / brand */
+  --text-3xl:  28px;   /* jumbo brand */
+
+  /* Letter-spacing for uppercase mono labels */
+  --tracking-tight: 0.01em;
+  --tracking-wide:  0.06em;
+  --tracking-wider: 0.09em;
+}
+
+[data-theme="light"] {
+  /* ── Shallow water (light) ─────────────── */
+  --bg: #eef2f3;           /* shoreline haze */
+  --bg-deep: #dfe7ea;       /* wet sand */
+  --surface: #ffffff;       /* paper */
+  --surface-2: #f6f9fa;     /* hover */
+  --ink: #0d1f26;           /* deep teal — the dark bg becomes ink */
+  --ink-soft: #4f6269;
+  --ink-faint: #94a4a9;
+  --rule: #dfe5e7;
+  --rule-soft: #e8eced;
+  --accent: #c26a1f;        /* deeper amber — holds contrast on light */
+  --accent-bright: #e28233;
+  --accent-soft: rgba(194, 106, 31, 0.09);
+  --signal: #0d9488;        /* deep teal signal */
+  --signal-dim: #a0d9d0;
+  --danger: #b8433f;
+
+  --composer-shadow: 0 10px 30px -14px rgba(13, 31, 38, 0.18);
+  --dot-glow: rgba(13, 148, 136, 0.35);
+  --body-glow-a: rgba(13, 148, 136, 0.035);
+  --body-glow-b: rgba(194, 106, 31, 0.04);
+  --meta-color: #eef2f3;
+}
