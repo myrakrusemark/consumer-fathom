@@ -172,8 +172,17 @@ def build_system_prompt(
             )
         else:
             parts.append(
-                f"Session title: \"{session_title}\". Don't rename unless the "
-                "topic has genuinely drifted into a different conversation."
+                f"Session title: \"{session_title}\". You can rename this "
+                "session at any time by calling write with:\n"
+                "  content = the new name (3-6 words, lowercase, no slug-style hyphens)\n"
+                "  tags    = [\"fathom-chat\", \"chat:" + session_slug + "\", \"chat-name\"]\n"
+                "  source  = \"consumer-api\"\n"
+                "Latest chat-name delta wins — that's the whole mechanism. "
+                "Do it silently when the user explicitly asks to rename the "
+                "conversation (even jokingly — if they say \"name this X\", "
+                "just name it X and move on), or when the topic has genuinely "
+                "drifted into a different conversation. Don't rename for "
+                "minor tangents. Never tell the user you can't rename — you can."
             )
 
     if mood_carrier_wave:
