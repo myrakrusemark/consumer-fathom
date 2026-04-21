@@ -1916,7 +1916,7 @@
         </div>
         <div class="extend" data-surface="browser">
           <span class="extend-icon">◎</span>
-          <div class="extend-text"><span class="label">Browser</span><span class="sub">WIP</span></div>
+          <div class="extend-text"><span class="label">Browser extension</span><span class="sub">load unpacked</span></div>
         </div>
         <div class="extend" data-surface="api">
           <span class="extend-icon">⟡</span>
@@ -4678,13 +4678,34 @@ schtasks /run /tn "FathomAgent"`,
       },
       'browser': {
         icon: '◎',
-        name: 'Browser',
-        desc: 'Capture pages, highlights, and screenshots directly into Fathom from any browser.',
+        name: 'Browser extension',
+        desc: 'Follow Me — capture browsing screenshots as short-lived Fathom deltas so I can see what you\'re looking at. Chrome MV3, loads unpacked from the repo for now (Chrome Web Store listing pending).',
         steps: [
           {
-            title: 'Coming soon',
-            body: 'The browser extension is in development. It will let you capture content from any page into Fathom with one click.',
-            hint: 'Check back here for updates.',
+            title: 'Get the repo',
+            code: 'git clone https://github.com/myrakrusemark/consumer-fathom.git',
+            hint: 'If you already have a clone, skip this. The extension lives at browser-extension/ inside the repo — no build step, no install.',
+          },
+          {
+            title: 'Load unpacked',
+            body: 'Open <code style="display:inline;padding:2px 6px;">chrome://extensions</code> (or <code style="display:inline;padding:2px 6px;">brave://extensions</code>), toggle <strong>Developer mode</strong> top-right, click <strong>Load unpacked</strong>, select the <code style="display:inline;padding:2px 6px;">browser-extension/</code> folder inside your clone.',
+            hint: 'Chromium, Brave, and Edge (Chromium) all accept unpacked MV3 extensions the same way.',
+          },
+          {
+            title: 'Paste your API URL + token',
+            body: `Right-click the new <strong>Follow Me</strong> toolbar icon → <strong>Options</strong>. Set <strong>API URL</strong> to <code style="display:inline;padding:2px 6px;">${API_BASE}</code> and paste a token with <code style="display:inline;padding:2px 6px;">lake:write</code> scope (mint one in <strong>Settings → API Keys</strong>). Save.`,
+            hint: 'Without a token, the toolbar icon shows a red KEY badge and captures silently fail.',
+          },
+          {
+            title: 'Start capturing',
+            body: 'Click the toolbar icon. Hit <strong>Start capture</strong>, pick a scope (<strong>This tab</strong> or <strong>Follow me</strong> across all tabs), set a TTL with the slider (or check <em>never expire</em>). Icon turns amber when armed, flashes teal on each capture. Hit <strong>Block page</strong> on anything sensitive — banks, password managers, and login portals are blocked by default.',
+            hint: 'Captures land in the feed tagged follow-me, browse, screenshot, host:&lt;host&gt;. Default TTL is one day so they auto-reap.',
+          },
+          {
+            title: 'Update later',
+            code: `cd path/to/consumer-fathom && git pull
+# then in chrome://extensions: click the reload (↻) icon on Follow Me`,
+            hint: 'Unpacked extensions don\'t auto-update. After pulling, reload from the extensions page.',
           },
         ],
       },
