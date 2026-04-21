@@ -161,13 +161,27 @@ async function emitHeartbeat(config, pusher, startedAt) {
 
   const allPluginConfigs = readPluginConfig();
   const localUi = allPluginConfigs.localui;
-  // When the local-ui plugin is enabled, advertise its URL so the consumer
-  // dashboard can deep-link to it. The URL only resolves from the machine
-  // itself (bind defaults to 127.0.0.1), which is the point — it's a local
-  // management surface, not a remote one.
-  const agent_url = localUi && localUi.enabled
-    ? `http://${localUi.bind || "127.0.0.1"}:${localUi.port || 8202}`
-    : null;
+  // When the local-ui plugin is enabled, advertise a URL the dashboard can
+  // probe. Three layers:
+  //   1. explicit advertise_url in agent.json — operator override for LAN,
+  //      mDNS, reverse-proxy, or tunneled setups.
+  //   2. bind + port — works when the viewer's browser is on this same
+  //      machine (default bind=127.0.0.1) or on the same LAN (bind=0.0.0.0
+  //      will still resolve through loopback for same-machine viewers; for
+  //      cross-machine, set advertise_url).
+  //   3. null if the plugin is disabled.
+  // The dashboard probes /api/identity on the URL before enabling the
+  // configure link, so a stale or wrong advertise_url simply disables the
+  // link with "not reachable from here" instead of handing the user a
+  // broken link.
+  let agent_url = null;
+  if (localUi && localUi.enabled) {
+    if (typeof localUi.advertise_url === "string" && localUi.advertise_url.trim()) {
+      agent_url = localUi.advertise_url.trim();
+    } else {
+      agent_url = `http://${localUi.bind || "127.0.0.1"}:${localUi.port || 8202}`;
+    }
+  }
 
   const payload = {
     host,

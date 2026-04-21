@@ -39,6 +39,7 @@ const CONFIG_PATH = join(process.env.HOME || "", ".fathom", "agent.json");
 export const CONFIG_SHAPE = {
   port: { type: "number", required: false, help: "HTTP port for the local UI. Default: 8202." },
   bind: { type: "string", required: false, help: "Bind address. Keep 127.0.0.1 for localhost-only. Default: 127.0.0.1." },
+  advertise_url: { type: "string", required: false, help: "URL the consumer dashboard should link to for 'configure ↗'. Set this when the dashboard runs on a different machine than this agent (e.g. 'http://nixos-server.local:8202' or 'http://10.0.0.5:8202'). The dashboard probes the URL before enabling the link, so setting it wrong just disables the link — not a security risk." },
 };
 const BUILTIN_PLUGIN_DIR = dirname(fileURLToPath(import.meta.url));
 const CUSTOM_PLUGIN_DIR = join(homedir(), ".fathom", "plugins");
@@ -184,6 +185,18 @@ function send(res, status, bodyObj, extraHeaders = {}) {
   res.end(JSON.stringify(bodyObj));
 }
 
+// Identity endpoint only. Returns host + version so the consumer
+// dashboard's browser-side probe can confirm it reached the right agent
+// before enabling the "configure ↗" link. CORS is permissive because the
+// payload is already public (it's in the lake heartbeat) and this lets
+// the probe run from any origin serving the dashboard.
+const IDENTITY_CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Max-Age": "300",
+};
+
 function sendHtml(res, html) {
   res.writeHead(200, {
     "Content-Type": "text/html; charset=utf-8",
@@ -215,6 +228,32 @@ async function handle(req, res, config) {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const path = url.pathname;
   const method = req.method;
+
+  // CORS preflight for the identity probe — narrow to that path only.
+  if (method === "OPTIONS" && path === "/api/identity") {
+    res.writeHead(204, IDENTITY_CORS_HEADERS);
+    res.end();
+    return;
+  }
+
+  // /api/identity — probe target for the consumer dashboard. Returns the
+  // bare minimum for the probe to confirm "this is the right agent" before
+  // enabling the configure link. Unauthenticated by design: if someone can
+  // reach this port, they can already hit the full config API (which
+  // already redacts secrets), so the identity payload leaks nothing new.
+  if (method === "GET" && path === "/api/identity") {
+    const cfg = readConfig();
+    const host = (cfg && cfg.host) ? cfg.host : hostname();
+    let version = "";
+    try {
+      const pkg = JSON.parse(
+        readFileSync(join(BUILTIN_PLUGIN_DIR, "..", "package.json"), "utf8"),
+      );
+      version = pkg.version || "";
+    } catch {}
+    send(res, 200, { host, agent_version: version }, IDENTITY_CORS_HEADERS);
+    return;
+  }
 
   if (method === "GET" && path === "/") {
     try {

@@ -3716,6 +3716,104 @@
     let _agentStatus = { alive: false, agents: [] };  // populated by loadAgentStatus()
     let _latestAgentVersion = null;  // populated by loadLatestAgentVersion()
 
+    // Browser-side reachability probe for the "configure ↗" link. Each
+    // agent block advertises a URL in its heartbeat; before we hand that
+    // URL to the user, the dashboard tries GET {url}/api/identity from
+    // *this* browser and checks the returned host matches the agent.
+    // That confirms the URL actually resolves from here (not just from
+    // some other machine) and that we're not linking to the wrong agent
+    // by coincidence of port. Cache keyed by url so re-renders don't
+    // re-probe on every tick; 30s TTL smooths temporary failures.
+    const _reachabilityCache = new Map();   // url -> { ok, identity?, error?, at }
+    const _probeInflight = new Map();       // url -> Promise<result>
+    const REACHABILITY_TTL_MS = 30_000;
+    const REACHABILITY_TIMEOUT_MS = 2_500;
+
+    async function _probeAgentReachability(agentUrl, expectedHost) {
+      const cached = _reachabilityCache.get(agentUrl);
+      if (cached && (Date.now() - cached.at) < REACHABILITY_TTL_MS) return cached;
+      if (_probeInflight.has(agentUrl)) return _probeInflight.get(agentUrl);
+
+      const p = (async () => {
+        const ac = new AbortController();
+        const timer = setTimeout(() => ac.abort(), REACHABILITY_TIMEOUT_MS);
+        try {
+          const probeUrl = agentUrl.replace(/\/$/, '') + '/api/identity';
+          const r = await fetch(probeUrl, { signal: ac.signal, mode: 'cors', cache: 'no-store' });
+          if (!r.ok) return { ok: false, error: `http_${r.status}`, at: Date.now() };
+          const body = await r.json().catch(() => null);
+          if (!body || body.host !== expectedHost) {
+            return { ok: false, error: 'identity_mismatch', identity: body, at: Date.now() };
+          }
+          return { ok: true, identity: body, at: Date.now() };
+        } catch (e) {
+          return { ok: false, error: e.name === 'AbortError' ? 'timeout' : 'network', at: Date.now() };
+        } finally {
+          clearTimeout(timer);
+        }
+      })();
+
+      _probeInflight.set(agentUrl, p);
+      try {
+        const result = await p;
+        _reachabilityCache.set(agentUrl, result);
+        return result;
+      } finally {
+        _probeInflight.delete(agentUrl);
+      }
+    }
+
+    // Update a single configure chip in place. Called from renderAgentSection
+    // when we already have a cached probe result, and from the post-render
+    // probe resolver when the probe finishes after the initial paint.
+    function _paintConfigureChip(el, agent, probe) {
+      if (!el) return;
+      const status = agent.status || 'connected';
+      if (status === 'disconnected') {
+        el.outerHTML = `<span class="configure-link" aria-disabled="true" data-configure-for="${_esc(agent.host)}" title="This agent hasn't sent a heartbeat recently — the machine may be off or the agent crashed">configure (agent not available)</span>`;
+        return;
+      }
+      if (!agent.agent_url) {
+        el.outerHTML = `<span class="configure-link" aria-disabled="true" data-configure-for="${_esc(agent.host)}" title="local-ui plugin not enabled on this machine — add it to agent.json">configure (dashboard not enabled)</span>`;
+        return;
+      }
+      if (!probe) {
+        el.outerHTML = `<span class="configure-link" aria-disabled="true" data-configure-for="${_esc(agent.host)}" title="Probing the agent's local dashboard…">configure (checking…)</span>`;
+        return;
+      }
+      if (probe.ok) {
+        el.outerHTML = `<a class="configure-link" href="${_esc(agent.agent_url)}" target="_blank" rel="noopener" data-configure-for="${_esc(agent.host)}" title="Opens ${_esc(agent.agent_url)} — confirmed reachable and identifying as ${_esc(agent.host)}">configure ↗</a>`;
+        return;
+      }
+      // Probe failed. Tooltip explains why so the user can decide whether to
+      // set an advertise_url on that machine. identity_mismatch is the common
+      // case when the agent binds 127.0.0.1 and the viewer is on a different
+      // host — the URL resolves to a different agent on the viewer's machine.
+      const reasonHint = {
+        timeout: "the agent's local dashboard didn't respond in time",
+        network: "the agent's local dashboard isn't reachable from this browser",
+        identity_mismatch: `the URL responded but identified as a different agent${probe.identity?.host ? ` (${probe.identity.host})` : ''}`,
+      }[probe.error] || `probe failed: ${probe.error || 'unknown'}`;
+      el.outerHTML = `<span class="configure-link" aria-disabled="true" data-configure-for="${_esc(agent.host)}" title="${_esc(reasonHint)}. Set localui.advertise_url in agent.json on ${_esc(agent.host)} to a URL reachable from this browser.">configure (not reachable from here)</span>`;
+    }
+
+    // After renderAgentSection paints the cards, kick off probes for any
+    // connected agents whose reachability hasn't been confirmed this session.
+    // When each probe resolves, swap its chip in place by matching the
+    // agent's host — no full re-render, no visible jank beyond the
+    // "(checking…)" → resolved transition.
+    function _probeAllAgents() {
+      const agents = _agentStatus.agents || [];
+      for (const a of agents) {
+        const status = a.status || 'connected';
+        if (status !== 'connected' || !a.agent_url) continue;
+        _probeAgentReachability(a.agent_url, a.host).then((result) => {
+          const chip = document.querySelector(`.agent-connected[data-host="${CSS.escape(a.host)}"] .configure-link[data-configure-for="${CSS.escape(a.host)}"]`);
+          _paintConfigureChip(chip, a, result);
+        });
+      }
+    }
+
     // Compare two dot-separated version strings. Returns 1 if a>b, -1 if a<b, 0
     // if equal. Missing segments are treated as 0; pre-release suffixes (-alpha
     // etc) are stripped so 0.11.0 > 0.11.0-rc1 still works the naive way.
@@ -3935,20 +4033,34 @@
               return n + (instances && instances.length ? instances.length : 1);
             }, 0);
           const sourceCountText = `${sourceCount} source${sourceCount === 1 ? '' : 's'}`;
-          // Three-way configure chip:
-          //   - disconnected (no recent heartbeat) → always shows "agent not available"
-          //     regardless of whether the agent previously advertised a URL;
-          //     the URL won't resolve if the process isn't running.
-          //   - connected + local-ui enabled → real link.
-          //   - connected + no local-ui → "dashboard not enabled" disabled chip.
+          // Configure chip resolves to one of four states — see
+          // _paintConfigureChip for the full matrix. Here we render the
+          // initial state (either a cached probe result or "checking…"
+          // for a connected agent whose reachability we haven't probed
+          // yet). Post-render, _probeAllAgents fires the actual probes
+          // and swaps each chip in place when its result lands.
           const status = a.status || 'connected';
+          const cachedProbe = a.agent_url
+            ? (_reachabilityCache.get(a.agent_url) && (Date.now() - _reachabilityCache.get(a.agent_url).at) < REACHABILITY_TTL_MS
+                ? _reachabilityCache.get(a.agent_url)
+                : null)
+            : null;
           let configureHtml;
           if (status === 'disconnected') {
-            configureHtml = `<span class="configure-link" aria-disabled="true" title="This agent hasn't sent a heartbeat recently — the machine may be off or the agent crashed">configure (agent not available)</span>`;
-          } else if (a.agent_url) {
-            configureHtml = `<a class="configure-link" href="${_esc(a.agent_url)}" target="_blank" rel="noopener" title="Opens the on-machine agent UI in a new tab (only resolves from ${_esc(a.host)})">configure ↗</a>`;
+            configureHtml = `<span class="configure-link" aria-disabled="true" data-configure-for="${_esc(a.host)}" title="This agent hasn't sent a heartbeat recently — the machine may be off or the agent crashed">configure (agent not available)</span>`;
+          } else if (!a.agent_url) {
+            configureHtml = `<span class="configure-link" aria-disabled="true" data-configure-for="${_esc(a.host)}" title="local-ui plugin not enabled on this machine — add it to agent.json">configure (dashboard not enabled)</span>`;
+          } else if (cachedProbe && cachedProbe.ok) {
+            configureHtml = `<a class="configure-link" href="${_esc(a.agent_url)}" target="_blank" rel="noopener" data-configure-for="${_esc(a.host)}" title="Opens ${_esc(a.agent_url)} — confirmed reachable and identifying as ${_esc(a.host)}">configure ↗</a>`;
+          } else if (cachedProbe) {
+            const reasonHint = {
+              timeout: "the agent's local dashboard didn't respond in time",
+              network: "the agent's local dashboard isn't reachable from this browser",
+              identity_mismatch: `the URL responded but identified as a different agent${cachedProbe.identity?.host ? ` (${cachedProbe.identity.host})` : ''}`,
+            }[cachedProbe.error] || `probe failed: ${cachedProbe.error || 'unknown'}`;
+            configureHtml = `<span class="configure-link" aria-disabled="true" data-configure-for="${_esc(a.host)}" title="${_esc(reasonHint)}. Set localui.advertise_url in agent.json on ${_esc(a.host)} to a URL reachable from this browser.">configure (not reachable from here)</span>`;
           } else {
-            configureHtml = `<span class="configure-link" aria-disabled="true" title="local-ui plugin not enabled on this machine — add it to agent.json">configure (dashboard not enabled)</span>`;
+            configureHtml = `<span class="configure-link" aria-disabled="true" data-configure-for="${_esc(a.host)}" title="Probing the agent's local dashboard…">configure (checking…)</span>`;
           }
 
           // Update chip: only render when we know both versions and the
@@ -3981,7 +4093,7 @@
           ].filter(Boolean).join(' · ');
 
           return `
-            <div class="agent-connected" data-status="${_esc(status)}">
+            <div class="agent-connected" data-status="${_esc(status)}" data-host="${_esc(a.host)}">
               <div class="agent-connected-status">
                 <span class="host"${hostTooltip ? ` title="${_esc(hostTooltip)}"` : ''}><svg class="bot-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>${_esc(a.host)}</span>
                 <span class="source-count">${_esc(sourceCountText)}</span>
@@ -4019,6 +4131,11 @@
         // Now that #routinesList exists in the DOM again, paint routine chips
         // into it. renderRoutines() is idempotent; safe to call repeatedly.
         renderRoutines();
+
+        // Fire reachability probes for connected agents. Each probe resolves
+        // async and swaps its "configure (checking…)" chip in place — we
+        // don't re-render the whole section.
+        _probeAllAgents();
       } else {
         // Install view — banner + platform cards
         meta.textContent = 'not installed';
