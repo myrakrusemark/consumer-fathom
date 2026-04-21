@@ -555,6 +555,29 @@
          generating → breathing green (LLM tokens flowing)
          idle       → static gray (no LLM activity, anything else)
        No warn, no ok-persistence, no color-coded history. */
+    /* GLightbox slide images — fit viewport by default, let the library's
+       click/pinch-zoom take it from there. Some page styles (msg-thumb
+       widths, inline sizing on hero thumbs) would otherwise win over the
+       CDN stylesheet's defaults and the image renders at native size with
+       scrollbars. Pin the fit rules here so every surface that opens a
+       lightbox behaves the same. */
+    .glightbox-container .gslide-image img,
+    .glightbox-container .gslide-media img {
+      max-width: 100vw !important;
+      max-height: 100vh !important;
+      width: auto !important;
+      height: auto !important;
+      object-fit: contain !important;
+    }
+    /* Slide container must not scroll — zooming is GLightbox's job, not
+       the browser's. Without this the tall-image case shows a native
+       scrollbar inside the overlay. */
+    .glightbox-container .gslide-inner-content,
+    .glightbox-container .ginner-container,
+    .glightbox-container .gslide-image {
+      overflow: hidden !important;
+    }
+
     .feed-pulse {
       display: inline-block;
       width: 8px; height: 8px; border-radius: 50%;
@@ -6584,7 +6607,15 @@ GET  /v1/usage               Usage stats`,
         chatStream.innerHTML = '';
         const stamp = document.createElement('div');
         stamp.className = 'session-stamp';
-        const created = data.session.created_at ? new Date(data.session.created_at).toLocaleString() : '';
+        let created = '';
+        if (data.session.created_at) {
+          const tz = _effectiveTimezone();
+          const opts = tz ? { timeZone: tz } : {};
+          const d = new Date(data.session.created_at);
+          const weekday = d.toLocaleDateString(undefined, { weekday: 'long', ...opts });
+          const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', ...opts });
+          created = `${weekday} · ${time}`;
+        }
         stamp.textContent = data.session.title + (created ? ` · ${created}` : '');
         chatStream.appendChild(stamp);
 
