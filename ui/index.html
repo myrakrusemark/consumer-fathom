@@ -561,6 +561,9 @@
       animation: feed-pulse 1.4s ease-in-out infinite;
       box-shadow: 0 0 0 0 rgba(176, 140, 255, 0.55);
     }
+    /* Element-level `display: inline-block` above overrides the user-agent
+       stylesheet's `[hidden] { display: none }`. Restore the hide. */
+    .feed-pulse[hidden] { display: none; }
     @keyframes feed-pulse {
       0%, 100% { opacity: 0.45; transform: scale(0.85); box-shadow: 0 0 0 0 rgba(176, 140, 255, 0.55); }
       50%      { opacity: 1.0;  transform: scale(1.0);  box-shadow: 0 0 0 6px rgba(176, 140, 255, 0); }
@@ -5812,12 +5815,21 @@ GET  /v1/usage               Usage stats`,
       return `${days}d ago`;
     }
 
+    // Card-id set tracked across loads + polls so the floating-up
+    // listener can detect genuinely-new feed-card deltas without re-
+    // rendering ones already on screen.
+    const _renderedFeedIds = new Set();
+
     async function loadFeedStories(append) {
       try {
         const data = await api(`/v1/feed/stories?limit=${FEED_PAGE}&offset=${feedOffset}`);
         const stories = data.stories || [];
-        if (!append) feed.innerHTML = '';
+        if (!append) {
+          feed.innerHTML = '';
+          _renderedFeedIds.clear();
+        }
         stories.forEach((s, i) => {
+          if (s && s.id) _renderedFeedIds.add(s.id);
           feed.appendChild(renderStoryCard(s, append ? i * 0.18 : i * 0.18));
         });
         feedOffset += stories.length;
@@ -5975,9 +5987,55 @@ GET  /v1/usage               Usage stats`,
     function _stopFeedStatusPoll() {
       if (_feedStatusTimer) { clearInterval(_feedStatusTimer); _feedStatusTimer = null; }
     }
+
+    // ── Feed live-poll ─────────────────────────
+    // Same shape as the chat listener's poll-the-lake pattern: every few
+    // seconds, fetch the newest feed-card deltas and prepend any we
+    // haven't rendered yet. New cards animate in via the existing
+    // `surface` keyframe (fade + scale + unblur) and naturally push
+    // existing cards down as the layout reflows. No FLIP-style smooth
+    // shift on the existing cards — the new card surfacing reads as the
+    // event; the others just settle into their new spot.
+    let _feedLiveTimer = null;
+    async function _pollFeedLive() {
+      try {
+        const data = await api(`/v1/feed/stories?limit=${FEED_PAGE}&offset=0`);
+        const stories = (data.stories || []);
+        // Newest-first from the API. Walk OLDEST → NEWEST while
+        // prepending so the final DOM order matches the API order
+        // (newest at top).
+        const fresh = stories.filter(s => s && s.id && !_renderedFeedIds.has(s.id));
+        if (!fresh.length) return;
+        // Empty-state to data-state transition: if the feed currently
+        // shows the .feed-empty letter, clear it before prepending.
+        if (feed.querySelector('.feed-empty')) {
+          feed.innerHTML = '';
+        }
+        for (let i = fresh.length - 1; i >= 0; i--) {
+          const s = fresh[i];
+          _renderedFeedIds.add(s.id);
+          const card = renderStoryCard(s, 0);  // zero delay — surface immediately
+          feed.insertBefore(card, feed.firstChild);
+        }
+        refreshLightbox();
+      } catch (e) { /* best-effort */ }
+    }
+    function _startFeedLivePoll() {
+      if (_feedLiveTimer || document.hidden) return;
+      _feedLiveTimer = setInterval(_pollFeedLive, 5000);
+    }
+    function _stopFeedLivePoll() {
+      if (_feedLiveTimer) { clearInterval(_feedLiveTimer); _feedLiveTimer = null; }
+    }
+
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) _stopFeedStatusPoll();
-      else _startFeedStatusPoll();
+      if (document.hidden) {
+        _stopFeedStatusPoll();
+        _stopFeedLivePoll();
+      } else {
+        _startFeedStatusPoll();
+        _startFeedLivePoll();
+      }
     });
 
     // Load feed on page load. Visit ping nudges the in-process feed loop —
@@ -5986,6 +6044,7 @@ GET  /v1/usage               Usage stats`,
     loadFeedStories(false);
     loadHeroMood();
     _startFeedStatusPoll();
+    _startFeedLivePoll();
     api('/v1/feed/visit', { method: 'POST' }).catch(() => {});
 
     // ── Image handling: 404 hide + lightbox ────
