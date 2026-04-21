@@ -70,7 +70,7 @@ def _prune(codes: list[dict]) -> list[dict]:
 def create_pair_code(
     ttl_seconds: int = DEFAULT_TTL_SECONDS,
     note: str = "",
-    contact_slug: str = "myra",
+    contact_slug: str = "",
 ) -> dict:
     """Mint a new single-use pair code with a short TTL.
 
@@ -153,7 +153,7 @@ def redeem_pair_code(code: str, host: str = "") -> dict:
         "hash": token_hash,
         "prefix": token_raw[:8] + "…",
         "scopes": list(AGENT_SCOPES),
-        "contact_slug": target.get("contact_slug") or "myra",
+        "contact_slug": target.get("contact_slug") or "",
         "created_at": nowiso,
         "last_used_at": None,
     }

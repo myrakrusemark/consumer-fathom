@@ -148,8 +148,21 @@
       return await r.json();
     }
 
-    // If already signed in with a valid key, bounce to dashboard.
+    // Pre-bootstrap instances have no admin yet; landing on the login
+    // page is a dead end (nothing to sign into). Redirect to onboarding
+    // so the first user introduces themselves.
     (async () => {
+      try {
+        const r = await fetch(API_BASE + '/v1/auth/bootstrap-status');
+        if (!r.ok) return;
+        const info = await r.json();
+        if (info.needs_bootstrap) {
+          location.replace('/ui/onboarding.html');
+          return;
+        }
+      } catch (e) {}
+      // Already bootstrapped: if we already have a valid key, bounce
+      // straight to the dashboard.
       let existing = '';
       try { existing = localStorage.getItem('fathom-api-key') || ''; } catch (e) {}
       if (!existing) return;

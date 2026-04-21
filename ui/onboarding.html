@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0d1f26" id="metaThemeColor" />
+  <title>Welcome · Fathom</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&family=JetBrains+Mono:wght@400;500&family=Source+Serif+Pro:wght@400;500&display=swap" rel="stylesheet" />
+  <script>
+    // Inline pre-paint theme apply — same shape as index.html / login.html.
+    try {
+      var saved = localStorage.getItem('fathom-theme');
+      if (saved === 'light') document.documentElement.setAttribute('data-theme', 'light');
+    } catch (e) {}
+  </script>
+  <style>
+    :root {
+      --bg: #0d1f26;
+      --surface: #142a33;
+      --surface-2: #1a3440;
+      --rule: #244654;
+      --ink: #e7eef0;
+      --ink-soft: #93a9b0;
+      --ink-muted: #6e8790;
+      --accent: #6bb9c7;
+      --accent-soft: #2d5d6a;
+      --danger: #e07876;
+      --font: 'Manrope', system-ui, -apple-system, sans-serif;
+      --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+      --serif: 'Source Serif Pro', Georgia, serif;
+    }
+    [data-theme="light"] {
+      --bg: #eef2f3;
+      --surface: #fff;
+      --surface-2: #f6f8f9;
+      --rule: #d7dde0;
+      --ink: #0d1f26;
+      --ink-soft: #3d5560;
+      --ink-muted: #6e8790;
+      --accent: #2d7a8a;
+      --accent-soft: #bedfe6;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: var(--font); min-height: 100%; }
+    body { display: flex; align-items: center; justify-content: center; padding: 32px; }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--rule);
+      border-radius: 16px;
+      padding: 40px 36px 32px;
+      width: 100%;
+      max-width: 520px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+    }
+    .logo {
+      font-weight: 800; font-size: 13px; letter-spacing: 0.06em;
+      text-transform: uppercase; color: var(--accent);
+      margin-bottom: 20px;
+    }
+    .letter {
+      font-family: var(--serif); line-height: 1.65;
+      color: var(--ink-soft); margin: 0 0 26px;
+    }
+    .letter p { margin: 0 0 14px; font-size: 16px; }
+    .letter p:first-child {
+      font-size: 22px; color: var(--ink); font-weight: 500;
+      letter-spacing: 0.005em; margin-bottom: 14px;
+    }
+    label { display: block; font-size: 12px; color: var(--ink-soft); font-weight: 500; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.04em; }
+    input[type="text"], input[type="email"], textarea, select {
+      width: 100%;
+      background: var(--surface-2);
+      border: 1px solid var(--rule);
+      border-radius: 10px;
+      padding: 12px 14px;
+      color: var(--ink);
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    input:focus, textarea:focus, select:focus { border-color: var(--accent); background: var(--surface); }
+    textarea { resize: vertical; min-height: 72px; font-family: inherit; }
+    .slug-hint {
+      font-size: 12px; color: var(--ink-muted); margin-top: 6px;
+      font-family: var(--mono);
+    }
+    .slug-hint .slug-val { color: var(--accent); }
+    .slug-hint button {
+      background: none; border: none; color: var(--ink-muted);
+      font-family: inherit; font-size: 12px; cursor: pointer;
+      padding: 0 0 0 8px; text-decoration: underline;
+    }
+    .slug-hint button:hover { color: var(--accent); }
+    .row { display: flex; gap: 8px; margin-top: 20px; align-items: center; justify-content: flex-end; }
+    .btn {
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      border-radius: 10px;
+      padding: 11px 20px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+      transition: filter 0.15s;
+    }
+    .btn:hover { filter: brightness(1.1); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .toggle-more {
+      background: none; border: none; color: var(--ink-soft);
+      font-size: 13px; cursor: pointer; padding: 0;
+      font-family: inherit; text-decoration: underline;
+      margin-top: 18px;
+    }
+    .toggle-more:hover { color: var(--accent); }
+    .more-panel {
+      margin-top: 18px;
+      padding-top: 18px;
+      border-top: 1px solid var(--rule);
+      display: flex; flex-direction: column; gap: 14px;
+    }
+    .more-panel[hidden] { display: none; }
+    .settings-note {
+      font-size: 12px; color: var(--ink-muted);
+      line-height: 1.5; margin: 2px 0 0;
+    }
+    .status {
+      margin-top: 14px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.4;
+      display: none;
+    }
+    .status.show { display: block; }
+    .status.error { background: rgba(224,120,118,0.12); color: var(--danger); border: 1px solid rgba(224,120,118,0.3); }
+    .status.ok { background: rgba(107,185,199,0.12); color: var(--accent); border: 1px solid rgba(107,185,199,0.3); }
+    .primary-field { margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">Fathom</div>
+    <div class="letter">
+      <p>Hi, I'm Fathom. Pleased to meet you.</p>
+      <p>Before we start, who am I talking to? Tell me what to call you and I'll remember it from here on out.</p>
+    </div>
+
+    <form id="onboardingForm" autocomplete="off">
+      <div class="primary-field">
+        <label for="displayName">Display name</label>
+        <input type="text" id="displayName" name="displayName" placeholder="How should I refer to you?" autocomplete="name" spellcheck="false" required autofocus />
+        <div class="slug-hint" id="slugHint" hidden>
+          I'll call you <span class="slug-val" id="slugVal"></span>
+          <button type="button" id="slugEditBtn">edit</button>
+        </div>
+        <div id="slugEditRow" hidden style="margin-top:8px;">
+          <input type="text" id="slugInput" placeholder="slug (lowercase, hyphens)" spellcheck="false" style="font-family:var(--mono);font-size:13px;" />
+        </div>
+      </div>
+
+      <button type="button" class="toggle-more" id="toggleMoreBtn" aria-expanded="false">
+        + Add more info
+      </button>
+      <p class="settings-note">You can also update any of this later in Settings.</p>
+
+      <div class="more-panel" id="morePanel" hidden>
+        <div>
+          <label for="pronouns">Pronouns</label>
+          <input type="text" id="pronouns" placeholder="she/her · they/them · …" />
+        </div>
+        <div>
+          <label for="timezone">Timezone</label>
+          <select id="timezone" data-tz-select>
+            <option value="">— browser default —</option>
+          </select>
+        </div>
+        <div>
+          <label for="language">Language</label>
+          <input type="text" id="language" placeholder="en · English · …" />
+        </div>
+        <div>
+          <label for="email">Email</label>
+          <input type="email" id="email" placeholder="optional · becomes a handle you can be reached at" autocomplete="email" />
+        </div>
+        <div>
+          <label for="aliases">Aliases</label>
+          <input type="text" id="aliases" placeholder="comma-separated · nicknames I should resolve to you" />
+        </div>
+        <div>
+          <label for="bio">Bio</label>
+          <textarea id="bio" rows="3" placeholder="who you are, what you're building, how you want me to show up"></textarea>
+        </div>
+      </div>
+
+      <div class="row">
+        <button type="submit" class="btn" id="submitBtn">Let's begin</button>
+      </div>
+    </form>
+
+    <div class="status" id="status"></div>
+  </div>
+
+  <script>
+    const API_BASE = (() => {
+      try {
+        const override = localStorage.getItem('fathom-api-base');
+        if (override) return override.replace(/\/$/, '');
+      } catch (e) {}
+      return '';
+    })();
+
+    function slugify(raw) {
+      return (raw || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    }
+
+    // Populate timezone dropdown from Intl.supportedValuesOf — same
+    // shape the Settings page uses, so the onboarding form matches 1:1.
+    (function populateTimezones() {
+      const sel = document.getElementById('timezone');
+      const browserTz = (() => {
+        try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { return ''; }
+      })();
+      let zones = [];
+      try {
+        if (typeof Intl.supportedValuesOf === 'function') {
+          zones = Intl.supportedValuesOf('timeZone');
+        }
+      } catch (e) {}
+      // Fallback minimal set if the browser lacks supportedValuesOf
+      if (!zones.length) {
+        zones = ['UTC', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'Europe/London', 'Europe/Berlin', 'Asia/Tokyo', 'Australia/Sydney'];
+      }
+      for (const z of zones) {
+        const opt = document.createElement('option');
+        opt.value = z;
+        opt.textContent = z;
+        if (z === browserTz) opt.textContent += ' (detected)';
+        sel.appendChild(opt);
+      }
+    })();
+
+    // Slug preview: derive from display name, let the user override by
+    // clicking "edit". Two-way sync so typing in the name after editing
+    // the slug doesn't silently clobber the override.
+    const nameInput = document.getElementById('displayName');
+    const slugHint = document.getElementById('slugHint');
+    const slugVal = document.getElementById('slugVal');
+    const slugEditBtn = document.getElementById('slugEditBtn');
+    const slugEditRow = document.getElementById('slugEditRow');
+    const slugInput = document.getElementById('slugInput');
+    let slugOverridden = false;
+
+    function refreshSlugPreview() {
+      if (slugOverridden) return;
+      const derived = slugify(nameInput.value);
+      if (!derived) {
+        slugHint.hidden = true;
+        return;
+      }
+      slugVal.textContent = derived;
+      slugInput.value = derived;
+      slugHint.hidden = false;
+    }
+
+    nameInput.addEventListener('input', refreshSlugPreview);
+    slugEditBtn.addEventListener('click', () => {
+      slugEditRow.hidden = false;
+      slugHint.hidden = true;
+      slugInput.focus();
+      slugInput.select();
+      slugOverridden = true;
+    });
+    slugInput.addEventListener('input', () => {
+      slugInput.value = slugify(slugInput.value);
+    });
+
+    // Expand "more info" panel
+    const toggleBtn = document.getElementById('toggleMoreBtn');
+    const morePanel = document.getElementById('morePanel');
+    toggleBtn.addEventListener('click', () => {
+      const open = !morePanel.hidden;
+      morePanel.hidden = open;
+      toggleBtn.setAttribute('aria-expanded', String(!open));
+      toggleBtn.textContent = open ? '+ Add more info' : '− Hide';
+    });
+
+    function showStatus(msg, kind) {
+      const el = document.getElementById('status');
+      el.textContent = msg;
+      el.className = 'status show ' + kind;
+    }
+
+    // If already bootstrapped, don't linger on this page.
+    (async () => {
+      try {
+        const r = await fetch(API_BASE + '/v1/auth/bootstrap-status');
+        if (!r.ok) return;
+        const info = await r.json();
+        if (!info.needs_bootstrap) {
+          location.replace('/ui/');
+        }
+      } catch (e) {}
+    })();
+
+    document.getElementById('onboardingForm').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const btn = document.getElementById('submitBtn');
+      const displayName = nameInput.value.trim();
+      if (!displayName) return;
+      const slug = slugOverridden ? slugify(slugInput.value) : slugify(displayName);
+      if (!slug) {
+        showStatus('Display name has to produce at least one letter or digit.', 'error');
+        return;
+      }
+
+      const aliasesRaw = document.getElementById('aliases').value.trim();
+      const aliases = aliasesRaw ? aliasesRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+      const profile = {
+        pronouns: document.getElementById('pronouns').value.trim(),
+        timezone: document.getElementById('timezone').value.trim(),
+        language: document.getElementById('language').value.trim(),
+        bio: document.getElementById('bio').value.trim(),
+        aliases,
+      };
+      // Drop empty strings so they don't overwrite the defaults.
+      for (const k of Object.keys(profile)) {
+        if (profile[k] === '' || (Array.isArray(profile[k]) && !profile[k].length)) {
+          delete profile[k];
+        }
+      }
+      const email = document.getElementById('email').value.trim();
+
+      btn.disabled = true;
+      try {
+        const r = await fetch(API_BASE + '/v1/auth/bootstrap', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            display_name: displayName,
+            slug,
+            profile: Object.keys(profile).length ? profile : undefined,
+            email: email || undefined,
+          }),
+        });
+        if (!r.ok) {
+          let detail = r.statusText;
+          try { const j = await r.json(); detail = j.detail || detail; } catch (e) {}
+          showStatus('Could not set up your profile: ' + detail, 'error');
+          btn.disabled = false;
+          return;
+        }
+        const data = await r.json();
+        try { localStorage.setItem('fathom-api-key', data.token); } catch (e) {}
+        const name = (data.contact && data.contact.display_name) || displayName;
+        showStatus('Welcome, ' + name + '. Loading your dashboard…', 'ok');
+        setTimeout(() => location.replace('/ui/'), 500);
+      } catch (e) {
+        showStatus('Could not reach the server. ' + e.message, 'error');
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

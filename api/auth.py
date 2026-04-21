@@ -102,6 +102,11 @@ PUBLIC_PATHS = frozenset({
     # npm registry lookup; just public metadata. Dashboard calls this
     # before the user has a token.
     "/v1/agents/latest-version",
+    # First-run bootstrap flow. Both endpoints are public; the POST is
+    # one-shot (409 after an admin exists) and the GET is a simple
+    # "does an admin exist yet?" probe used by the UI boot path.
+    "/v1/auth/bootstrap-status",
+    "/v1/auth/bootstrap",
 })
 
 # Paths that do NOT require auth but still get middleware-stamped contact
@@ -159,7 +164,7 @@ def _save(tokens: list[dict]) -> None:
 def create_token(
     name: str = "",
     scopes: list[str] | None = None,
-    contact_slug: str = "myra",
+    contact_slug: str = "",
 ) -> dict:
     """Create a new token bound to a contact. Raw token only visible here."""
     raw = TOKEN_PREFIX + "".join(secrets.choice(ALPHABET) for _ in range(TOKEN_RAND_LEN))
@@ -188,13 +193,16 @@ def create_token(
     return {"token": raw, **{k: v for k, v in record.items() if k != "hash"}}
 
 
-def migrate_legacy_tokens(default_slug: str = "myra") -> int:
+def migrate_legacy_tokens(default_slug: str = "") -> int:
     """Bind any token missing `contact_slug` to `default_slug`.
 
-    Legacy tokens were minted before contact-awareness. They all belong
-    to the admin who first set the instance up — Myra in the default
-    case, or whichever slug owns the first contact row.
+    Legacy tokens were minted before contact-awareness. They belong to
+    whichever slug was the admin when the instance was first set up.
+    Caller should pass the resolved first-admin slug; if empty, the
+    migration is a no-op (no admin yet → no meaningful default).
     """
+    if not default_slug:
+        return 0
     tokens = _load()
     changed = 0
     for t in tokens:
@@ -319,13 +327,17 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
         if method == "OPTIONS":
             return await call_next(request)
 
-        # No tokens exist → everything open (first-run). Default the
-        # caller to the seeded admin so any writes during first-run still
-        # carry a contact tag; once a real token is minted this branch
-        # stops firing.
+        # No tokens exist → everything open (first-run). Resolve the
+        # caller to the first active admin if one exists so any writes
+        # during first-run still carry a contact tag. On a pre-bootstrap
+        # install there is no admin yet, so contact stays None — the UI
+        # gates on /v1/auth/bootstrap-status and redirects to the
+        # onboarding page before any contact-scoped call fires.
         if not auth_required():
             request.state.token = None
-            request.state.contact = await resolve_contact("myra")
+            from . import contacts as contacts_mod
+            slug = await contacts_mod.first_admin_slug()
+            request.state.contact = await resolve_contact(slug) if slug else None
             return await call_next(request)
 
         # Check Authorization header — preferred path for all clients.

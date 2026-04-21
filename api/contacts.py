@@ -113,6 +113,57 @@ async def _fetch_handles_safe(slug: str) -> list[dict]:
         return []
 
 
+# ── First-admin resolution ──────────────────────────
+# The bootstrap flow and the first-run auth fallback both need to know
+# the active admin's slug. Cached because unauthenticated requests
+# (pre-bootstrap) hit the middleware on every page-load assets call;
+# we don't want to re-scan the registry each time.
+
+_FIRST_ADMIN_SLUG: str | None = None
+_FIRST_ADMIN_RESOLVED = False
+
+
+async def first_admin_slug() -> str | None:
+    """Return the slug of the first active admin, or None if no admin
+    has been bootstrapped yet. Results are cached until
+    ``invalidate_first_admin_cache()`` is called (post-bootstrap or
+    on admin demotion).
+
+    Env override: ``FATHOM_BOOTSTRAP_SLUG`` short-circuits the lookup,
+    intended for local dev where the admin profile delta may not yet
+    exist but the slug is known.
+    """
+    global _FIRST_ADMIN_SLUG, _FIRST_ADMIN_RESOLVED
+    if _FIRST_ADMIN_RESOLVED:
+        return _FIRST_ADMIN_SLUG
+    import os
+    env = os.environ.get("FATHOM_BOOTSTRAP_SLUG", "").strip()
+    if env:
+        _FIRST_ADMIN_SLUG = env
+        _FIRST_ADMIN_RESOLVED = True
+        return env
+    try:
+        rows = await delta_client.list_contact_rows(include_disabled=False)
+    except Exception:
+        log.exception("contacts: first_admin_slug: list_contact_rows failed")
+        return None
+    for row in rows:
+        profile = await _fetch_latest_profile(row["slug"])
+        if profile and profile.get("role") == "admin":
+            _FIRST_ADMIN_SLUG = row["slug"]
+            _FIRST_ADMIN_RESOLVED = True
+            return row["slug"]
+    _FIRST_ADMIN_SLUG = None
+    _FIRST_ADMIN_RESOLVED = True
+    return None
+
+
+def invalidate_first_admin_cache() -> None:
+    global _FIRST_ADMIN_SLUG, _FIRST_ADMIN_RESOLVED
+    _FIRST_ADMIN_SLUG = None
+    _FIRST_ADMIN_RESOLVED = False
+
+
 async def get(slug: str, include_disabled: bool = False) -> dict | None:
     """Merged contact dict, or None if the slug doesn't exist (or is
     disabled and include_disabled=False)."""

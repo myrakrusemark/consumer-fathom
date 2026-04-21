@@ -90,20 +90,37 @@ class FeedEngagementRequest(BaseModel):
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     from . import chat_listener
-    migrated = auth.migrate_legacy_tokens()
-    if migrated:
-        log.info("Bound %d legacy tokens to contact 'myra'", migrated)
-    # One-shot backfill of contact:myra onto per-user deltas that predate
-    # the contact registry. Idempotent — skips deltas that already carry
-    # any contact: tag, so re-runs are no-ops. Runs in the background so
-    # a cold delta-store start doesn't block the api from accepting
-    # requests; retries until delta-store is reachable.
-    async def _backfill_once():
-        import asyncio as _a
+    # Resolve the first-admin slug up front so the legacy-token migration
+    # and any contact-tag backfill have a target. On a fresh install with
+    # no admin yet, this returns None and both operations become no-ops
+    # until bootstrap runs. Retries because delta-store may still be
+    # booting when api starts.
+    import asyncio as _asyncio
+    resolved_admin: str | None = None
+    for attempt in range(6):
+        try:
+            resolved_admin = await contacts_mod.first_admin_slug()
+            break
+        except Exception:
+            if attempt == 5:
+                log.exception("lifespan: first_admin_slug failed after retries")
+            else:
+                await _asyncio.sleep(2 ** attempt)
+    if resolved_admin:
+        migrated = auth.migrate_legacy_tokens(default_slug=resolved_admin)
+        if migrated:
+            log.info("Bound %d legacy tokens to contact '%s'", migrated, resolved_admin)
+
+    # One-shot backfill of contact:<admin> onto per-user deltas that
+    # predate the contact registry. Idempotent — skips deltas that
+    # already carry any contact: tag, so re-runs are no-ops. Only fires
+    # once an admin exists; on pre-bootstrap installs the lake is empty
+    # and there's nothing to backfill anyway.
+    async def _backfill_once(admin_slug: str):
         for attempt in range(6):  # ~30s total with backoff
             try:
                 result = await delta_client.backfill_contact_tag(
-                    contact_slug="myra",
+                    contact_slug=admin_slug,
                     filter_tags=[
                         "feed-engagement",
                         "feed-story",
@@ -113,7 +130,8 @@ async def lifespan(_app: FastAPI):
                 )
                 if result.get("updated"):
                     log.info(
-                        "Backfilled contact:myra on %d legacy feed deltas",
+                        "Backfilled contact:%s on %d legacy feed deltas",
+                        admin_slug,
                         result.get("updated"),
                     )
                 return
@@ -121,42 +139,11 @@ async def lifespan(_app: FastAPI):
                 if attempt == 5:
                     log.exception("contact backfill failed after retries (non-fatal)")
                     return
-                await _a.sleep(2 ** attempt)
+                await _asyncio.sleep(2 ** attempt)
 
-    import asyncio as _asyncio
-    _asyncio.create_task(_backfill_once())
+    if resolved_admin:
+        _asyncio.create_task(_backfill_once(resolved_admin))
 
-    # Seed the admin profile delta if Myra doesn't have one yet. Runs
-    # every boot but short-circuits after the first write. Covers the
-    # schema-migration case (old `role`/`display_name` columns dropped)
-    # and first-run installs where the registry row was seeded with
-    # just the slug.
-    async def _seed_admin_profile():
-        import asyncio as _a
-        for attempt in range(6):
-            try:
-                existing = await contacts_mod.get("myra")
-                if not existing:
-                    return  # registry row missing — delta-store still booting or something odd
-                profile = await contacts_mod._fetch_latest_profile("myra")
-                if profile:
-                    return  # already has a profile delta
-                await contacts_mod.update_profile(
-                    "myra",
-                    {"role": "admin", "display_name": "Myra"},
-                    actor_slug=None,
-                    event="seeded",
-                )
-                log.info("Seeded admin profile delta for myra")
-                auth.invalidate_contact_cache("myra")
-                return
-            except Exception:
-                if attempt == 5:
-                    log.exception("admin profile seed failed after retries (non-fatal)")
-                    return
-                await _a.sleep(2 ** attempt)
-
-    _asyncio.create_task(_seed_admin_profile())
     auto_regen.start()
     chat_listener.listener.start()
     try:
@@ -181,18 +168,18 @@ app.add_middleware(auth.TokenAuthMiddleware)
 
 MAX_TOOL_ROUNDS = 10
 
-# Default contact used before auth kicks in (first-run) or when a route
-# needs a contact but the caller is unauthenticated. Seeded contact is
-# always `myra` by the delta-store init migration.
-DEFAULT_CONTACT_SLUG = "myra"
-
-
 def _current_contact_slug(request: Request) -> str:
-    """Resolve the authenticated caller's contact slug, or fall back to
-    the default. Every feed/chat/engagement path calls through here so
-    unauthenticated-but-allowed requests (first-run) still tag writes."""
+    """Resolve the authenticated caller's contact slug.
+
+    Returns an empty string on pre-bootstrap installs where no admin
+    exists yet — in practice those paths shouldn't fire because the UI
+    gates on /v1/auth/bootstrap-status and redirects to onboarding
+    before any contact-scoped endpoint is reached. After bootstrap the
+    auth middleware always populates request.state.contact (either from
+    the caller's token or, on tokenless first-run, from the first-admin
+    fallback)."""
     contact = getattr(request.state, "contact", None)
-    return (contact or {}).get("slug") or DEFAULT_CONTACT_SLUG
+    return (contact or {}).get("slug") or ""
 
 
 def _msg_dicts(messages: list[Message]) -> list[dict]:
@@ -1554,6 +1541,96 @@ def _split_facets(text: str) -> list[dict]:
 # ── Auth identity ─────────────────────────────
 
 
+# ── Bootstrap (first-run onboarding) ─────────────
+#
+# A fresh install has no admin. The dashboard gates on
+# bootstrap-status and redirects to /ui/onboarding.html when needed.
+# The POST endpoint is one-shot — it creates the first admin contact,
+# writes the admin profile delta, optionally adds an email handle, and
+# mints a full-scope admin token. Subsequent POSTs fail 409.
+
+
+class BootstrapBody(BaseModel):
+    display_name: str
+    slug: str | None = None
+    profile: dict | None = None
+    email: str | None = None
+
+
+def _slugify(raw: str) -> str:
+    s = (raw or "").strip().lower()
+    s = re.sub(r"[^a-z0-9]+", "-", s)
+    s = s.strip("-")
+    return s or "admin"
+
+
+@app.get("/v1/auth/bootstrap-status")
+async def bootstrap_status():
+    """Return whether this instance still needs first-run onboarding.
+
+    True when no active admin contact exists in the registry. The UI
+    uses this to decide between onboarding.html and the dashboard on
+    first boot."""
+    slug = await contacts_mod.first_admin_slug()
+    return {"needs_bootstrap": slug is None}
+
+
+@app.post("/v1/auth/bootstrap", status_code=201)
+async def bootstrap(body: BootstrapBody):
+    """Create the first admin contact and mint its admin token. One-shot."""
+    existing = await contacts_mod.first_admin_slug()
+    if existing:
+        raise HTTPException(409, f"Already bootstrapped (admin: {existing})")
+
+    display_name = (body.display_name or "").strip()
+    if not display_name:
+        raise HTTPException(400, "display_name is required")
+
+    slug = _slugify(body.slug or display_name)
+
+    # Collision check (include disabled, since re-using a tombstoned slug
+    # would silently merge into a prior contact's delta stream).
+    existing_row = await delta_client.get_contact_row(slug, include_disabled=True)
+    if existing_row:
+        raise HTTPException(409, f"Slug '{slug}' already exists")
+
+    initial_profile: dict = {"role": "admin", "display_name": display_name}
+    if body.profile:
+        for key in ("pronouns", "timezone", "language", "bio", "aliases", "avatar"):
+            v = body.profile.get(key)
+            if v is not None:
+                initial_profile[key] = v
+
+    contact = await contacts_mod.create(
+        slug, initial_profile=initial_profile, actor_slug=None
+    )
+
+    if body.email:
+        email = body.email.strip()
+        if email:
+            try:
+                await delta_client.add_handle(slug, "email", email)
+            except Exception:
+                log.exception("bootstrap: add_handle(email) failed for %s", slug)
+
+    token_result = auth.create_token(
+        name="Admin (bootstrap)",
+        scopes=list(auth.ALL_SCOPES.keys()),
+        contact_slug=slug,
+    )
+
+    # Prime the first-admin cache so subsequent unauthed reads see the
+    # new admin without waiting on cache expiry / module reload.
+    contacts_mod.invalidate_first_admin_cache()
+    auth.invalidate_contact_cache(slug)
+
+    # Re-fetch so handles (and any other derived fields) land on the
+    # returned contact.
+    hydrated = await contacts_mod.get(slug) or contact
+
+    return {"token": token_result["token"], "contact": hydrated}
+
+
 @app.get("/v1/auth/me")
 async def auth_me(request: Request):
     """Return the current caller's contact + token shape.
@@ -1593,10 +1670,13 @@ class TokenCreate(BaseModel):
 @app.post("/v1/tokens", dependencies=[Depends(auth.require_admin)])
 async def create_token(req: TokenCreate, request: Request):
     # Default to the caller's own contact. Admins can mint for others by
-    # passing contact_slug explicitly.
+    # passing contact_slug explicitly. require_admin guarantees a caller
+    # contact, so the fallback is purely defensive.
     caller = getattr(request.state, "contact", None)
-    default_slug = (caller or {}).get("slug", "myra")
+    default_slug = (caller or {}).get("slug", "")
     slug = req.contact_slug or default_slug
+    if not slug:
+        raise HTTPException(400, "contact_slug required")
     return auth.create_token(req.name, req.scopes, contact_slug=slug)
 
 
@@ -1637,8 +1717,10 @@ class PairCreate(BaseModel):
 @app.post("/v1/pair", dependencies=[Depends(auth.require_admin)])
 async def pair_create(body: PairCreate, request: Request):
     caller = getattr(request.state, "contact", None)
-    default_slug = (caller or {}).get("slug", "myra")
+    default_slug = (caller or {}).get("slug", "")
     slug = body.contact_slug or default_slug
+    if not slug:
+        raise HTTPException(400, "contact_slug required")
     return pairing.create_pair_code(
         ttl_seconds=body.ttl_seconds,
         note=body.note,

@@ -3146,14 +3146,37 @@
       return opts.raw ? r : r.json();
     }
 
+    // Bootstrap gate: runs before the auth gate. A fresh instance with
+    // no admin yet is not something the dashboard can render — there's
+    // no contact, no profile, no feed scope. Redirect to the onboarding
+    // page so the first user introduces themselves and mints the admin
+    // token. Post-bootstrap installs (incl. Myra's box) short-circuit
+    // to false and this costs one public GET per page load.
+    async function _enforceBootstrapGate() {
+      try {
+        const r = await fetch(API_BASE + '/v1/auth/bootstrap-status');
+        if (!r.ok) return true;  // best-effort; fall through to auth gate
+        const info = await r.json();
+        if (info.needs_bootstrap) {
+          location.replace('/ui/onboarding.html');
+          return false;
+        }
+      } catch (e) {
+        // Network error reaching the API. Let the auth gate handle it —
+        // it'll redirect to login on a failed /v1/auth/me, which is the
+        // right UX for a generic "server unreachable" state.
+      }
+      return true;
+    }
+
     // Auth gate: probe /v1/auth/me before the rest of the dashboard
     // wakes up. Redirect to the login page if the stored key is
     // missing, invalid, or rejected by the server.
     //
-    // First-run (no tokens exist anywhere) is handled server-side — the
-    // middleware returns authenticated:true with contact=myra even
-    // without a Bearer header, so the dashboard comes up unlocked on a
-    // fresh install until the admin mints the first token.
+    // First-run (no tokens exist but an admin profile does) still comes
+    // up unlocked — the middleware returns authenticated:true with the
+    // resolved first-admin contact. The onboarding redirect above
+    // intercepts the strictly pre-bootstrap case (no admin at all).
     function _hydrateAccountRow(contact) {
       if (!contact) return;
       const nameEl = document.getElementById('accountName');
@@ -3200,12 +3223,15 @@
       }
     }
 
-    // Fire the auth gate immediately. _enforceAuthGate returns async, so
-    // other init keeps running in parallel — but if the gate fails, a
-    // location.replace() will interrupt the page load before any
-    // authed API call completes. Any authed call that slips through
-    // will hit the 401 redirect in api() as a second safety net.
-    _enforceAuthGate();
+    // Fire the gates. Bootstrap runs first; if it redirects we bail.
+    // Otherwise the auth gate runs async, and any authed call that
+    // slips through before it finishes will hit the 401 redirect in
+    // api() as a second safety net.
+    (async () => {
+      const ok = await _enforceBootstrapGate();
+      if (!ok) return;
+      _enforceAuthGate();
+    })();
 
     // Composer visibility — only show on main + chat views
     const composerWrap = document.getElementById('composerWrap');
@@ -5593,7 +5619,7 @@
             </div>
             ${_handlesHTML(slug)}
             <div class="cc-actions">
-              <button class="btn ghost" data-action="disable" ${slug === 'myra' ? 'disabled title="Cannot disable the default admin"' : ''}>Disable</button>
+              <button class="btn ghost" data-action="disable" ${slug === (_currentContact && _currentContact.slug) ? 'disabled title="Cannot disable yourself"' : ''}>Disable</button>
               <button class="btn" data-action="save">Save</button>
             </div>
           </div>

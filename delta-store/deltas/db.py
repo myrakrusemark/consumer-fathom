@@ -68,12 +68,6 @@ ALTER TABLE contacts DROP COLUMN IF EXISTS role;
 ALTER TABLE contacts DROP COLUMN IF EXISTS notes;
 """
 
-SEED_SQL = """
-INSERT INTO contacts (slug)
-VALUES ('myra')
-ON CONFLICT (slug) DO NOTHING;
-"""
-
 # HNSW indexes are expensive to create and can't use IF NOT EXISTS before pg17.
 # We create them separately and swallow "already exists" errors.
 HNSW_INDEXES = [
@@ -140,8 +134,6 @@ async def init_pool(dsn: str | None = None) -> asyncpg.Pool:
             "ON CONFLICT (key) DO NOTHING",
             SCHEMA_VERSION,
         )
-
-        await conn.execute(SEED_SQL)
 
     return _pool
 
