@@ -21,6 +21,8 @@ import { homedir, hostname } from "os";
 import { dirname, join } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 
+import { IDENTITY_NONCE } from "../identity.js";
+
 const CONFIG_PATH = join(homedir(), ".fathom", "agent.json");
 const SCHEMA_VERSION = "0.10.0"; // bumped when heartbeat payload shape changes
 
@@ -193,6 +195,10 @@ async function emitHeartbeat(config, pusher, startedAt) {
     version: AGENT_VERSION,
     plugins: await summarizePlugins(),
     uptime_s: Math.round((Date.now() - startedAt) / 1000),
+    // Rotates on every agent restart; local-ui serves this same value from
+    // /api/identity. The dashboard compares the two to confirm the URL it
+    // probed is the same agent that wrote this heartbeat. See identity.js.
+    identity_nonce: IDENTITY_NONCE,
     ...(agent_url ? { agent_url } : {}),
   };
 

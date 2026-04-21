@@ -34,6 +34,8 @@ import { homedir, hostname } from "os";
 import { dirname, join } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 
+import { IDENTITY_NONCE } from "../identity.js";
+
 const CONFIG_PATH = join(process.env.HOME || "", ".fathom", "agent.json");
 
 export const CONFIG_SHAPE = {
@@ -241,6 +243,7 @@ async function handle(req, res, config) {
   // enabling the configure link. Unauthenticated by design: if someone can
   // reach this port, they can already hit the full config API (which
   // already redacts secrets), so the identity payload leaks nothing new.
+  // identity_nonce matches what heartbeat emitted — see identity.js.
   if (method === "GET" && path === "/api/identity") {
     const cfg = readConfig();
     const host = (cfg && cfg.host) ? cfg.host : hostname();
@@ -251,7 +254,7 @@ async function handle(req, res, config) {
       );
       version = pkg.version || "";
     } catch {}
-    send(res, 200, { host, agent_version: version }, IDENTITY_CORS_HEADERS);
+    send(res, 200, { host, agent_version: version, identity_nonce: IDENTITY_NONCE }, IDENTITY_CORS_HEADERS);
     return;
   }
 

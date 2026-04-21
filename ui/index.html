@@ -3717,22 +3717,35 @@
     let _latestAgentVersion = null;  // populated by loadLatestAgentVersion()
 
     // Browser-side reachability probe for the "configure ↗" link. Each
-    // agent block advertises a URL in its heartbeat; before we hand that
-    // URL to the user, the dashboard tries GET {url}/api/identity from
-    // *this* browser and checks the returned host matches the agent.
-    // That confirms the URL actually resolves from here (not just from
-    // some other machine) and that we're not linking to the wrong agent
-    // by coincidence of port. Cache keyed by url so re-renders don't
-    // re-probe on every tick; 30s TTL smooths temporary failures.
-    const _reachabilityCache = new Map();   // url -> { ok, identity?, error?, at }
-    const _probeInflight = new Map();       // url -> Promise<result>
+    // agent advertises a URL in its heartbeat; before we hand that URL to
+    // the user, the dashboard tries GET {url}/api/identity from *this*
+    // browser and checks the returned identity matches the heartbeat.
+    //
+    // "Matches" means both:
+    //   - body.host === expected host from the heartbeat
+    //   - body.identity_nonce === the heartbeat's identity_nonce (rotates
+    //     per agent-process-start — defeats two agents advertising the
+    //     same agent_url, the common case when nothing sets advertise_url)
+    //
+    // Cache is keyed by the triple (url, host, nonce) so cross-agent
+    // cache collisions are impossible — each card probes independently
+    // even when two agents share the same advertised URL string.
+    const _reachabilityCache = new Map();   // key -> { ok, identity?, error?, at }
+    const _probeInflight = new Map();       // key -> Promise<result>
     const REACHABILITY_TTL_MS = 30_000;
     const REACHABILITY_TIMEOUT_MS = 2_500;
 
-    async function _probeAgentReachability(agentUrl, expectedHost) {
-      const cached = _reachabilityCache.get(agentUrl);
+    function _probeKey(agentUrl, expectedHost, expectedNonce) {
+      // The nonce is ~128 bits of randomness; host + url are belt-and-
+      // suspenders for older agents that predate the nonce field.
+      return `${agentUrl}::${expectedHost}::${expectedNonce || ''}`;
+    }
+
+    async function _probeAgentReachability(agentUrl, expectedHost, expectedNonce) {
+      const key = _probeKey(agentUrl, expectedHost, expectedNonce);
+      const cached = _reachabilityCache.get(key);
       if (cached && (Date.now() - cached.at) < REACHABILITY_TTL_MS) return cached;
-      if (_probeInflight.has(agentUrl)) return _probeInflight.get(agentUrl);
+      if (_probeInflight.has(key)) return _probeInflight.get(key);
 
       const p = (async () => {
         const ac = new AbortController();
@@ -3745,6 +3758,14 @@
           if (!body || body.host !== expectedHost) {
             return { ok: false, error: 'identity_mismatch', identity: body, at: Date.now() };
           }
+          // Nonce check only when the heartbeat carried one. Agents
+          // from before 0.11.12 don't send it; falling back to
+          // host-only keeps them linkable when their URL is truly
+          // same-machine (the cross-agent collision case requires the
+          // nonce to resolve correctly).
+          if (expectedNonce && body.identity_nonce !== expectedNonce) {
+            return { ok: false, error: 'nonce_mismatch', identity: body, at: Date.now() };
+          }
           return { ok: true, identity: body, at: Date.now() };
         } catch (e) {
           return { ok: false, error: e.name === 'AbortError' ? 'timeout' : 'network', at: Date.now() };
@@ -3753,13 +3774,13 @@
         }
       })();
 
-      _probeInflight.set(agentUrl, p);
+      _probeInflight.set(key, p);
       try {
         const result = await p;
-        _reachabilityCache.set(agentUrl, result);
+        _reachabilityCache.set(key, result);
         return result;
       } finally {
-        _probeInflight.delete(agentUrl);
+        _probeInflight.delete(key);
       }
     }
 
@@ -3786,13 +3807,15 @@
         return;
       }
       // Probe failed. Tooltip explains why so the user can decide whether to
-      // set an advertise_url on that machine. identity_mismatch is the common
-      // case when the agent binds 127.0.0.1 and the viewer is on a different
-      // host — the URL resolves to a different agent on the viewer's machine.
+      // set an advertise_url on that machine. identity_mismatch / nonce_mismatch
+      // are the common cases when the agent binds 127.0.0.1 and the viewer is
+      // on a different host — the URL resolves to a different agent on the
+      // viewer's machine.
       const reasonHint = {
         timeout: "the agent's local dashboard didn't respond in time",
         network: "the agent's local dashboard isn't reachable from this browser",
         identity_mismatch: `the URL responded but identified as a different agent${probe.identity?.host ? ` (${probe.identity.host})` : ''}`,
+        nonce_mismatch: "the URL responded, but the identity nonce didn't match the heartbeat — probably a different agent instance reachable at the same URL",
       }[probe.error] || `probe failed: ${probe.error || 'unknown'}`;
       el.outerHTML = `<span class="configure-link" aria-disabled="true" data-configure-for="${_esc(agent.host)}" title="${_esc(reasonHint)}. Set localui.advertise_url in agent.json on ${_esc(agent.host)} to a URL reachable from this browser.">configure (not reachable from here)</span>`;
     }
@@ -3807,7 +3830,7 @@
       for (const a of agents) {
         const status = a.status || 'connected';
         if (status !== 'connected' || !a.agent_url) continue;
-        _probeAgentReachability(a.agent_url, a.host).then((result) => {
+        _probeAgentReachability(a.agent_url, a.host, a.identity_nonce).then((result) => {
           const chip = document.querySelector(`.agent-connected[data-host="${CSS.escape(a.host)}"] .configure-link[data-configure-for="${CSS.escape(a.host)}"]`);
           _paintConfigureChip(chip, a, result);
         });
@@ -4040,11 +4063,12 @@
           // yet). Post-render, _probeAllAgents fires the actual probes
           // and swaps each chip in place when its result lands.
           const status = a.status || 'connected';
-          const cachedProbe = a.agent_url
-            ? (_reachabilityCache.get(a.agent_url) && (Date.now() - _reachabilityCache.get(a.agent_url).at) < REACHABILITY_TTL_MS
-                ? _reachabilityCache.get(a.agent_url)
-                : null)
-            : null;
+          let cachedProbe = null;
+          if (a.agent_url) {
+            const key = _probeKey(a.agent_url, a.host, a.identity_nonce);
+            const hit = _reachabilityCache.get(key);
+            if (hit && (Date.now() - hit.at) < REACHABILITY_TTL_MS) cachedProbe = hit;
+          }
           let configureHtml;
           if (status === 'disconnected') {
             configureHtml = `<span class="configure-link" aria-disabled="true" data-configure-for="${_esc(a.host)}" title="This agent hasn't sent a heartbeat recently — the machine may be off or the agent crashed">configure (agent not available)</span>`;
@@ -4057,6 +4081,7 @@
               timeout: "the agent's local dashboard didn't respond in time",
               network: "the agent's local dashboard isn't reachable from this browser",
               identity_mismatch: `the URL responded but identified as a different agent${cachedProbe.identity?.host ? ` (${cachedProbe.identity.host})` : ''}`,
+              nonce_mismatch: "the URL responded, but the identity nonce didn't match the heartbeat — probably a different agent instance reachable at the same URL",
             }[cachedProbe.error] || `probe failed: ${cachedProbe.error || 'unknown'}`;
             configureHtml = `<span class="configure-link" aria-disabled="true" data-configure-for="${_esc(a.host)}" title="${_esc(reasonHint)}. Set localui.advertise_url in agent.json on ${_esc(a.host)} to a URL reachable from this browser.">configure (not reachable from here)</span>`;
           } else {

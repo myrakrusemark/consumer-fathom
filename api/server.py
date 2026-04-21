@@ -1389,6 +1389,11 @@ async def agents_status():
                 # plugin. Only resolvable from the machine itself; dashboard
                 # uses it to deep-link the "configure ↗" chip per agent block.
                 "agent_url": payload.get("agent_url"),
+                # Rotates per agent-process-start. The dashboard's probe
+                # compares this to what /api/identity returns, so two
+                # agents advertising the same agent_url can still be told
+                # apart — the one whose nonce matches is the real target.
+                "identity_nonce": payload.get("identity_nonce"),
                 "status": "connected" if heartbeat_is_fresh(d) else "disconnected",
                 "heartbeat_age_seconds": int(age) if age is not None else None,
             }
