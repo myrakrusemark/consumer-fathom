@@ -4958,7 +4958,7 @@
     }
 
     async function rejectProposal(card, pid) {
-      if (!confirm('Reject this proposal? It stays in the lake as sediment either way.')) return;
+      if (!confirm('Reject this proposal?')) return;
       try {
         const r = await fetch(API_BASE + '/v1/contact-proposals/' + encodeURIComponent(pid) + '/reject', {
           method: 'POST', headers: authHeaders(),
