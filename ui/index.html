@@ -551,15 +551,38 @@
     .ecg-line-feed-confidence { stroke: #d8b14a; stroke-dasharray: 5 4; }
     .ecg-engagement-mark { stroke-width: 1.2; opacity: 0.7; }
 
-    /* Feed-loop activity pulse — subtle breathing dot on the "What I
-       noticed" header while the loop is running. Reads /v1/feed/status. */
+    /* Feed-loop status pip on the "What I noticed" header. Reads
+       /v1/feed/status and renders one of four states:
+         generating → breathing purple
+         ok         → solid teal (cards written recently)
+         idle       → soft gray (nothing new — all topics fresh, etc.)
+         warn       → soft amber (no directive lines, cold start, etc.)
+       Tooltip carries the human-readable reason so the user isn't left
+       wondering why a visit produced nothing. */
     .feed-pulse {
       display: inline-block;
       width: 8px; height: 8px; border-radius: 50%;
-      background: var(--signal); margin-left: 10px;
+      margin-left: 10px;
       vertical-align: middle;
+      background: var(--signal);
+      cursor: help;
+    }
+    .feed-pulse[data-state="generating"] {
       animation: feed-pulse 1.4s ease-in-out infinite;
       box-shadow: 0 0 0 0 rgba(176, 140, 255, 0.55);
+    }
+    .feed-pulse[data-state="ok"] {
+      background: var(--signal);
+      box-shadow: 0 0 6px var(--dot-glow, var(--signal));
+      opacity: 0.9;
+    }
+    .feed-pulse[data-state="idle"] {
+      background: var(--ink-faint);
+      opacity: 0.6;
+    }
+    .feed-pulse[data-state="warn"] {
+      background: var(--accent);
+      opacity: 0.75;
     }
     /* Element-level `display: inline-block` above overrides the user-agent
        stylesheet's `[hidden] { display: none }`. Restore the hide. */
@@ -569,7 +592,7 @@
       50%      { opacity: 1.0;  transform: scale(1.0);  box-shadow: 0 0 0 6px rgba(176, 140, 255, 0); }
     }
     @media (prefers-reduced-motion: reduce) {
-      .feed-pulse { animation: none; opacity: 0.85; }
+      .feed-pulse[data-state="generating"] { animation: none; opacity: 0.85; }
     }
     .ecg-event-line { stroke: var(--ink-faint); stroke-width: 0.5; opacity: 0.45; stroke-dasharray: 2 3; }
     .ecg-event-icon { fill: var(--accent); font-size: 11px; }
@@ -7193,13 +7216,34 @@ GET  /v1/usage               Usage stats`,
     // is hidden so backgrounded tabs don't burn requests.
     const _feedPulse = document.getElementById('feedPulse');
     let _feedStatusTimer = null;
+    // Outcome.summary → (data-state, title prefix). Keeps the pip meaningful
+    // after the loop finishes so a no-op visit doesn't look like silence.
+    const _FEED_STATE_BY_SUMMARY = {
+      generated:      { state: 'ok',   prefix: '' },
+      all_fresh:      { state: 'idle', prefix: 'All caught up — ' },
+      cold_start:     { state: 'warn', prefix: 'Cold start — ' },
+      no_directives:  { state: 'warn', prefix: 'No directives yet — ' },
+      no_cards:       { state: 'warn', prefix: 'No cards this run — ' },
+    };
     async function _pollFeedStatus() {
       try {
         const s = await api('/v1/feed/status');
-        if (_feedPulse) {
-          if (s && s.generating) _feedPulse.removeAttribute('hidden');
-          else _feedPulse.setAttribute('hidden', '');
+        if (!_feedPulse) return;
+        if (s && s.generating) {
+          _feedPulse.removeAttribute('hidden');
+          _feedPulse.dataset.state = 'generating';
+          _feedPulse.title = 'Generating new feed cards…';
+          return;
         }
+        const outcome = s && s.last_outcome;
+        if (!outcome) {
+          _feedPulse.setAttribute('hidden', '');
+          return;
+        }
+        const cfg = _FEED_STATE_BY_SUMMARY[outcome.summary] || { state: 'idle', prefix: '' };
+        _feedPulse.removeAttribute('hidden');
+        _feedPulse.dataset.state = cfg.state;
+        _feedPulse.title = cfg.prefix + (outcome.detail || '');
       } catch (e) { /* best-effort */ }
     }
     function _startFeedStatusPoll() {
@@ -7405,7 +7449,7 @@ GET  /v1/usage               Usage stats`,
     // Drift normalization — a drift of `threshold` reaches the zone's edge.
     // Auto-regen fires at ~0.9 of threshold so a fresh crystal pinches it
     // back to the centerline. Same value as crystal_drift_threshold.
-    const DRIFT_AXIS_MAX = 0.55;
+    const DRIFT_AXIS_MAX = 0.15;
 
     const FEELING_COLORS = {
       calm: '#6cbfd3', settled: '#6cbfd3', contemplative: '#8ab0d4',

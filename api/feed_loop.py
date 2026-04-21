@@ -53,6 +53,106 @@ def _empty_status() -> dict[str, Any]:
         "lines_total": 0,
         "lines_done": 0,
         "last_reason": None,
+        # Populated when a run finishes. Tells the UI what the most recent
+        # visit actually produced — often zero cards (all topics fresh, no
+        # directive lines yet), which without this field is indistinguishable
+        # from "the system is broken" to anyone watching the page.
+        "last_outcome": None,  # {summary, detail, cards_written, at}
+    }
+
+
+# Per-run tallies, reset in _run_once and folded into last_outcome at the
+# end. Split out from the public status dict so we can distinguish "zero
+# because nothing fired yet" from "zero because every line was fresh" at
+# summarize-time.
+_run_tallies: dict[str, dict[str, int]] = {}
+
+
+def _tally_reset(contact_slug: str) -> None:
+    _run_tallies[contact_slug] = {
+        "cards_written": 0,
+        "lines_skipped_fresh": 0,
+        "lines_timed_out": 0,
+        "lines_model_skipped": 0,
+        "lines_format_failed": 0,
+        "lines_missing_fields": 0,
+    }
+
+
+def _tally_inc(contact_slug: str, key: str) -> None:
+    t = _run_tallies.get(contact_slug)
+    if t is not None:
+        t[key] = t.get(key, 0) + 1
+
+
+def _summarize_outcome(contact_slug: str, had_crystal: bool, had_lines: bool) -> dict:
+    """Fold per-run tally + structural facts (crystal, lines) into a one-line
+    outcome the UI can render as a status pip + tooltip. Summary values are
+    stable identifiers the frontend switches on; detail is the human string.
+    """
+    t = _run_tallies.get(contact_slug) or {}
+    cards = t.get("cards_written", 0)
+    fresh = t.get("lines_skipped_fresh", 0)
+    timeouts = t.get("lines_timed_out", 0)
+    skipped = t.get("lines_model_skipped", 0)
+    format_fail = t.get("lines_format_failed", 0)
+    missing = t.get("lines_missing_fields", 0)
+    at = _now().isoformat()
+
+    if not had_crystal:
+        return {
+            "summary": "cold_start",
+            "detail": (
+                f"No crystal yet — ran one broad curiosity card. "
+                f"Engage with a few cards (thumbs, clicks) and a real feed directive forms."
+            ),
+            "cards_written": cards,
+            "at": at,
+        }
+    if not had_lines:
+        return {
+            "summary": "no_directives",
+            "detail": (
+                "The crystal has no directive lines. Keep engaging — the next "
+                "crystal regen will derive them from your signals."
+            ),
+            "cards_written": cards,
+            "at": at,
+        }
+    if cards > 0:
+        plural = "s" if cards != 1 else ""
+        return {
+            "summary": "generated",
+            "detail": f"Wrote {cards} new card{plural}.",
+            "cards_written": cards,
+            "at": at,
+        }
+    # No cards written despite having a crystal + lines. Narrate why.
+    total_skipped_active = timeouts + skipped + format_fail + missing
+    if fresh > 0 and total_skipped_active == 0:
+        plural = "s" if fresh != 1 else ""
+        return {
+            "summary": "all_fresh",
+            "detail": (
+                f"All {fresh} directive line{plural} already have cards "
+                f"newer than their freshness window — nothing needed generating."
+            ),
+            "cards_written": 0,
+            "at": at,
+        }
+    reasons = []
+    if fresh: reasons.append(f"{fresh} already-fresh")
+    if timeouts: reasons.append(f"{timeouts} timed out")
+    if skipped: reasons.append(f"{skipped} model-skipped")
+    if format_fail: reasons.append(f"{format_fail} format-failed")
+    if missing: reasons.append(f"{missing} missing title/body")
+    return {
+        "summary": "no_cards",
+        "detail": (
+            f"Ran, but no cards were written ({', '.join(reasons) or 'unknown reason'})."
+        ),
+        "cards_written": 0,
+        "at": at,
     }
 
 
@@ -142,6 +242,7 @@ async def _run_once(contact_slug: str, reason: str = "unspecified") -> None:
     async with lock:
         _last_fire_at[contact_slug] = time.monotonic()
         started = _now().isoformat()
+        _tally_reset(contact_slug)
         _set_status(
             contact_slug,
             generating=True,
@@ -151,15 +252,20 @@ async def _run_once(contact_slug: str, reason: str = "unspecified") -> None:
             lines_done=0,
             last_reason=reason,
         )
+        # Structural facts captured by _do_run via closure so the summary
+        # knows whether the loop actually had a crystal or directive lines
+        # to work with.
+        run_facts = {"had_crystal": False, "had_lines": False}
         try:
-            await _do_run(contact_slug, reason)
+            await _do_run(contact_slug, reason, run_facts)
         except Exception:
             log.exception("feed_loop: run failed (contact=%s)", contact_slug)
         finally:
-            _set_status(contact_slug, generating=False, finished_at=_now().isoformat())
+            outcome = _summarize_outcome(contact_slug, run_facts["had_crystal"], run_facts["had_lines"])
+            _set_status(contact_slug, generating=False, finished_at=_now().isoformat(), last_outcome=outcome)
 
 
-async def _do_run(contact_slug: str, reason: str) -> None:
+async def _do_run(contact_slug: str, reason: str, run_facts: dict) -> None:
     # Wake-gate the crystal. The predicate checks drift, confidence, and
     # the cold-start min-signal guard — see api/feed_crystal.should_regen.
     try:
@@ -192,10 +298,12 @@ async def _do_run(contact_slug: str, reason: str) -> None:
         await _cold_start_fire(contact_slug)
         return
 
+    run_facts["had_crystal"] = True
     lines = crystal.get("directive_lines") or []
     if not lines:
         print(f"feed_loop[{contact_slug}]: crystal has no directive lines; skipping", flush=True)
         return
+    run_facts["had_lines"] = True
 
     print(
         f"feed_loop[{contact_slug}]: crystal id={crystal.get('id')}, {len(lines)} directive line(s)",
@@ -443,6 +551,7 @@ async def _fire_line(contact_slug: str, line: dict, crystal: dict) -> None:
             f"feed_loop[{contact_slug}]: line {line_id} skipped (fresh card exists, window={freshness_h}h)",
             flush=True,
         )
+        _tally_inc(contact_slug, "lines_skipped_fresh")
         return
     print(
         f"feed_loop[{contact_slug}]: line {line_id} firing (topic={line.get('topic')}, weight={line.get('weight')})",
@@ -501,6 +610,7 @@ async def _fire_line(contact_slug: str, line: dict, crystal: dict) -> None:
         )
     except asyncio.TimeoutError:
         print(f"feed_loop[{contact_slug}]: line {line_id} timed out", flush=True)
+        _tally_inc(contact_slug, "lines_timed_out")
 
 
 def _strip_fences(text: str) -> str:
@@ -645,12 +755,15 @@ async def _produce_card(
 
     if payload is None:
         print(f"feed_loop: line {line_id} — gave up after {MAX_FORMAT_ATTEMPTS} attempts (lost cause)", flush=True)
+        _tally_inc(contact_slug, "lines_format_failed")
         return
     if payload.get("skip"):
         print(f"feed_loop: line {line_id} — model skipped: {payload.get('reason')}", flush=True)
+        _tally_inc(contact_slug, "lines_model_skipped")
         return
     if not payload.get("title") or not payload.get("body"):
         print(f"feed_loop: line {line_id} — JSON valid but missing title/body; skipping. payload keys: {list(payload.keys())}", flush=True)
+        _tally_inc(contact_slug, "lines_missing_fields")
         return
 
     valid_hashes = _candidate_hashes(candidates)
@@ -707,6 +820,7 @@ async def _produce_card(
             tags=tags,
             source=CARD_SOURCE,
         )
+        _tally_inc(contact_slug, "cards_written")
     except Exception:
         log.exception("feed_loop: card delta write failed")
 
