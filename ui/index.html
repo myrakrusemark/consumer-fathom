@@ -1132,6 +1132,52 @@
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
 
+    /* Settings tabs */
+    .settings-tabs {
+      display: flex; gap: 4px;
+      border-bottom: 1px solid var(--rule);
+      margin-bottom: 24px;
+    }
+    .settings-tab {
+      background: transparent; border: 0;
+      padding: 12px 18px; cursor: pointer;
+      font-size: 14px; font-weight: 500; color: var(--ink-soft);
+      font-family: inherit;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: color 120ms, border-color 120ms;
+    }
+    .settings-tab:hover { color: var(--ink); }
+    .settings-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .settings-panel[hidden] { display: none; }
+
+    /* Profile hero — avatar + name/slug/role + sign out */
+    .profile-hero {
+      display: flex; align-items: center; gap: 16px;
+      padding-bottom: 20px; margin-bottom: 4px;
+      border-bottom: 1px solid var(--rule-soft);
+    }
+    .profile-avatar {
+      width: 64px; height: 64px; border-radius: 50%;
+      background: var(--surface-2); border: 1px solid var(--rule);
+      display: grid; place-items: center;
+      font-family: var(--serif); font-size: 24px; color: var(--accent);
+      flex-shrink: 0;
+    }
+    .profile-hero-info { flex: 1; min-width: 0; }
+    .profile-hero-name {
+      font-size: 22px; color: var(--ink); font-weight: 500;
+      font-family: var(--serif);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .profile-hero-sub {
+      display: flex; gap: 10px; align-items: center;
+      margin-top: 4px;
+    }
+    .profile-hero-sub .mono {
+      font-family: var(--mono); font-size: 12px; color: var(--ink-faint);
+    }
+
     /* Profile form (your own self-edit) */
     .profile-form { display: flex; flex-direction: column; gap: 14px; }
     .profile-form .pf-row { display: flex; flex-direction: column; gap: 6px; }
@@ -2663,173 +2709,178 @@
     </header>
 
     <main>
-      <!-- Sign in (paste access token) -->
-      <section class="section">
-        <div class="section-head">
-          <h2>Sign in</h2>
-          <span class="meta" id="signinStatus">not signed in</span>
-        </div>
-        <p style="font-size: 14px; color: var(--ink-soft); line-height: 1.55; margin: 0 0 14px;">
-          Paste the access token for this lake. To generate one, sign in on another device and use <em>API Keys</em> below, then paste the value here on this device.
-        </p>
-        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-          <input type="password" id="signinTokenInput" placeholder="fth_..." autocomplete="off" spellcheck="false" style="flex: 1; min-width: 200px; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; color: var(--ink); font-size: 14px; font-family: var(--mono); outline: none;" />
-          <button class="btn" id="signinSaveBtn">Save</button>
-          <button class="btn ghost" id="signinClearBtn">Clear</button>
-        </div>
-      </section>
+      <!-- Tab nav. The Admin tab carries data-admin-only so the
+           role-gate CSS hides it for member contacts. -->
+      <div class="settings-tabs" role="tablist">
+        <button class="settings-tab active" data-tab="account" role="tab">Account</button>
+        <button class="settings-tab" data-tab="keys" role="tab" data-admin-only>API Keys</button>
+        <button class="settings-tab" data-tab="admin" role="tab" data-admin-only>Admin</button>
+      </div>
 
-      <!-- Your profile — self-edit for soft fields (display_name, pronouns,
-           timezone, language, bio, avatar, aliases). role is admin-only
-           and isn't on the /v1/me/profile endpoint's accepted fields. -->
-      <section class="section" id="profileSection">
-        <div class="section-head">
-          <h2>Your profile</h2>
-          <span class="meta" id="profileRoleBadge">member</span>
-        </div>
-        <p style="font-size: 14px; color: var(--ink-soft); line-height: 1.55; margin: 0 0 14px;">
-          How Fathom refers to you and what it knows about you. Every change writes a profile delta to the lake; history stays.
-        </p>
-        <div class="profile-form">
-          <div class="pf-row">
-            <label>Display name</label>
-            <input type="text" id="pfDisplayName" placeholder="how Fathom refers to you" />
-          </div>
-          <div class="pf-row">
-            <label>Pronouns</label>
-            <input type="text" id="pfPronouns" placeholder="she/her · they/them · …" />
-          </div>
-          <div class="pf-row">
-            <label>Timezone</label>
-            <input type="text" id="pfTimezone" placeholder="America/Chicago" />
-          </div>
-          <div class="pf-row">
-            <label>Language</label>
-            <input type="text" id="pfLanguage" placeholder="en · English · …" />
-          </div>
-          <div class="pf-row">
-            <label>Aliases</label>
-            <input type="text" id="pfAliases" placeholder="comma-separated · nicknames Fathom should resolve to you" />
-          </div>
-          <div class="pf-row">
-            <label>Bio</label>
-            <textarea id="pfBio" rows="3" placeholder="who you are, what you're building, how you relate to others in this lake"></textarea>
-          </div>
-          <div class="pf-row pf-row-inline">
-            <span id="pfSavedAt" class="meta" style="font-size:12px;"></span>
-            <button class="btn" id="pfSaveBtn">Save profile</button>
-          </div>
-        </div>
-      </section>
+      <!-- ═══ ACCOUNT TAB ═══════════════════════════════ -->
+      <div class="settings-panel" data-panel="account">
 
-      <!-- Contacts — admin-only; lists all registered people and their
-           profile snapshots. Click a row to expand the edit pane (role,
-           soft fields, handles). -->
-      <section class="section" data-admin-only id="contactsSection">
-        <div class="section-head">
-          <h2>Contacts</h2>
-          <span class="meta">people Fathom knows</span>
-        </div>
-        <p style="font-size: 14px; color: var(--ink-soft); line-height: 1.55; margin: 0 0 14px;">
-          Each contact has a profile delta (latest-wins). Adding a contact also mints a pair code so they can bind a device.
-        </p>
-        <div id="proposalsBlock" class="proposals-block" hidden>
-          <div class="proposals-head">
-            <span>Fathom noticed someone</span>
-            <span class="meta" id="proposalsCount"></span>
-          </div>
-          <div id="proposalsList"></div>
-        </div>
-        <div id="contactsList" class="contacts-list">
-          <!-- Populated by loadContacts() -->
-        </div>
-        <div style="display:flex; gap:8px; align-items:center; margin-top:14px;">
-          <input type="text" id="newContactSlug" placeholder="slug (e.g. bob, nova)" style="flex:0 0 180px; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; color: var(--ink); font-size: 14px; font-family: var(--mono); outline: none;" />
-          <input type="text" id="newContactDisplayName" placeholder="display name" style="flex:1; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; color: var(--ink); font-size: 14px; font-family: var(--sans); outline: none;" />
-          <select id="newContactRole" style="background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; color: var(--ink); font-size: 14px;">
-            <option value="member">member</option>
-            <option value="admin">admin</option>
-          </select>
-          <button class="btn" id="newContactBtn">Add contact</button>
-        </div>
-        <div id="contactsStatus" class="meta" style="margin-top:10px; font-size:12px;"></div>
-      </section>
-
-      <!-- Subscription -->
-      <section class="section">
-        <div class="section-head">
-          <h2>Subscription</h2>
-          <span class="meta">memory &amp; storage</span>
-        </div>
-        <div class="sub-card upgrade" data-tier-view="free">
-          <div class="tier-row">
-            <span class="tier">Free</span>
-            <span class="price">7-day memory · 5,000 moment cap</span>
-          </div>
-          <h3>Upgrade to Fathom Open.</h3>
-          <p>Unlimited memory horizon. No moment cap. Cross-device sync always. Priority on new source connectors as they ship.</p>
-          <button class="btn" id="upgradeBtn">Upgrade · $12 / month</button>
-          <button class="btn ghost" style="margin-left: 8px;">See pricing</button>
-        </div>
-        <div class="sub-card" data-tier-view="open">
-          <div class="tier-row">
-            <span class="tier tier-open">Open</span>
-            <span class="price">$12 / month · renews May 15, 2026</span>
-          </div>
-          <h3>You're on Fathom Open.</h3>
-          <p>Unlimited memory, no moment cap, every source connector unlocked. Thanks for betting on Fathom early.</p>
-          <button class="btn ghost">Manage billing</button>
-          <button class="btn ghost" id="cancelSubBtn" style="margin-left: 8px;">Cancel subscription</button>
-        </div>
-      </section>
-
-      <!-- API Keys (admin-only; members can only see their own profile) -->
-      <section class="section" data-admin-only>
-        <div class="section-head">
-          <h2>API Keys</h2>
-          <span class="meta">for CLI, MCP, browser, and API access</span>
-        </div>
-        <p style="font-size: 14px; color: var(--ink-soft); line-height: 1.55; margin: 0 0 14px;">
-          Tokens authenticate external tools against your account. Each token works independently. Revoke one without affecting others.
-        </p>
-        <div id="tokenList" class="danger-list" style="margin-bottom: 14px;">
-          <!-- Populated by loadTokens() -->
-        </div>
-        <div style="display: flex; gap: 8px; align-items: center;">
-          <input type="text" id="tokenNameInput" placeholder="Token name (e.g. my laptop)" style="flex: 1; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; color: var(--ink); font-size: 14px; font-family: var(--sans); outline: none;" />
-          <button class="btn" id="createTokenBtn">Create token</button>
-        </div>
-        <div id="scopeCheckboxes" style="margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px 16px;">
-          <!-- Populated by loadTokens() -->
-        </div>
-        <div id="tokenReveal" hidden style="margin-top: 14px; background: var(--bg-deep); border: 1px solid var(--accent); border-radius: 8px; padding: 14px;">
-          <div style="font-size: 12px; color: var(--accent); font-family: var(--mono); letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 6px;">Copy this token now — it won't be shown again</div>
-          <code id="tokenValue" style="display: block; background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; font-family: var(--mono); font-size: 13px; color: var(--ink); word-break: break-all; cursor: pointer;" title="Click to copy"></code>
-        </div>
-      </section>
-
-      <!-- Account actions -->
-      <section class="section">
-        <div class="section-head">
-          <h2>Account actions</h2>
-        </div>
-        <div class="danger-list">
-          <div class="danger-item">
-            <div>
-              <div class="dz-label">Pause account</div>
-              <div class="dz-sub">Stops all source captures. Existing moments stay searchable. Resume anytime.</div>
+        <!-- Profile — self-edit for soft fields (display_name, pronouns,
+             timezone, language, bio, aliases). role is admin-only and
+             isn't on the /v1/me/profile endpoint's accepted fields. -->
+        <section class="section" id="profileSection">
+          <div class="profile-hero">
+            <div class="profile-avatar" id="profileAvatar">?</div>
+            <div class="profile-hero-info">
+              <div class="profile-hero-name" id="profileHeroName">…</div>
+              <div class="profile-hero-sub">
+                <span id="profileHeroSlug" class="mono"></span>
+                <span class="meta" id="profileRoleBadge">member</span>
+              </div>
             </div>
-            <button class="btn ghost">Pause</button>
+            <button class="btn ghost" id="profileSignOutBtn">Sign out</button>
           </div>
-          <div class="danger-item critical">
-            <div>
-              <div class="dz-label">Delete account</div>
-              <div class="dz-sub">Permanent. Revokes every source connection and erases every moment Fathom has captured for you. Cannot be undone.</div>
+          <p style="font-size: 14px; color: var(--ink-soft); line-height: 1.55; margin: 18px 0 14px;">
+            How Fathom refers to you and what it knows about you. Every change writes a profile delta to the lake; history stays.
+          </p>
+          <div class="profile-form">
+            <div class="pf-row">
+              <label>Display name</label>
+              <input type="text" id="pfDisplayName" placeholder="how Fathom refers to you" />
             </div>
-            <button class="btn danger">Delete</button>
+            <div class="pf-row">
+              <label>Pronouns</label>
+              <input type="text" id="pfPronouns" placeholder="she/her · they/them · …" />
+            </div>
+            <div class="pf-row">
+              <label>Timezone</label>
+              <input type="text" id="pfTimezone" placeholder="America/Chicago" />
+            </div>
+            <div class="pf-row">
+              <label>Language</label>
+              <input type="text" id="pfLanguage" placeholder="en · English · …" />
+            </div>
+            <div class="pf-row">
+              <label>Aliases</label>
+              <input type="text" id="pfAliases" placeholder="comma-separated · nicknames Fathom should resolve to you" />
+            </div>
+            <div class="pf-row">
+              <label>Bio</label>
+              <textarea id="pfBio" rows="3" placeholder="who you are, what you're building, how you relate to others in this lake"></textarea>
+            </div>
+            <div class="pf-row pf-row-inline">
+              <span id="pfSavedAt" class="meta" style="font-size:12px;"></span>
+              <button class="btn" id="pfSaveBtn">Save profile</button>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+
+        <!-- Subscription -->
+        <section class="section">
+          <div class="section-head">
+            <h2>Subscription</h2>
+            <span class="meta">memory &amp; storage</span>
+          </div>
+          <div class="sub-card upgrade" data-tier-view="free">
+            <div class="tier-row">
+              <span class="tier">Free</span>
+              <span class="price">7-day memory · 5,000 moment cap</span>
+            </div>
+            <h3>Upgrade to Fathom Open.</h3>
+            <p>Unlimited memory horizon. No moment cap. Cross-device sync always. Priority on new source connectors as they ship.</p>
+            <button class="btn" id="upgradeBtn">Upgrade · $12 / month</button>
+            <button class="btn ghost" style="margin-left: 8px;">See pricing</button>
+          </div>
+          <div class="sub-card" data-tier-view="open">
+            <div class="tier-row">
+              <span class="tier tier-open">Open</span>
+              <span class="price">$12 / month · renews May 15, 2026</span>
+            </div>
+            <h3>You're on Fathom Open.</h3>
+            <p>Unlimited memory, no moment cap, every source connector unlocked. Thanks for betting on Fathom early.</p>
+            <button class="btn ghost">Manage billing</button>
+            <button class="btn ghost" id="cancelSubBtn" style="margin-left: 8px;">Cancel subscription</button>
+          </div>
+        </section>
+
+        <!-- Account actions -->
+        <section class="section">
+          <div class="section-head">
+            <h2>Account actions</h2>
+          </div>
+          <div class="danger-list">
+            <div class="danger-item">
+              <div>
+                <div class="dz-label">Pause account</div>
+                <div class="dz-sub">Stops all source captures. Existing moments stay searchable. Resume anytime.</div>
+              </div>
+              <button class="btn ghost">Pause</button>
+            </div>
+            <div class="danger-item critical">
+              <div>
+                <div class="dz-label">Delete account</div>
+                <div class="dz-sub">Permanent. Revokes every source connection and erases every moment Fathom has captured for you. Cannot be undone.</div>
+              </div>
+              <button class="btn danger">Delete</button>
+            </div>
+          </div>
+        </section>
+      </div><!-- /account panel -->
+
+      <!-- ═══ API KEYS TAB (admin-only) ═════════════════ -->
+      <div class="settings-panel" data-panel="keys" data-admin-only hidden>
+        <section class="section">
+          <div class="section-head">
+            <h2>API Keys</h2>
+            <span class="meta">for CLI, MCP, browser, and API access</span>
+          </div>
+          <p style="font-size: 14px; color: var(--ink-soft); line-height: 1.55; margin: 0 0 14px;">
+            Tokens authenticate external tools against your account. Each token works independently. Revoke one without affecting others.
+          </p>
+          <div id="tokenList" class="danger-list" style="margin-bottom: 14px;">
+            <!-- Populated by loadTokens() -->
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <input type="text" id="tokenNameInput" placeholder="Token name (e.g. my laptop)" style="flex: 1; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; color: var(--ink); font-size: 14px; font-family: var(--sans); outline: none;" />
+            <button class="btn" id="createTokenBtn">Create token</button>
+          </div>
+          <div id="scopeCheckboxes" style="margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px 16px;">
+            <!-- Populated by loadTokens() -->
+          </div>
+          <div id="tokenReveal" hidden style="margin-top: 14px; background: var(--bg-deep); border: 1px solid var(--accent); border-radius: 8px; padding: 14px;">
+            <div style="font-size: 12px; color: var(--accent); font-family: var(--mono); letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 6px;">Copy this token now — it won't be shown again</div>
+            <code id="tokenValue" style="display: block; background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; font-family: var(--mono); font-size: 13px; color: var(--ink); word-break: break-all; cursor: pointer;" title="Click to copy"></code>
+          </div>
+        </section>
+      </div><!-- /keys panel -->
+
+      <!-- ═══ ADMIN TAB ═════════════════════════════════ -->
+      <div class="settings-panel" data-panel="admin" data-admin-only hidden>
+        <section class="section" id="contactsSection">
+          <div class="section-head">
+            <h2>Contacts</h2>
+            <span class="meta">people Fathom knows</span>
+          </div>
+          <p style="font-size: 14px; color: var(--ink-soft); line-height: 1.55; margin: 0 0 14px;">
+            Each contact has a profile delta (latest-wins). Adding a contact also mints a pair code so they can bind a device.
+          </p>
+          <div id="proposalsBlock" class="proposals-block" hidden>
+            <div class="proposals-head">
+              <span>Fathom noticed someone</span>
+              <span class="meta" id="proposalsCount"></span>
+            </div>
+            <div id="proposalsList"></div>
+          </div>
+          <div id="contactsList" class="contacts-list">
+            <!-- Populated by loadContacts() -->
+          </div>
+          <div style="display:flex; gap:8px; align-items:center; margin-top:14px;">
+            <input type="text" id="newContactSlug" placeholder="slug (e.g. bob, nova)" style="flex:0 0 180px; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; color: var(--ink); font-size: 14px; font-family: var(--mono); outline: none;" />
+            <input type="text" id="newContactDisplayName" placeholder="display name" style="flex:1; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; color: var(--ink); font-size: 14px; font-family: var(--sans); outline: none;" />
+            <select id="newContactRole" style="background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; color: var(--ink); font-size: 14px;">
+              <option value="member">member</option>
+              <option value="admin">admin</option>
+            </select>
+            <button class="btn" id="newContactBtn">Add contact</button>
+          </div>
+          <div id="contactsStatus" class="meta" style="margin-top:10px; font-size:12px;"></div>
+        </section>
+      </div><!-- /admin panel -->
     </main>
   </div><!-- /view-settings -->
 
@@ -4715,9 +4766,10 @@
       viewSettings.hidden = false;
       scrollViewToTop(viewSettings);
       syncComposer();
-      loadTokens();
+      // Reset to the Account tab on every open.
+      _switchSettingsTab('account');
+      // Account tab is always loaded; other tabs lazy-load on switch.
       loadMyProfile();
-      if (isAdmin()) loadContacts();
     }
     function closeSettings() {
       viewSettings.hidden = true;
@@ -4726,49 +4778,27 @@
     }
     settingsBackBtn.addEventListener('click', closeSettings);
 
-    // ── Sign in (paste access token) ─────────────
-    const signinStatus = document.getElementById('signinStatus');
-    const signinTokenInput = document.getElementById('signinTokenInput');
-    const signinSaveBtn = document.getElementById('signinSaveBtn');
-    const signinClearBtn = document.getElementById('signinClearBtn');
+    // ── Settings tabs ─────────────────────────────
+    document.querySelectorAll('.settings-tab').forEach(tab => {
+      tab.addEventListener('click', () => _switchSettingsTab(tab.dataset.tab));
+    });
+    function _switchSettingsTab(which) {
+      document.querySelectorAll('.settings-tab').forEach(t => {
+        t.classList.toggle('active', t.dataset.tab === which);
+      });
+      document.querySelectorAll('.settings-panel').forEach(p => {
+        p.hidden = p.dataset.panel !== which;
+      });
+      // Lazy-load when switching into tabs that pull heavier data.
+      if (which === 'keys') loadTokens();
+      if (which === 'admin') loadContacts();
+    }
 
-    function renderSigninStatus() {
-      if (_authToken) {
-        const suffix = _authToken.slice(-4);
-        signinStatus.textContent = `signed in · …${suffix}`;
-      } else {
-        signinStatus.textContent = 'not signed in';
-      }
-    }
-    function _saveSigninToken(v) {
-      if (!v) return;
-      _saveAuthToken(v);
-      signinTokenInput.value = '';
-      renderSigninStatus();
-      if (!viewSettings.hidden) loadTokens();
-    }
-    // Auto-save as soon as the input looks like a token. Covers the common
-    // flow: paste "fth_..." → persisted immediately, no Save click needed.
-    // The Save button stays for manual confirmation / Enter-key submits.
-    const _TOKEN_PATTERN = /^fth_[A-Za-z0-9]{16,}$/;
-    signinTokenInput.addEventListener('input', () => {
-      const v = (signinTokenInput.value || '').trim();
-      if (_TOKEN_PATTERN.test(v)) _saveSigninToken(v);
-    });
-    signinSaveBtn.addEventListener('click', () => {
-      _saveSigninToken((signinTokenInput.value || '').trim());
-    });
-    signinClearBtn.addEventListener('click', () => {
+    // ── Sign out (button lives in the Profile hero) ───
+    document.getElementById('profileSignOutBtn')?.addEventListener('click', () => {
       _clearAuthToken();
-      renderSigninStatus();
-      // On a locked server, dropping the key means this tab is done —
-      // bounce to the login page so the user can paste a fresh one.
       _goToLogin();
     });
-    signinTokenInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); signinSaveBtn.click(); }
-    });
-    renderSigninStatus();
 
     // ── API Tokens ──────────────────────────────
     const tokenList = document.getElementById('tokenList');
@@ -4806,6 +4836,13 @@
         if (saved && p._profile_updated_at) {
           saved.textContent = 'last saved ' + _relativeTime(p._profile_updated_at);
         }
+        // Profile hero (avatar + name + slug + role chip).
+        const avatar = document.getElementById('profileAvatar');
+        const name = document.getElementById('profileHeroName');
+        const sub = document.getElementById('profileHeroSlug');
+        if (avatar) avatar.textContent = _initials(p.display_name, p.slug);
+        if (name) name.textContent = p.display_name || p.slug || 'you';
+        if (sub) sub.textContent = p.slug || '';
       } catch (e) {}
     }
 

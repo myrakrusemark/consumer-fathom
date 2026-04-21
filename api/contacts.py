@@ -152,6 +152,23 @@ async def create(
     return {**row, **profile}
 
 
+class LastAdminError(Exception):
+    """Raised when an edit would leave the registry with no active admins."""
+
+
+async def _count_other_active_admins(exclude_slug: str) -> int:
+    """How many active (non-disabled) admins exist besides this slug?"""
+    rows = await delta_client.list_contact_rows(include_disabled=False)
+    n = 0
+    for row in rows:
+        if row["slug"] == exclude_slug:
+            continue
+        profile = await _fetch_latest_profile(row["slug"])
+        if profile and profile.get("role") == "admin":
+            n += 1
+    return n
+
+
 async def update_profile(
     slug: str,
     changes: dict,
@@ -163,6 +180,10 @@ async def update_profile(
     Returns the new merged contact, or None if the slug doesn't exist.
     Callers are responsible for stripping fields that the caller isn't
     allowed to change (e.g. role on a self-edit).
+
+    Guards against demoting the only admin: if this change would flip
+    role from admin → member and no other admin exists, raises
+    LastAdminError. Callers map that to a 409.
     """
     row = await delta_client.get_contact_row(slug)
     if not row:
@@ -170,6 +191,16 @@ async def update_profile(
     current = await _fetch_latest_profile(slug) or _fallback_profile(slug)
     # Drop private meta keys before merging
     base = {k: v for k, v in current.items() if not k.startswith("_")}
+    new_role = changes.get("role")
+    if (
+        new_role is not None
+        and base.get("role") == "admin"
+        and new_role != "admin"
+        and await _count_other_active_admins(slug) == 0
+    ):
+        raise LastAdminError(
+            f"{slug} is the only admin. Promote someone else before demoting this contact."
+        )
     merged = {**base, **{k: v for k, v in changes.items() if v is not None}}
     await _write_profile_delta(slug, merged, event=event, actor_slug=actor_slug)
     return {**row, **merged}
@@ -402,7 +433,20 @@ async def reject_proposal(
 
 async def disable(slug: str, actor_slug: str | None) -> bool:
     """Tombstone the contact. Sets registry disabled_at and writes a
-    `contact-deleted` delta for lake-side provenance."""
+    `contact-deleted` delta for lake-side provenance.
+
+    Raises LastAdminError if the target is currently the only admin —
+    the registry must always have at least one active admin.
+    """
+    current = await _fetch_latest_profile(slug)
+    if (
+        current
+        and current.get("role") == "admin"
+        and await _count_other_active_admins(slug) == 0
+    ):
+        raise LastAdminError(
+            f"{slug} is the only admin. Promote someone else before disabling."
+        )
     try:
         await delta_client.disable_contact_row(slug)
     except Exception:

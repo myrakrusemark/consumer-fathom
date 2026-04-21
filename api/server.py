@@ -1736,9 +1736,12 @@ async def update_contact(slug: str, req: ContactUpdate, request: Request):
         if not existing:
             raise HTTPException(404, "Contact not found")
         return existing
-    updated = await contacts_mod.update_profile(
-        slug, fields, actor_slug=actor, event="updated"
-    )
+    try:
+        updated = await contacts_mod.update_profile(
+            slug, fields, actor_slug=actor, event="updated"
+        )
+    except contacts_mod.LastAdminError as e:
+        raise HTTPException(409, detail=str(e)) from e
     if not updated:
         raise HTTPException(404, "Contact not found")
     auth.invalidate_contact_cache(slug)
@@ -1747,10 +1750,11 @@ async def update_contact(slug: str, req: ContactUpdate, request: Request):
 
 @app.delete("/v1/contacts/{slug}", dependencies=[Depends(auth.require_admin)])
 async def delete_contact(slug: str, request: Request):
-    if slug == "myra":
-        raise HTTPException(400, "Cannot disable the default admin contact")
     actor = _caller_slug(request)
-    ok = await contacts_mod.disable(slug, actor_slug=actor)
+    try:
+        ok = await contacts_mod.disable(slug, actor_slug=actor)
+    except contacts_mod.LastAdminError as e:
+        raise HTTPException(409, detail=str(e)) from e
     if not ok:
         raise HTTPException(404, "Contact not found")
     auth.invalidate_contact_cache(slug)
