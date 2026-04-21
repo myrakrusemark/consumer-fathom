@@ -106,6 +106,13 @@ async def _write_profile_delta(
         log.exception("contacts: profile delta write failed for %s", slug)
 
 
+async def _fetch_handles_safe(slug: str) -> list[dict]:
+    try:
+        return await delta_client.list_handles(slug)
+    except Exception:
+        return []
+
+
 async def get(slug: str, include_disabled: bool = False) -> dict | None:
     """Merged contact dict, or None if the slug doesn't exist (or is
     disabled and include_disabled=False)."""
@@ -113,7 +120,8 @@ async def get(slug: str, include_disabled: bool = False) -> dict | None:
     if not row:
         return None
     profile = await _fetch_latest_profile(slug) or _fallback_profile(slug)
-    return {**row, **profile}
+    handles = await _fetch_handles_safe(slug)
+    return {**row, **profile, "handles": handles}
 
 
 async def list_all(include_disabled: bool = False) -> list[dict]:
@@ -121,7 +129,8 @@ async def list_all(include_disabled: bool = False) -> list[dict]:
     out = []
     for row in rows:
         profile = await _fetch_latest_profile(row["slug"]) or _fallback_profile(row["slug"])
-        out.append({**row, **profile})
+        handles = await _fetch_handles_safe(row["slug"])
+        out.append({**row, **profile, "handles": handles})
     return out
 
 
@@ -225,7 +234,12 @@ async def propose(
 
 
 async def list_proposals(limit: int = 50) -> list[dict]:
-    """Open proposals — those that haven't been resolved yet."""
+    """Open proposals — those that haven't been resolved yet.
+
+    Returns the delta's expires_at so the UI can render a countdown
+    calculated from the actual TTL (not a hard-coded 30d anywhere but
+    here on write).
+    """
     try:
         all_proposals = await delta_client.query(
             tags_include=[PROPOSAL_TAG], limit=limit * 2
@@ -264,6 +278,7 @@ async def list_proposals(limit: int = 50) -> list[dict]:
         out.append({
             "id": d.get("id"),
             "created_at": d.get("timestamp"),
+            "expires_at": d.get("expires_at"),
             "proposer": proposer,
             "candidate_slug": parsed.get("candidate_slug"),
             "display_name": parsed.get("display_name") or parsed.get("candidate_slug") or "?",
@@ -273,6 +288,33 @@ async def list_proposals(limit: int = 50) -> list[dict]:
         if len(out) >= limit:
             break
     return out
+
+
+async def _get_proposal(proposal_id: str) -> dict | None:
+    """Fetch a single proposal delta and parse its content."""
+    try:
+        delta = await delta_client.get_delta(proposal_id)
+    except Exception:
+        return None
+    if not delta:
+        return None
+    tags = delta.get("tags") or []
+    if PROPOSAL_TAG not in tags:
+        return None
+    try:
+        parsed = json.loads(delta.get("content") or "")
+        if not isinstance(parsed, dict):
+            return None
+    except json.JSONDecodeError:
+        return None
+    return parsed
+
+
+# Well-known channel keys in source_context that should mint as handles
+# on accept. Anything else in source_context is informational only — it
+# stays on the proposal delta as sediment but doesn't land on the
+# contact. Keep this set narrow; dashboard/ollama are system-managed.
+HANDLE_CHANNELS = {"email", "telegram", "twitter", "teams", "claude-code"}
 
 
 async def _write_proposal_resolution(
@@ -305,16 +347,48 @@ async def accept_proposal(
     extra_fields: dict | None = None,
     actor_slug: str | None = None,
 ) -> dict:
-    """Accept a proposal: mint the contact + mark the proposal resolved.
-    Caller (admin endpoint) must check role."""
+    """Accept a proposal: mint the contact + mint handles from well-known
+    source_context keys + mark the proposal resolved. Caller (admin
+    endpoint) must check role.
+
+    Hydrates handles from the ORIGINAL proposal's source_context. If
+    Fathom captured `email: addr@…`, the accept mints the email handle
+    automatically. Keys outside HANDLE_CHANNELS stay on the proposal
+    delta as sediment — the admin can read them in the lake but they
+    don't land on the contact. Unique-violation on a handle (channel,
+    identifier already bound) is logged, not fatal.
+    """
     initial = {"display_name": display_name, "role": role}
     if extra_fields:
         initial.update(extra_fields)
     created = await create(slug, initial_profile=initial, actor_slug=actor_slug)
-    await _write_proposal_resolution(proposal_id, "accepted", actor_slug, note=(
-        f"Proposal {proposal_id} accepted as contact {slug}."
-    ))
-    return created
+
+    proposal = await _get_proposal(proposal_id)
+    source_context = (proposal or {}).get("source_context") or {}
+    minted_handles: list[dict] = []
+    for channel, identifier in source_context.items():
+        if channel not in HANDLE_CHANNELS:
+            continue
+        ident = str(identifier).strip()
+        if not ident:
+            continue
+        try:
+            handle = await delta_client.add_handle(slug, channel, ident)
+            minted_handles.append(handle)
+        except Exception:
+            log.warning(
+                "accept_proposal: handle %s:%s for %s already bound or failed",
+                channel, ident, slug,
+            )
+
+    note = f"Proposal {proposal_id} accepted as contact {slug}."
+    if minted_handles:
+        note += " Seeded handles: " + ", ".join(
+            f"{h['channel']}:{h['identifier']}" for h in minted_handles
+        ) + "."
+    await _write_proposal_resolution(proposal_id, "accepted", actor_slug, note=note)
+
+    return {**created, "seeded_handles": minted_handles}
 
 
 async def reject_proposal(

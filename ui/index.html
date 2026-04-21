@@ -1218,14 +1218,51 @@
       margin-top: 14px; padding-top: 14px;
       border-top: 1px solid var(--rule-soft);
     }
+    .cc-handles > label {
+      display: block;
+      font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--ink-faint); font-weight: 500; margin-bottom: 8px;
+    }
+    .cc-handles-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+    .cc-handles-empty {
+      font-size: 12px; color: var(--ink-faint); padding: 6px 0;
+      font-style: italic;
+    }
     .cc-handle-row {
-      display: flex; gap: 6px; align-items: center;
-      font-family: var(--mono); font-size: 12px;
-      color: var(--ink-soft); padding: 4px 0;
+      display: flex; gap: 8px; align-items: center;
+      font-family: var(--mono); font-size: 12.5px;
+      color: var(--ink-soft); padding: 6px 10px;
+      background: var(--bg); border: 1px solid var(--rule);
+      border-radius: 6px;
     }
     .cc-handle-row .chan {
-      background: var(--surface-2); padding: 2px 6px; border-radius: 4px;
-      color: var(--ink);
+      background: var(--surface-2); padding: 2px 8px; border-radius: 4px;
+      color: var(--accent); font-weight: 500; font-size: 11px;
+      letter-spacing: 0.04em;
+    }
+    .cc-handle-row .ident {
+      flex: 1; color: var(--ink);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .cc-handle-row .btn-x {
+      background: transparent; border: 0; color: var(--ink-faint);
+      cursor: pointer; padding: 2px 6px; font-size: 15px; line-height: 1;
+      border-radius: 4px;
+    }
+    .cc-handle-row .btn-x:hover { color: var(--danger); background: rgba(224,120,118,0.08); }
+    .cc-handle-add {
+      display: flex; gap: 6px; align-items: center;
+    }
+    .cc-handle-add input {
+      flex: 1; min-width: 0;
+      background: var(--bg); border: 1px solid var(--rule);
+      border-radius: 6px; padding: 7px 10px; color: var(--ink);
+      font-size: 12.5px; font-family: var(--mono); outline: none;
+    }
+    .cc-handle-add input:first-child { flex: 0 0 140px; }
+    .cc-handle-add input:focus { border-color: var(--accent); }
+    .cc-handle-add .btn {
+      padding: 7px 14px; font-size: 12.5px;
     }
 
     /* Proposed-contact block (Fathom suggested, admin approves) */
@@ -4829,17 +4866,33 @@
       }
     }
 
+    function _expiresLabel(iso) {
+      if (!iso) return '';
+      const diff = new Date(iso).getTime() - Date.now();
+      if (diff <= 0) return 'expired';
+      const sec = Math.floor(diff / 1000);
+      if (sec < 60) return `expires in ${sec}s`;
+      const min = Math.floor(sec / 60);
+      if (min < 60) return `expires in ${min}m`;
+      const hrs = Math.floor(min / 60);
+      if (hrs < 48) return `expires in ${hrs}h`;
+      const days = Math.floor(hrs / 24);
+      return `expires in ${days}d`;
+    }
+
     function _proposalCardHTML(p) {
       const slug = p.candidate_slug || '';
-      const ctx = p.source_context && Object.keys(p.source_context).length
-        ? `  ·  ${Object.entries(p.source_context).map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`).join(', ')}`
+      const ctxPairs = p.source_context && Object.keys(p.source_context).length
+        ? Object.entries(p.source_context).map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`).join(', ')
         : '';
+      const ctx = ctxPairs ? `  ·  ${ctxPairs}` : '';
+      const ttl = _expiresLabel(p.expires_at);
       const suggestedName = (p.display_name || '').replace(/"/g, '&quot;');
       const suggestedSlug = slug.replace(/"/g, '&quot;');
       return `
         <div class="proposal-card" data-pid="${p.id}" data-mode="">
           <div class="pc-name">${p.display_name || p.candidate_slug || 'unnamed'}</div>
-          <div class="pc-meta">proposed ${_relativeTime(p.created_at)}${ctx}</div>
+          <div class="pc-meta">${ttl}${ctx}</div>
           <div class="pc-rationale">${(p.rationale || '').replace(/</g, '&lt;')}</div>
           <div class="pc-actions">
             <button class="btn ghost" data-action="reject">Reject</button>
@@ -4946,6 +4999,16 @@
             if (!confirm(`Disable contact "${slug}"? This tombstones their registry row and writes a contact-deleted delta. They remain in the lake as history.`)) return;
             await disableContact(slug);
           });
+          card.querySelector('[data-action="add-handle"]')?.addEventListener('click', async (ev) => {
+            ev.stopPropagation();
+            await addContactHandle(card, slug);
+          });
+          card.querySelectorAll('[data-action="remove-handle"]').forEach(btn => {
+            btn.addEventListener('click', async (ev) => {
+              ev.stopPropagation();
+              await removeContactHandle(slug, btn.dataset.channel, btn.dataset.identifier);
+            });
+          });
         });
       } catch (e) {
         list.innerHTML = '<div style="color: var(--danger); font-size: 13px;">Error: ' + e.message + '</div>';
@@ -4956,6 +5019,29 @@
       const src = (name || slug || '?').trim();
       const parts = src.split(/\s+/).map(w => w[0] || '');
       return (parts.join('').slice(0, 2) || '?').toUpperCase();
+    }
+
+    function _handlesHTML(slug, handles) {
+      const rows = (handles || []).map(h => `
+        <div class="cc-handle-row">
+          <span class="chan">${h.channel}</span>
+          <span class="ident">${(h.identifier || '').replace(/</g, '&lt;')}</span>
+          <button class="btn-x" data-action="remove-handle" data-channel="${h.channel}" data-identifier="${(h.identifier || '').replace(/"/g, '&quot;')}" title="Remove handle">×</button>
+        </div>
+      `).join('');
+      return `
+        <div class="cc-handles">
+          <label>Handles</label>
+          <div class="cc-handles-list">
+            ${rows || '<div class="cc-handles-empty">no handles yet</div>'}
+          </div>
+          <div class="cc-handle-add">
+            <input type="text" data-handle="channel" placeholder="channel (email, telegram, twitter…)" />
+            <input type="text" data-handle="identifier" placeholder="identifier" />
+            <button class="btn" data-action="add-handle">Add</button>
+          </div>
+        </div>
+      `;
     }
 
     function _contactCardHTML(c) {
@@ -5007,6 +5093,7 @@
               <label>Bio</label>
               <textarea data-field="bio" rows="3">${(c.bio || '').replace(/</g, '&lt;')}</textarea>
             </div>
+            ${_handlesHTML(slug, c.handles)}
             <div class="cc-actions">
               <button class="btn ghost" data-action="disable" ${slug === 'myra' ? 'disabled title="Cannot disable the default admin"' : ''}>Disable</button>
               <button class="btn" data-action="save">Save</button>
@@ -5014,6 +5101,47 @@
           </div>
         </div>
       `;
+    }
+
+    async function addContactHandle(card, slug) {
+      const channel = card.querySelector('[data-handle="channel"]').value.trim();
+      const identifier = card.querySelector('[data-handle="identifier"]').value.trim();
+      if (!channel || !identifier) {
+        alert('Both channel and identifier are required.');
+        return;
+      }
+      try {
+        const r = await fetch(API_BASE + '/v1/contacts/' + encodeURIComponent(slug) + '/handles', {
+          method: 'POST', headers: authHeaders(),
+          body: JSON.stringify({ channel, identifier }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          alert('Add handle failed: ' + (err.detail || r.status));
+          return;
+        }
+        await loadContacts();
+      } catch (e) {
+        alert('Add handle failed: ' + e.message);
+      }
+    }
+
+    async function removeContactHandle(slug, channel, identifier) {
+      if (!confirm(`Remove handle ${channel}:${identifier} from ${slug}?`)) return;
+      try {
+        const r = await fetch(API_BASE + '/v1/contacts/' + encodeURIComponent(slug) + '/handles', {
+          method: 'DELETE', headers: authHeaders(),
+          body: JSON.stringify({ channel, identifier }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          alert('Remove handle failed: ' + (err.detail || r.status));
+          return;
+        }
+        await loadContacts();
+      } catch (e) {
+        alert('Remove handle failed: ' + e.message);
+      }
     }
 
     async function saveContact(card, slug) {
