@@ -61,8 +61,12 @@
         </div>
         <label class="field">
           <span class="label">Default TTL (seconds)</span>
-          <input id="ttl-seconds" type="number" min="60" max="86400" step="60" />
-          <em class="hint">how long captures stay in the lake before the reaper deletes them</em>
+          <input id="ttl-seconds" type="number" min="60" max="15552000" step="60" />
+          <em class="hint">how long captures stay in the lake before the reaper deletes them — max 180 days (15,552,000s)</em>
+        </label>
+        <label class="field checkbox-field">
+          <input id="never-expire" type="checkbox" />
+          <span class="label-inline">Never expire (disables TTL; captures persist until you revoke them)</span>
         </label>
         <label class="field">
           <span class="label">Scroll debounce (ms)</span>

@@ -15,11 +15,11 @@ export async function uploadScreenshot({
   url,
   title,
   reason,
-  ttlSeconds
+  ttlSeconds,
+  expires
 }) {
   const host = hostnameOf(url);
   const now = new Date();
-  const expiresAt = new Date(now.getTime() + ttlSeconds * 1000).toISOString();
 
   const content = JSON.stringify({
     url,
@@ -43,7 +43,10 @@ export async function uploadScreenshot({
   form.append("content", content);
   form.append("tags", tags);
   form.append("source", `browser-extension:${host}`);
-  form.append("expires_at", expiresAt);
+  if (expires !== false && ttlSeconds) {
+    const expiresAt = new Date(now.getTime() + ttlSeconds * 1000).toISOString();
+    form.append("expires_at", expiresAt);
+  }
 
   const headers = {};
   if (apiToken) headers["Authorization"] = `Bearer ${apiToken}`;

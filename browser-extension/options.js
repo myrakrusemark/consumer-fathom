@@ -6,6 +6,8 @@ function hydrate(settings) {
   $("#api-url").value = settings.apiUrl;
   $("#api-token").value = settings.apiToken;
   $("#ttl-seconds").value = String(settings.ttlSeconds);
+  $("#never-expire").checked = settings.expires === false;
+  $("#ttl-seconds").disabled = settings.expires === false;
   $("#scroll-debounce").value = String(settings.scrollDebounceMs);
   $("#scroll-threshold").value = String(settings.scrollThresholdPct);
   $("#blocklist").value = settings.blocklist.join("\n");
@@ -20,6 +22,7 @@ function readForm() {
     apiUrl: $("#api-url").value.trim() || DEFAULTS.apiUrl,
     apiToken: $("#api-token").value.trim(),
     ttlSeconds: Math.max(60, parseInt($("#ttl-seconds").value, 10) || DEFAULTS.ttlSeconds),
+    expires: !$("#never-expire").checked,
     scrollDebounceMs: Math.max(
       200,
       parseInt($("#scroll-debounce").value, 10) || DEFAULTS.scrollDebounceMs
@@ -53,5 +56,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     await chrome.storage.sync.set(DEFAULTS);
     hydrate(DEFAULTS);
     flashStatus("reset to defaults");
+  });
+
+  $("#never-expire").addEventListener("change", (e) => {
+    $("#ttl-seconds").disabled = e.target.checked;
   });
 });

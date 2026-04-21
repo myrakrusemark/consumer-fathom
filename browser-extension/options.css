@@ -151,6 +151,28 @@ main {
   color: var(--ink-faint);
 }
 
+.checkbox-field {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.checkbox-field input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  accent-color: var(--signal);
+  cursor: pointer;
+}
+
+.checkbox-field .label-inline {
+  font-family: var(--sans);
+  font-size: var(--text-md);
+  color: var(--ink-soft);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
 textarea {
   width: 100%;
   background: var(--bg-deep);

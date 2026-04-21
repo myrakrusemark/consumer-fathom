@@ -52,12 +52,45 @@ function paintToggle(preferred) {
   }
 }
 
+function fmtDays(days) {
+  if (days === 1) return "1 day";
+  if (days < 7) return `${days} days`;
+  if (days === 7) return "1 week";
+  if (days % 7 === 0 && days < 30) return `${days / 7} weeks`;
+  if (days === 30 || days === 31) return "1 month";
+  if (days % 30 === 0 && days < 365) return `${days / 30} months`;
+  return `${days} days`;
+}
+
+function paintTtl(settings) {
+  const ttlSection = document.querySelector(".ttl");
+  const slider = $("#ttl-slider");
+  const never = $("#never-expire");
+  const value = $("#ttl-value");
+
+  const expires = settings.expires !== false;
+  never.checked = !expires;
+
+  const days = Math.max(1, Math.round((settings.ttlSeconds || 86400) / 86400));
+  slider.value = String(Math.min(180, days));
+  slider.disabled = !expires;
+
+  if (expires) {
+    value.textContent = fmtDays(days);
+    ttlSection.classList.remove("forever");
+  } else {
+    value.textContent = "forever";
+    ttlSection.classList.add("forever");
+  }
+}
+
 async function render() {
   const settings = await loadSettings();
   const runtime = await getRuntime();
 
   paintStartStop(runtime.mode);
   paintToggle(runtime.preferredMode);
+  paintTtl(settings);
 
   if (!settings.apiToken) {
     setStatus("paste an API token in settings →", "warn");
@@ -185,4 +218,22 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("#capture-now").addEventListener("click", onCaptureNow);
   $("#block-page").addEventListener("click", onBlockPage);
   $("#open-options").addEventListener("click", onOpenOptions);
+
+  $("#ttl-slider").addEventListener("input", (e) => {
+    const days = parseInt(e.target.value, 10) || 1;
+    $("#ttl-value").textContent = fmtDays(days);
+  });
+
+  $("#ttl-slider").addEventListener("change", async (e) => {
+    const days = parseInt(e.target.value, 10) || 1;
+    await saveSettings({ ttlSeconds: days * 86400 });
+    setStatus(`TTL: ${fmtDays(days)}`);
+  });
+
+  $("#never-expire").addEventListener("change", async (e) => {
+    const never = e.target.checked;
+    await saveSettings({ expires: !never });
+    render();
+    setStatus(never ? "captures won't expire" : "captures will expire");
+  });
 });

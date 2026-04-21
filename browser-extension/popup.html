@@ -28,6 +28,25 @@
       </div>
     </section>
 
+    <section class="ttl">
+      <div class="ttl-head">
+        <span class="ttl-label">Keep for <span id="ttl-value">1 day</span></span>
+        <label class="never-expire">
+          <input type="checkbox" id="never-expire" />
+          <span>never expire</span>
+        </label>
+      </div>
+      <input
+        id="ttl-slider"
+        type="range"
+        min="1"
+        max="180"
+        step="1"
+        value="1"
+        aria-label="TTL in days"
+      />
+    </section>
+
     <div class="action-row">
       <button id="capture-now" class="action" type="button">
         <span class="action-label">Capture now</span>

@@ -3,7 +3,8 @@
 export const DEFAULTS = {
   apiUrl: "http://localhost:8201",
   apiToken: "",
-  ttlSeconds: 1800,
+  ttlSeconds: 86400,
+  expires: true,
   scrollDebounceMs: 2000,
   scrollThresholdPct: 80,
   // Hostname suffix-match. Entries match exact hostname and subdomains.
@@ -31,6 +32,7 @@ const SYNC_KEYS = [
   "apiUrl",
   "apiToken",
   "ttlSeconds",
+  "expires",
   "scrollDebounceMs",
   "scrollThresholdPct",
   "blocklist"

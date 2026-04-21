@@ -15,11 +15,32 @@ import {
 } from "./lib/config.js";
 import { dataUrlToBlob, uploadScreenshot } from "./lib/capture.js";
 
-const BADGE_COLOR_ACTIVE = "#6366f1";
-const BADGE_COLOR_CAPTURING = "#f59e0b";
 const BADGE_COLOR_UNCONFIGURED = "#ef4444";
 const CAPTURE_COOLDOWN_MS = 1500; // per-tab rate limit
 const MAX_RECENTS = 5;
+
+// Icon state → per-size PNG path. Three colors reuse the Fathom delta
+// mark: gray when paused, amber when armed, teal while capturing.
+const ICONS = {
+  off: {
+    16: "icons/icon-off-16.png",
+    32: "icons/icon-off-32.png",
+    48: "icons/icon-off-48.png",
+    128: "icons/icon-off-128.png"
+  },
+  on: {
+    16: "icons/icon-on-16.png",
+    32: "icons/icon-on-32.png",
+    48: "icons/icon-on-48.png",
+    128: "icons/icon-on-128.png"
+  },
+  capture: {
+    16: "icons/icon-capture-16.png",
+    32: "icons/icon-capture-32.png",
+    48: "icons/icon-capture-48.png",
+    128: "icons/icon-capture-128.png"
+  }
+};
 
 const lastCaptureAt = new Map(); // tabId -> timestamp ms
 const scrollTimers = new Map(); // tabId -> setTimeout handle
@@ -56,23 +77,31 @@ async function paintBadgeForTab(tabId) {
     runtime.mode === MODE.FOLLOW_ME ||
     (runtime.mode === MODE.THIS_TAB && runtime.activeTabs.includes(tabId));
   const blocked = tab.url ? isBlocked(tab.url, settings.blocklist) : true;
+  const iconState = active && !blocked ? "on" : "off";
 
-  if (!active || blocked) {
-    await chrome.action.setBadgeText({ tabId, text: "" });
-    return;
+  try {
+    await chrome.action.setIcon({ tabId, path: ICONS[iconState] });
+  } catch {
+    // tab may have closed; ignore
   }
-  if (!settings.apiToken) {
+
+  // Only badge we still set is KEY — a hard warning when the user has
+  // activated capture but hasn't pasted a token. Everything else is
+  // communicated by the icon color.
+  if (iconState === "on" && !settings.apiToken) {
     await chrome.action.setBadgeBackgroundColor({ tabId, color: BADGE_COLOR_UNCONFIGURED });
     await chrome.action.setBadgeText({ tabId, text: "KEY" });
-    return;
+  } else {
+    await chrome.action.setBadgeText({ tabId, text: "" });
   }
-  await chrome.action.setBadgeBackgroundColor({ tabId, color: BADGE_COLOR_ACTIVE });
-  await chrome.action.setBadgeText({ tabId, text: "ON" });
 }
 
 async function flashBadgeCapturing(tabId) {
-  await chrome.action.setBadgeBackgroundColor({ tabId, color: BADGE_COLOR_CAPTURING });
-  await chrome.action.setBadgeText({ tabId, text: "REC" });
+  try {
+    await chrome.action.setIcon({ tabId, path: ICONS.capture });
+  } catch {
+    return;
+  }
   setTimeout(() => paintBadgeForTab(tabId), 800);
 }
 
@@ -114,7 +143,8 @@ async function captureTab(tab, reason) {
       url: tab.url,
       title: tab.title,
       reason,
-      ttlSeconds: settings.ttlSeconds
+      ttlSeconds: settings.ttlSeconds,
+      expires: settings.expires !== false
     });
   } catch (err) {
     console.warn("[follow-me] upload failed:", err);
@@ -122,6 +152,10 @@ async function captureTab(tab, reason) {
   }
 
   const runtime = await getRuntime();
+  const expiresAt =
+    settings.expires !== false && settings.ttlSeconds
+      ? new Date(Date.now() + settings.ttlSeconds * 1000).toISOString()
+      : null;
   const recents = [
     {
       id: result.id,
@@ -130,7 +164,7 @@ async function captureTab(tab, reason) {
       title: shortTitleFrom(tab.url, tab.title),
       reason,
       at: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + settings.ttlSeconds * 1000).toISOString()
+      expiresAt
     },
     ...(runtime.recents || [])
   ].slice(0, MAX_RECENTS);
