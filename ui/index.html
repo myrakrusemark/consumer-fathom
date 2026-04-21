@@ -1228,6 +1228,52 @@
       color: var(--ink);
     }
 
+    /* Proposed-contact block (Fathom suggested, admin approves) */
+    .proposals-block {
+      background: var(--surface-2); border: 1px solid var(--accent-soft, var(--rule));
+      border-radius: 10px; padding: 14px 16px; margin-bottom: 14px;
+    }
+    .proposals-head {
+      display: flex; justify-content: space-between; align-items: baseline;
+      font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--accent); font-weight: 600;
+      margin-bottom: 10px;
+    }
+    .proposal-card {
+      background: var(--surface); border: 1px solid var(--rule);
+      border-radius: 8px; padding: 12px 14px; margin-top: 8px;
+    }
+    .proposal-card .pc-name {
+      font-size: 14.5px; color: var(--ink); font-weight: 500;
+    }
+    .proposal-card .pc-meta {
+      font-size: 11.5px; color: var(--ink-faint); margin-top: 2px;
+      font-family: var(--mono);
+    }
+    .proposal-card .pc-rationale {
+      font-size: 13px; color: var(--ink-soft); margin-top: 8px; line-height: 1.45;
+    }
+    .proposal-card .pc-form {
+      margin-top: 10px; padding-top: 10px;
+      border-top: 1px dashed var(--rule-soft);
+      display: none;
+    }
+    .proposal-card[data-mode="accept"] .pc-form { display: block; }
+    .proposal-card .pc-form .pf-row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+    .proposal-card .pc-form label {
+      font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--ink-faint); font-weight: 500;
+    }
+    .proposal-card .pc-form input,
+    .proposal-card .pc-form select {
+      background: var(--bg); border: 1px solid var(--rule);
+      border-radius: 8px; padding: 8px 10px; color: var(--ink);
+      font-size: 13px; font-family: var(--sans); outline: none;
+    }
+    .proposal-card .pc-actions {
+      display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px;
+    }
+
     .sub-card {
       background: var(--surface); border: 1px solid var(--rule);
       border-radius: var(--radius); padding: 20px;
@@ -2641,6 +2687,13 @@
         <p style="font-size: 14px; color: var(--ink-soft); line-height: 1.55; margin: 0 0 14px;">
           Each contact has a profile delta (latest-wins). Adding a contact also mints a pair code so they can bind a device.
         </p>
+        <div id="proposalsBlock" class="proposals-block" hidden>
+          <div class="proposals-head">
+            <span>Fathom noticed someone</span>
+            <span class="meta" id="proposalsCount"></span>
+          </div>
+          <div id="proposalsList"></div>
+        </div>
         <div id="contactsList" class="contacts-list">
           <!-- Populated by loadContacts() -->
         </div>
@@ -4746,10 +4799,125 @@
     }
     document.getElementById('pfSaveBtn')?.addEventListener('click', saveMyProfile);
 
+    // ── Contact proposals (admin view) ────────────
+    async function loadProposals() {
+      const block = document.getElementById('proposalsBlock');
+      const list = document.getElementById('proposalsList');
+      const count = document.getElementById('proposalsCount');
+      if (!block || !list) return;
+      try {
+        const r = await fetch(API_BASE + '/v1/contact-proposals', { headers: authHeaders() });
+        if (!r.ok) { block.hidden = true; return; }
+        const proposals = await r.json();
+        if (!proposals.length) { block.hidden = true; return; }
+        block.hidden = false;
+        count.textContent = proposals.length + ' pending';
+        list.innerHTML = proposals.map(_proposalCardHTML).join('');
+        list.querySelectorAll('.proposal-card').forEach(card => {
+          const pid = card.dataset.pid;
+          card.querySelector('[data-action="open-accept"]')?.addEventListener('click', () => {
+            card.dataset.mode = 'accept';
+          });
+          card.querySelector('[data-action="confirm-accept"]')?.addEventListener('click', () => acceptProposal(card, pid));
+          card.querySelector('[data-action="reject"]')?.addEventListener('click', () => rejectProposal(card, pid));
+          card.querySelector('[data-action="cancel"]')?.addEventListener('click', () => {
+            card.dataset.mode = '';
+          });
+        });
+      } catch (e) {
+        block.hidden = true;
+      }
+    }
+
+    function _proposalCardHTML(p) {
+      const slug = p.candidate_slug || '';
+      const ctx = p.source_context && Object.keys(p.source_context).length
+        ? `  ·  ${Object.entries(p.source_context).map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`).join(', ')}`
+        : '';
+      const suggestedName = (p.display_name || '').replace(/"/g, '&quot;');
+      const suggestedSlug = slug.replace(/"/g, '&quot;');
+      return `
+        <div class="proposal-card" data-pid="${p.id}" data-mode="">
+          <div class="pc-name">${p.display_name || p.candidate_slug || 'unnamed'}</div>
+          <div class="pc-meta">proposed ${_relativeTime(p.created_at)}${ctx}</div>
+          <div class="pc-rationale">${(p.rationale || '').replace(/</g, '&lt;')}</div>
+          <div class="pc-actions">
+            <button class="btn ghost" data-action="reject">Reject</button>
+            <button class="btn" data-action="open-accept">Accept…</button>
+          </div>
+          <div class="pc-form">
+            <div class="pf-row">
+              <label>Slug</label>
+              <input type="text" data-field="slug" value="${suggestedSlug}" placeholder="URL-safe identifier" />
+            </div>
+            <div class="pf-row">
+              <label>Display name</label>
+              <input type="text" data-field="display_name" value="${suggestedName}" />
+            </div>
+            <div class="pf-row">
+              <label>Role</label>
+              <select data-field="role">
+                <option value="member" selected>member</option>
+                <option value="admin">admin</option>
+              </select>
+            </div>
+            <div class="pc-actions">
+              <button class="btn ghost" data-action="cancel">Cancel</button>
+              <button class="btn" data-action="confirm-accept">Create contact</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function acceptProposal(card, pid) {
+      const fields = {};
+      card.querySelectorAll('[data-field]').forEach(el => {
+        fields[el.dataset.field] = el.value.trim();
+      });
+      if (!fields.slug || !fields.display_name) {
+        alert('Slug and display name are required.');
+        return;
+      }
+      try {
+        const r = await fetch(API_BASE + '/v1/contact-proposals/' + encodeURIComponent(pid) + '/accept', {
+          method: 'POST', headers: authHeaders(),
+          body: JSON.stringify(fields),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          alert('Accept failed: ' + (err.detail || r.status));
+          return;
+        }
+        await Promise.all([loadProposals(), loadContacts()]);
+      } catch (e) {
+        alert('Accept failed: ' + e.message);
+      }
+    }
+
+    async function rejectProposal(card, pid) {
+      if (!confirm('Reject this proposal? It stays in the lake as sediment either way.')) return;
+      try {
+        const r = await fetch(API_BASE + '/v1/contact-proposals/' + encodeURIComponent(pid) + '/reject', {
+          method: 'POST', headers: authHeaders(),
+          body: JSON.stringify({}),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          alert('Reject failed: ' + (err.detail || r.status));
+          return;
+        }
+        await loadProposals();
+      } catch (e) {
+        alert('Reject failed: ' + e.message);
+      }
+    }
+
     // ── Contacts (admin view) ─────────────────────
     async function loadContacts() {
       const list = document.getElementById('contactsList');
       if (!list) return;
+      loadProposals();
       try {
         const r = await fetch(API_BASE + '/v1/contacts', { headers: authHeaders() });
         if (!r.ok) {

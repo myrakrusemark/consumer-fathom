@@ -286,6 +286,59 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "propose_contact",
+            "description": (
+                "Notice that a person exists who isn't in the contacts "
+                "registry yet, and write a proposal for an admin to "
+                "review. Use this when: (1) someone mentioned in "
+                "conversation clearly refers to a real person you don't "
+                "have on file — partner, coworker, frequent correspondent; "
+                "(2) an unknown handle shows up in a channel you were "
+                "listening on. You never create contacts yourself — this "
+                "tool writes a `contact-proposal` delta that surfaces in "
+                "the admin's Contacts UI with Accept/Reject buttons. "
+                "Search proposals first to avoid duplicates. Keep the "
+                "rationale short and concrete: who they seem to be, why "
+                "they matter, what evidence led you to propose them."
+            ),
+            "parameters": {
+                "type": "object",
+                "required": ["display_name", "rationale"],
+                "properties": {
+                    "display_name": {
+                        "type": "string",
+                        "description": "How people refer to this person. Required.",
+                    },
+                    "candidate_slug": {
+                        "type": "string",
+                        "description": (
+                            "URL-safe identifier you'd suggest (e.g. 'nova', "
+                            "'bob'). Lowercase, no spaces. Admin can override "
+                            "on accept. Leave blank if you're unsure."
+                        ),
+                    },
+                    "rationale": {
+                        "type": "string",
+                        "description": (
+                            "1-3 sentences: who they seem to be, what evidence "
+                            "supports that, why they should be a contact."
+                        ),
+                    },
+                    "source_context": {
+                        "type": "object",
+                        "description": (
+                            "Optional hints for the admin: "
+                            "{chat_session, delta_ids, channel, handle, …}. "
+                            "Whatever helps the admin verify."
+                        ),
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "explain",
             "description": (
                 "Explain a part of the Fathom dashboard to the user. Call this "
@@ -413,6 +466,30 @@ async def execute(name: str, arguments: dict, session_id: str | None = None) -> 
 
         if name == "routines":
             return await _execute_routines(arguments, session_id=session_id)
+
+        if name == "propose_contact":
+            from . import contacts as contacts_mod
+            written = await contacts_mod.propose(
+                candidate_slug=(arguments.get("candidate_slug") or "").strip() or None,
+                display_name=arguments["display_name"],
+                rationale=arguments["rationale"],
+                source_context=arguments.get("source_context") or {},
+                # In the chat tool path, Fathom writes the proposal as
+                # Fathom (no contact: tag) — the admin just needs to
+                # know it's a proposal, not who proposed it.
+                proposer_slug=None,
+            )
+            return json.dumps({
+                "ok": True,
+                "proposal_id": written.get("id"),
+                "candidate_slug": written.get("candidate_slug"),
+                "display_name": written.get("display_name"),
+                "note": (
+                    "Proposal written. Admin will see it in Settings → "
+                    "Contacts and can Accept (creates the contact) or "
+                    "Reject (keeps the proposal as sediment)."
+                ),
+            })
 
         if name == "explain":
             return await _execute_explain(arguments)

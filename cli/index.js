@@ -233,6 +233,41 @@ async function cmdMind(args) {
   }
 }
 
+async function cmdProposeContact(args) {
+  // Parse positional display_name + optional --flags.
+  const flagged = new Set(["--slug", "--candidate-slug", "--rationale", "--context"]);
+  const parts = [];
+  let i = 0;
+  while (i < args.length) {
+    if (flagged.has(args[i])) { i += 2; continue; }
+    parts.push(args[i]);
+    i++;
+  }
+  const displayName = parts.join(" ").trim();
+  const rationale = flagVal(args, "--rationale") || "";
+  const slug = flagVal(args, "--slug") || flagVal(args, "--candidate-slug") || "";
+  const contextRaw = flagVal(args, "--context") || "";
+  if (!displayName || !rationale) {
+    console.error("Usage: fathom propose_contact <display_name> --rationale \"<why>\" [--slug bob] [--context '{\"channel\":\"telegram\"}']");
+    process.exit(1);
+  }
+  let context = {};
+  if (contextRaw) {
+    try { context = JSON.parse(contextRaw); }
+    catch { console.error("--context must be valid JSON"); process.exit(1); }
+  }
+  const data = await api("POST", "/v1/contact-proposals", {
+    display_name: displayName,
+    rationale,
+    candidate_slug: slug || null,
+    source_context: context,
+  });
+  console.log(`Proposal written. id=${data.id || "?"}`);
+  console.log(`  display_name: ${data.display_name}`);
+  if (data.candidate_slug) console.log(`  candidate_slug: ${data.candidate_slug}`);
+  console.log("  Admin can review in Settings → Contacts.");
+}
+
 async function cmdChat(args) {
   const message = args.filter(a => !a.startsWith("--")).join(" ");
   if (!message) { console.error("Usage: fathom chat <message>"); process.exit(1); }
@@ -269,6 +304,7 @@ const COMMANDS = {
   see_image:   { fn: cmdSeeImage,   usage: 'fathom see_image <media_hash>' },
   mind:        { fn: cmdMind,       usage: 'fathom mind [tags]' },
   chat:        { fn: cmdChat,       usage: 'fathom chat <message> [--session ID]' },
+  propose_contact: { fn: cmdProposeContact, usage: 'fathom propose_contact <display_name> --rationale "<why>" [--slug bob] [--context \'{"channel":"telegram"}\']' },
 
   // Silent aliases — old verb names still work, undocumented in help
   search: { fn: cmdRemember, hidden: true },

@@ -165,6 +165,146 @@ async def update_profile(
     return {**row, **merged}
 
 
+# ── Proposals (propose-then-confirm pattern) ────────────────────────
+#
+# Fathom, bridges, and any authenticated caller can observe a potential
+# contact and write a `contact-proposal` delta. Admins review + accept
+# or reject. The proposal is sediment either way — its presence marks
+# that Fathom noticed this person exists, whether or not they became
+# a formal contact.
+
+
+PROPOSAL_TAG = "contact-proposal"
+PROPOSAL_RESOLVED_TAG = "contact-proposal-resolved"
+
+
+async def propose(
+    candidate_slug: str | None,
+    display_name: str,
+    rationale: str,
+    source_context: dict | None = None,
+    proposer_slug: str | None = None,
+) -> dict:
+    """Write a contact-proposal delta. Low-privilege — any authenticated
+    caller (Fathom itself, a bridge, a plugin) can propose; only admins
+    can accept. Returns the written delta id + content for the caller
+    to echo back."""
+    body = {
+        "candidate_slug": candidate_slug,
+        "display_name": display_name,
+        "rationale": rationale,
+        "source_context": source_context or {},
+    }
+    tags = [PROPOSAL_TAG]
+    if candidate_slug:
+        tags.append(f"candidate:{candidate_slug}")
+    if proposer_slug:
+        tags.append(f"contact:{proposer_slug}")
+    result = await delta_client.write(
+        content=json.dumps(body, ensure_ascii=False),
+        tags=tags,
+        source="contact-proposal",
+    )
+    return {"id": result.get("id"), **body}
+
+
+async def list_proposals(limit: int = 50) -> list[dict]:
+    """Open proposals — those that haven't been resolved yet."""
+    try:
+        all_proposals = await delta_client.query(
+            tags_include=[PROPOSAL_TAG], limit=limit * 2
+        )
+        resolved = await delta_client.query(
+            tags_include=[PROPOSAL_RESOLVED_TAG], limit=limit * 2
+        )
+    except Exception:
+        return []
+    # Resolved proposals are tombstones that reference the original by
+    # `proposal-id:<id>` tag. Collect those ids.
+    resolved_ids: set[str] = set()
+    for d in resolved:
+        for t in d.get("tags") or []:
+            if isinstance(t, str) and t.startswith("proposal-id:"):
+                resolved_ids.add(t.split(":", 1)[1])
+    out: list[dict] = []
+    for d in all_proposals:
+        if d.get("id") in resolved_ids:
+            continue
+        tags = d.get("tags") or []
+        if PROPOSAL_RESOLVED_TAG in tags:
+            continue  # defensive — shouldn't match the query
+        content = d.get("content") or ""
+        try:
+            parsed = json.loads(content)
+            if not isinstance(parsed, dict):
+                parsed = {}
+        except json.JSONDecodeError:
+            parsed = {}
+        proposer = None
+        for t in tags:
+            if isinstance(t, str) and t.startswith("contact:"):
+                proposer = t.split(":", 1)[1]
+                break
+        out.append({
+            "id": d.get("id"),
+            "created_at": d.get("timestamp"),
+            "proposer": proposer,
+            "candidate_slug": parsed.get("candidate_slug"),
+            "display_name": parsed.get("display_name") or parsed.get("candidate_slug") or "?",
+            "rationale": parsed.get("rationale") or "",
+            "source_context": parsed.get("source_context") or {},
+        })
+        if len(out) >= limit:
+            break
+    return out
+
+
+async def _write_proposal_resolution(
+    proposal_id: str, outcome: str, actor_slug: str | None, note: str = ""
+) -> None:
+    tags = [
+        PROPOSAL_RESOLVED_TAG,
+        f"proposal-id:{proposal_id}",
+        f"resolution:{outcome}",
+    ]
+    if actor_slug:
+        tags.append(f"contact:{actor_slug}")
+    content = note or f"Proposal {proposal_id} {outcome}."
+    try:
+        await delta_client.write(content=content, tags=tags, source="dashboard")
+    except Exception:
+        log.exception("proposal resolution write failed for %s", proposal_id)
+
+
+async def accept_proposal(
+    proposal_id: str,
+    slug: str,
+    display_name: str,
+    role: str = "member",
+    extra_fields: dict | None = None,
+    actor_slug: str | None = None,
+) -> dict:
+    """Accept a proposal: mint the contact + mark the proposal resolved.
+    Caller (admin endpoint) must check role."""
+    initial = {"display_name": display_name, "role": role}
+    if extra_fields:
+        initial.update(extra_fields)
+    created = await create(slug, initial_profile=initial, actor_slug=actor_slug)
+    await _write_proposal_resolution(proposal_id, "accepted", actor_slug, note=(
+        f"Proposal {proposal_id} accepted as contact {slug}."
+    ))
+    return created
+
+
+async def reject_proposal(
+    proposal_id: str, actor_slug: str | None, note: str = ""
+) -> None:
+    await _write_proposal_resolution(
+        proposal_id, "rejected", actor_slug,
+        note=note or f"Proposal {proposal_id} rejected.",
+    )
+
+
 async def disable(slug: str, actor_slug: str | None) -> bool:
     """Tombstone the contact. Sets registry disabled_at and writes a
     `contact-deleted` delta for lake-side provenance."""

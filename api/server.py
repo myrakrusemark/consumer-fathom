@@ -1644,6 +1644,28 @@ class HandleBody(BaseModel):
     identifier: str
 
 
+class ProposeContactIn(BaseModel):
+    candidate_slug: str | None = None
+    display_name: str
+    rationale: str
+    source_context: dict | None = None
+
+
+class AcceptProposalIn(BaseModel):
+    slug: str
+    display_name: str
+    role: str = "member"
+    pronouns: str | None = None
+    timezone: str | None = None
+    language: str | None = None
+    bio: str | None = None
+    aliases: list[str] | None = None
+
+
+class RejectProposalIn(BaseModel):
+    note: str = ""
+
+
 def _caller_slug(request: Request) -> str | None:
     contact = getattr(request.state, "contact", None)
     return (contact or {}).get("slug")
@@ -1742,6 +1764,77 @@ async def remove_contact_handle(slug: str, body: HandleBody):
         ) from e
     auth.invalidate_contact_cache(slug)
     return {"deleted": {"channel": body.channel, "identifier": body.identifier}}
+
+
+# ── Contact proposals (propose-then-confirm) ──────
+#
+# Any authenticated caller can propose — Fathom in its chat loop,
+# a plugin, a bridge, a teammate. Admin accepts or rejects. The
+# proposal is sediment either way.
+
+
+@app.get("/v1/contact-proposals")
+async def list_contact_proposals(limit: int = 50):
+    """Open (unresolved) proposals — visible to any authed caller so
+    Fathom can avoid proposing the same person twice."""
+    return await contacts_mod.list_proposals(limit=limit)
+
+
+@app.post("/v1/contact-proposals")
+async def propose_contact(body: ProposeContactIn, request: Request):
+    """Low-privilege propose endpoint. The proposer's contact slug is
+    stamped on the delta so admins can see who noticed."""
+    proposer = _caller_slug(request)
+    return await contacts_mod.propose(
+        candidate_slug=body.candidate_slug,
+        display_name=body.display_name,
+        rationale=body.rationale,
+        source_context=body.source_context,
+        proposer_slug=proposer,
+    )
+
+
+@app.post(
+    "/v1/contact-proposals/{proposal_id}/accept",
+    dependencies=[Depends(auth.require_admin)],
+)
+async def accept_contact_proposal(
+    proposal_id: str, body: AcceptProposalIn, request: Request
+):
+    actor = _caller_slug(request)
+    extras = {
+        k: v for k, v in body.model_dump(exclude_unset=True).items()
+        if v is not None and k not in ("slug", "display_name", "role")
+    }
+    try:
+        created = await contacts_mod.accept_proposal(
+            proposal_id=proposal_id,
+            slug=body.slug,
+            display_name=body.display_name,
+            role=body.role,
+            extra_fields=extras,
+            actor_slug=actor,
+        )
+    except httpx.HTTPStatusError as e:
+        detail = "Slug already exists" if e.response.status_code == 409 else str(e)
+        raise HTTPException(status_code=e.response.status_code, detail=detail) from e
+    auth.invalidate_contact_cache(body.slug)
+    return created
+
+
+@app.post(
+    "/v1/contact-proposals/{proposal_id}/reject",
+    dependencies=[Depends(auth.require_admin)],
+)
+async def reject_contact_proposal(
+    proposal_id: str, body: RejectProposalIn, request: Request
+):
+    await contacts_mod.reject_proposal(
+        proposal_id,
+        actor_slug=_caller_slug(request),
+        note=body.note,
+    )
+    return {"rejected": proposal_id}
 
 
 # ── Self profile (named endpoint for self-edits) ───
@@ -1910,6 +2003,50 @@ LAKE_TOOLS = [
         },
         "endpoint": {"method": "POST", "path": "/v1/chat/completions"},
         "scope": "chat",
+    },
+    {
+        "name": "propose_contact",
+        "description": (
+            "Propose a new contact for admin review. Use when you "
+            "encounter a person the lake doesn't know about yet — a "
+            "mention in chat, an unknown handle, a correspondent "
+            "you've gathered enough evidence on to formally register. "
+            "Writes a contact-proposal delta; an admin accepts or "
+            "rejects. You never create contacts yourself."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "display_name": {
+                    "type": "string",
+                    "description": "How people refer to this person (required).",
+                },
+                "candidate_slug": {
+                    "type": "string",
+                    "description": (
+                        "Suggested URL-safe identifier ('nova', 'bob'). "
+                        "Lowercase, no spaces. Admin can override on accept."
+                    ),
+                },
+                "rationale": {
+                    "type": "string",
+                    "description": (
+                        "1-3 sentences — who they seem to be, the evidence, "
+                        "why they should be a contact."
+                    ),
+                },
+                "source_context": {
+                    "type": "object",
+                    "description": (
+                        "Optional hints — {chat_session, channel, handle, "
+                        "delta_ids, …} — whatever helps the admin verify."
+                    ),
+                },
+            },
+            "required": ["display_name", "rationale"],
+        },
+        "endpoint": {"method": "POST", "path": "/v1/contact-proposals"},
+        "scope": "lake:write",
     },
 ]
 
