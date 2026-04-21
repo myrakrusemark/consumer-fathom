@@ -22,6 +22,7 @@ from . import auth, auto_regen, contacts as contacts_mod, crystal, crystal_ancho
 log = logging.getLogger(__name__)
 from .prompt import (
     CRYSTAL_DIRECTIVE,
+    CRYSTAL_REGEN_SYSTEM,
     FEED_DIRECTIVE,
     ORIENT_PROMPT,
     build_system_prompt,
@@ -377,6 +378,7 @@ async def fathom_think(
     model: str | None = None,
     max_rounds: int = MAX_TOOL_ROUNDS,
     on_tool_event: callable | None = None,
+    system_override: str | None = None,
     **llm_kwargs,
 ) -> list[dict]:
     """Unified Fathom reasoning loop.
@@ -388,39 +390,44 @@ async def fathom_think(
     Args:
         tools: Replace the default tool surface entirely. None = TOOLS.
         extra_tools: Append additional tools to whatever base set is active.
+        system_override: Replace the built system prompt entirely. Used by
+            crystal regen so the synthesis isn't polluted by SYSTEM_PREAMBLE
+            rules, prior-crystal injection, or mood layer — the regen should
+            look at itself from outside, not BE itself reading itself.
 
     Returns the full messages list with the final assistant response as the
     last entry.
     """
     model = model or settings.resolved_model
-    crystal_text = await crystal.latest_text()
-
-    # Mood layer — wake-gated synthesis. May trigger a fresh mood, or just
-    # return the most recent one. Failures degrade gracefully (mood = None).
-    current_mood = await mood.maybe_synthesize_on_wake(session_slug=session_slug)
 
     # Resolve tool surface: replace, extend, or default
     resolved_tools = tools if tools is not None else TOOLS
     if extra_tools:
         resolved_tools = resolved_tools + extra_tools
 
-    # 1. Build system prompt — always the full Fathom voice
-    session_title: str | None = None
-    if session_slug:
-        sess = await db.get_session(session_slug)
-        if sess:
-            session_title = sess.get("title")
-    from .tools import _agent_alive
-    agent_connected, agents_info = await _agent_alive()
-    system = build_system_prompt(
-        crystal_text=crystal_text,
-        session_slug=session_slug,
-        session_title=session_title,
-        mood_carrier_wave=(current_mood or {}).get("carrier_wave"),
-        mood_threads=(current_mood or {}).get("threads"),
-        agent_connected=agent_connected,
-        agent_hosts=[a.get("host", "") for a in agents_info if a.get("host")],
-    )
+    # 1. Build system prompt — default path is the full Fathom voice;
+    # callers that need a clean frame (crystal regen) pass system_override.
+    if system_override is not None:
+        system = system_override
+    else:
+        crystal_text = await crystal.latest_text()
+        current_mood = await mood.maybe_synthesize_on_wake(session_slug=session_slug)
+        session_title: str | None = None
+        if session_slug:
+            sess = await db.get_session(session_slug)
+            if sess:
+                session_title = sess.get("title")
+        from .tools import _agent_alive
+        agent_connected, agents_info = await _agent_alive()
+        system = build_system_prompt(
+            crystal_text=crystal_text,
+            session_slug=session_slug,
+            session_title=session_title,
+            mood_carrier_wave=(current_mood or {}).get("carrier_wave"),
+            mood_threads=(current_mood or {}).get("threads"),
+            agent_connected=agent_connected,
+            agent_hosts=[a.get("host", "") for a in agents_info if a.get("host")],
+        )
 
     # Append task-specific directive
     if directive:
@@ -552,6 +559,7 @@ async def _generate_crystal_candidate(retry_hint: str | None = None) -> str:
     messages = await fathom_think(
         user_message=ORIENT_PROMPT,
         directive=directive,
+        system_override=CRYSTAL_REGEN_SYSTEM,
         recall=False,  # crystal does its own deep searching via tools
         max_rounds=20,
     )
