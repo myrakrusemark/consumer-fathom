@@ -31,7 +31,7 @@ from .prompt import (
 from .providers import llm
 from .search import search as nl_search
 from .settings import settings
-from .tools import IMAGE_RESULT_PREFIX, TOOLS, execute
+from .tools import IMAGE_RESULT_PREFIX, TOOLS, execute, heartbeat_age_seconds, heartbeat_is_fresh
 
 # ── Request / response models ───────────────────
 
@@ -1292,10 +1292,12 @@ async def preview_schedule_endpoint(body: dict):
 
 # ── Agents ──────────────────────────────────────
 #
-# Agent presence is surfaced via short-lived `agent-heartbeat` deltas. An
-# agent (fathom-agent + its plugins) writes one every ~60s with expires_at
-# set to ~120s in the future. The delta-store filters out expired deltas
-# automatically, so querying [agent-heartbeat] returns only live agents.
+# Agent presence is surfaced via `agent-heartbeat` deltas. An agent
+# (fathom-agent + its plugins) writes one every ~60s with a 24h expires_at.
+# The long TTL keeps the heartbeat visible after an agent goes quiet so
+# the dashboard can render a "disconnected" card; whether the agent is
+# currently connected is computed from the heartbeat's timestamp (see
+# HEARTBEAT_STALE_SECONDS in tools.py).
 
 
 # ── Agent release info ─────────────────────────────────────────────────────
@@ -1342,14 +1344,18 @@ async def agents_latest_version():
 
 @app.get("/v1/agents/status")
 async def agents_status():
-    """Return the most recent unexpired heartbeat per host.
+    """Return the most recent heartbeat per host with a connected/disconnected classification.
 
-    Dashboard uses this to decide whether to show Routines (no heartbeat =
-    no agent to consume fire deltas). Also surfaces per-plugin state so the
-    UI can show badges like "routine's permission_mode is not allowed here".
+    Dashboard shows a card for every known host. Fresh heartbeats render as
+    connected (glowing robot); stale ones render as disconnected (faded).
+    Plugin state travels with the heartbeat so the UI can show badges like
+    "routine's permission_mode is not allowed here" without a round trip.
     """
+    # Heartbeat deltas linger for 24h. Pull enough to cover realistic fleet
+    # sizes — limit=100 easily handles dozens of hosts even with bursty
+    # timing where several hosts emit within the same second.
     try:
-        deltas = await delta_client.query(limit=20, tags_include=["agent-heartbeat"])
+        deltas = await delta_client.query(limit=100, tags_include=["agent-heartbeat"])
     except Exception as e:
         return {"agents": [], "error": str(e)}
 
@@ -1369,6 +1375,7 @@ async def agents_status():
             # pinned `version` to the heartbeat schema version (0.10.0), which
             # is what caused the dashboard to show a spurious update chip.
             agent_version = payload.get("agent_version") or payload.get("version")
+            age = heartbeat_age_seconds(d)
             by_host[host] = {
                 "host": host,
                 "timestamp": ts,
@@ -1382,9 +1389,19 @@ async def agents_status():
                 # plugin. Only resolvable from the machine itself; dashboard
                 # uses it to deep-link the "configure ↗" chip per agent block.
                 "agent_url": payload.get("agent_url"),
+                "status": "connected" if heartbeat_is_fresh(d) else "disconnected",
+                "heartbeat_age_seconds": int(age) if age is not None else None,
             }
 
-    return {"agents": list(by_host.values()), "alive": len(by_host) > 0}
+    agents = list(by_host.values())
+    return {
+        "agents": agents,
+        # `alive` stays "any known host" so the dashboard shows cards (even
+        # disconnected ones) instead of the install view once a host has
+        # been seen. Use `connected_count` for "how many are actually up".
+        "alive": len(agents) > 0,
+        "connected_count": sum(1 for a in agents if a["status"] == "connected"),
+    }
 
 
 # ── Media proxy ─────────────────────────────────

@@ -1,10 +1,12 @@
 /**
  * Heartbeat — agent presence signal.
  *
- * Writes an `[agent-heartbeat]` delta every N seconds with a short-lived
- * `expires_at` (2x interval). The dashboard polls for unexpired heartbeats
- * to decide whether to show the Routines section — no live agent, no point
- * creating routines whose fires would pile up with nothing to consume them.
+ * Writes an `[agent-heartbeat]` delta every N seconds with a long-lived
+ * `expires_at` (24h by default). Freshness — i.e. "is this agent actually
+ * up right now?" — is computed on the consumer side from the heartbeat's
+ * timestamp, not from delta expiry. A stale but still-unexpired delta lets
+ * the dashboard render a "disconnected" card for a host that's been seen
+ * before but isn't responding, instead of silently dropping it.
  *
  * The heartbeat also surfaces per-plugin state (enabled + key config) so the
  * dashboard can show badges like "routine's permission_mode is not allowed
@@ -37,8 +39,13 @@ const AGENT_VERSION = (() => {
 
 export const CONFIG_SHAPE = {
   interval_ms: { type: "number", required: false, help: "How often to emit a heartbeat (milliseconds). Default: 60000 (1 min)." },
-  expiry_ms: { type: "number", required: false, help: "Time before a heartbeat expires. Default: 2x interval_ms." },
+  expiry_ms: { type: "number", required: false, help: "Time before a heartbeat delta expires (milliseconds). Default: 24h — freshness is computed from the timestamp, not expiry, so long TTL keeps disconnected hosts visible on the dashboard." },
 };
+
+// Default TTL: 24h. Long enough for the consumer dashboard to show a
+// "disconnected" card for a host that stopped reporting without the delta
+// being reaped first.
+const DEFAULT_EXPIRY_MS = 24 * 60 * 60 * 1000;
 
 // Plugin directories to scan for capability declarations. Matches how the
 // agent loader resolves plugins: built-ins ship next to this file, customs
@@ -149,8 +156,7 @@ async function summarizePlugins() {
 }
 
 async function emitHeartbeat(config, pusher, startedAt) {
-  const intervalMs = config.interval_ms || 60000;
-  const expiryMs = config.expiry_ms || 2 * intervalMs;
+  const expiryMs = config.expiry_ms || DEFAULT_EXPIRY_MS;
   const host = config.host || hostname();
 
   const allPluginConfigs = readPluginConfig();

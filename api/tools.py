@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import json
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
@@ -14,6 +15,30 @@ from .settings import settings
 # delta-store reaps it. Longer than the default chat-event TTL because
 # the user may wander off for a while before confirming the form.
 ROUTINE_PROPOSAL_TTL_SECONDS = 6 * 3600
+
+# A heartbeat is considered "fresh" (agent connected) if it was emitted
+# within this window. Heartbeats fire every ~60s, so 90s tolerates a
+# single missed beat without flipping the UI to disconnected. Heartbeat
+# deltas themselves live for 24h so the dashboard can still show a
+# disconnected card after the connected window elapses.
+HEARTBEAT_STALE_SECONDS = 90
+
+
+def heartbeat_age_seconds(delta: dict) -> float | None:
+    """Seconds since the given heartbeat delta was emitted, or None if unparseable."""
+    ts = delta.get("timestamp", "")
+    if not ts:
+        return None
+    try:
+        hb = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except Exception:
+        return None
+    return (datetime.now(timezone.utc) - hb).total_seconds()
+
+
+def heartbeat_is_fresh(delta: dict) -> bool:
+    age = heartbeat_age_seconds(delta)
+    return age is not None and age < HEARTBEAT_STALE_SECONDS
 
 # ── Tool definitions (OpenAI format) ────────────
 
@@ -597,9 +622,23 @@ ROUTINE_SPEC_HELP = ROUTINE_SPEC_HELP_STATIC
 
 
 async def _agent_alive() -> tuple[bool, list[dict]]:
-    """Check the lake for an unexpired heartbeat. Returns (alive, agent_summaries)."""
+    """Return (alive, agent_summaries) for hosts with a fresh heartbeat.
+
+    "Fresh" means the most recent heartbeat delta for that host was emitted
+    within HEARTBEAT_STALE_SECONDS. Stale heartbeats are ignored — callers
+    use this to decide whether mutation actions (routine dispatch, body
+    routing) can reach a live agent, which stale heartbeats can't.
+    """
+    # Bound the query to the freshness window on the server side. Heartbeat
+    # deltas linger for 24h so the dashboard can show disconnected cards —
+    # without time_start we'd pull every heartbeat from every host.
+    time_start = (datetime.now(timezone.utc) - timedelta(seconds=HEARTBEAT_STALE_SECONDS)).isoformat()
     try:
-        deltas = await delta_client.query(limit=5, tags_include=["agent-heartbeat"])
+        deltas = await delta_client.query(
+            limit=50,
+            tags_include=["agent-heartbeat"],
+            time_start=time_start,
+        )
     except Exception:
         return False, []
     agents = []
@@ -610,6 +649,8 @@ async def _agent_alive() -> tuple[bool, list[dict]]:
         if host in seen_hosts:
             continue
         seen_hosts.add(host)
+        if not heartbeat_is_fresh(d):
+            continue
         try:
             payload = json.loads(d.get("content", "{}"))
         except Exception:

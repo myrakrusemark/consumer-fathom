@@ -1878,15 +1878,18 @@
       max-width: 600px;
     }
 
-    /* Connected status — shown when agent heartbeat is alive. The outer
-       .agent-connected is the card shell (one per agent); the status row
-       reads as a stats line, with the Routines subsection below. */
+    /* Agent card — one per known host. Rendered for both connected and
+       disconnected agents; the data-status attribute selects the visual
+       treatment. Disconnected cards are faded and the bot icon goes gray,
+       matching the "paused" chip pattern used elsewhere. */
     .agent-connected {
       display: flex; flex-direction: column;
       padding: 12px 14px;
       background: var(--surface); border: 1px solid var(--rule);
       border-radius: 12px;
+      transition: opacity 160ms ease;
     }
+    .agent-connected[data-status="disconnected"] { opacity: 0.55; }
     .agent-connected + .agent-connected { margin-top: 12px; }
     .agent-connected-status {
       display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
@@ -1897,8 +1900,13 @@
       display: inline-flex; align-items: center; gap: 6px;
     }
     .agent-connected-status .host { cursor: help; }
-    .agent-connected-status .host .bot-icon {
-      color: var(--ink-soft); flex-shrink: 0;
+    .agent-connected-status .host .bot-icon { flex-shrink: 0; }
+    .agent-connected[data-status="connected"] .bot-icon {
+      color: var(--signal);
+      filter: drop-shadow(0 0 3px var(--dot-glow, var(--signal)));
+    }
+    .agent-connected[data-status="disconnected"] .bot-icon {
+      color: var(--ink-faint);
     }
     .agent-connected-status .agent-version {
       font-family: var(--mono); font-size: 11px;
@@ -3893,7 +3901,12 @@
         // source) are inlined into the status row as small mono pills; the
         // separate plugins sub-row has been folded in for compactness.
         // Source-role plugins still live in the Sources section.
-        meta.textContent = `${agents.length} connected`;
+        const connectedCount = typeof _agentStatus.connected_count === 'number'
+          ? _agentStatus.connected_count
+          : agents.filter(a => (a.status || 'connected') === 'connected').length;
+        meta.textContent = connectedCount === agents.length
+          ? `${agents.length} connected`
+          : `${connectedCount} of ${agents.length} connected`;
 
         // Per-agent layout: status row + its routines subsection, then the
         // platform tiles below for adding another machine. Routines are
@@ -3922,9 +3935,21 @@
               return n + (instances && instances.length ? instances.length : 1);
             }, 0);
           const sourceCountText = `${sourceCount} source${sourceCount === 1 ? '' : 's'}`;
-          const configureHtml = a.agent_url
-            ? `<a class="configure-link" href="${_esc(a.agent_url)}" target="_blank" rel="noopener" title="Opens the on-machine agent UI in a new tab (only resolves from ${_esc(a.host)})">configure ↗</a>`
-            : `<span class="configure-link" aria-disabled="true" title="local-ui plugin not enabled on this machine — add it to agent.json">configure (unavailable)</span>`;
+          // Three-way configure chip:
+          //   - disconnected (no recent heartbeat) → always shows "agent not available"
+          //     regardless of whether the agent previously advertised a URL;
+          //     the URL won't resolve if the process isn't running.
+          //   - connected + local-ui enabled → real link.
+          //   - connected + no local-ui → "dashboard not enabled" disabled chip.
+          const status = a.status || 'connected';
+          let configureHtml;
+          if (status === 'disconnected') {
+            configureHtml = `<span class="configure-link" aria-disabled="true" title="This agent hasn't sent a heartbeat recently — the machine may be off or the agent crashed">configure (agent not available)</span>`;
+          } else if (a.agent_url) {
+            configureHtml = `<a class="configure-link" href="${_esc(a.agent_url)}" target="_blank" rel="noopener" title="Opens the on-machine agent UI in a new tab (only resolves from ${_esc(a.host)})">configure ↗</a>`;
+          } else {
+            configureHtml = `<span class="configure-link" aria-disabled="true" title="local-ui plugin not enabled on this machine — add it to agent.json">configure (dashboard not enabled)</span>`;
+          }
 
           // Update chip: only render when we know both versions and the
           // agent is behind. Clicking opens the update modal.
@@ -3956,7 +3981,7 @@
           ].filter(Boolean).join(' · ');
 
           return `
-            <div class="agent-connected">
+            <div class="agent-connected" data-status="${_esc(status)}">
               <div class="agent-connected-status">
                 <span class="host"${hostTooltip ? ` title="${_esc(hostTooltip)}"` : ''}><svg class="bot-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>${_esc(a.host)}</span>
                 <span class="source-count">${_esc(sourceCountText)}</span>
