@@ -57,7 +57,12 @@ class Settings(BaseSettings):
     # not an hourly event; multiple regens per day always indicates either
     # instability or a broken gate.
     crystal_auto_regen: bool = True
-    crystal_drift_threshold: float = 0.55
+    # Anchor-based drift starts at 0 after every accepted regen (see
+    # crystal_anchor.py), so centroid drift grows slowly and monotonically
+    # in a lake that's being fed. 0.15 fires the red zone at ~0.135 —
+    # tight enough to catch real topic drift, loose enough that routine
+    # ingestion alone won't burn cooldown cycles.
+    crystal_drift_threshold: float = 0.15
     crystal_drift_red_ratio: float = 0.9
     crystal_drift_poll_seconds: int = 60
     crystal_regen_cooldown_seconds: int = 259200  # 3 days
