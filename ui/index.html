@@ -1132,6 +1132,102 @@
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
 
+    /* Profile form (your own self-edit) */
+    .profile-form { display: flex; flex-direction: column; gap: 14px; }
+    .profile-form .pf-row { display: flex; flex-direction: column; gap: 6px; }
+    .profile-form .pf-row label {
+      font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--ink-faint); font-weight: 500;
+    }
+    .profile-form input,
+    .profile-form textarea {
+      background: var(--surface); border: 1px solid var(--rule);
+      border-radius: 8px; padding: 10px 12px; color: var(--ink);
+      font-size: 14px; font-family: var(--sans); outline: none;
+      resize: vertical;
+    }
+    .profile-form input:focus,
+    .profile-form textarea:focus { border-color: var(--accent); }
+    .profile-form .pf-row-inline {
+      flex-direction: row; align-items: center; justify-content: space-between;
+      gap: 12px;
+    }
+
+    /* Contacts list (admin view) */
+    .contacts-list { display: flex; flex-direction: column; gap: 8px; }
+    .contact-card {
+      background: var(--surface); border: 1px solid var(--rule);
+      border-radius: 10px; padding: 14px 16px; cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .contact-card:hover { border-color: var(--accent); }
+    .contact-card-head {
+      display: flex; align-items: center; gap: 12px;
+    }
+    .contact-card .avatar-md {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: var(--surface-2); border: 1px solid var(--rule);
+      display: grid; place-items: center;
+      font-family: var(--serif); font-size: 14px; color: var(--accent);
+      flex-shrink: 0;
+    }
+    .contact-card .cc-name { flex: 1; min-width: 0; }
+    .contact-card .cc-name-primary {
+      font-size: 15px; color: var(--ink); font-weight: 500;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .contact-card .cc-name-sub {
+      font-size: 11.5px; color: var(--ink-faint); margin-top: 2px;
+      font-family: var(--mono);
+    }
+    .contact-card .cc-role {
+      font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--ink-soft); padding: 3px 8px; border-radius: 4px;
+      background: var(--surface-2); border: 1px solid var(--rule);
+    }
+    .contact-card .cc-role[data-role="admin"] {
+      color: var(--accent); border-color: var(--accent);
+    }
+    .contact-card .cc-expand {
+      margin-top: 14px; padding-top: 14px;
+      border-top: 1px solid var(--rule-soft);
+      display: none;
+    }
+    .contact-card[data-open="true"] .cc-expand { display: block; }
+    .cc-expand .pf-row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+    .cc-expand .pf-row label {
+      font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--ink-faint); font-weight: 500;
+    }
+    .cc-expand input,
+    .cc-expand textarea,
+    .cc-expand select {
+      background: var(--bg); border: 1px solid var(--rule);
+      border-radius: 8px; padding: 9px 11px; color: var(--ink);
+      font-size: 13.5px; font-family: var(--sans); outline: none;
+      width: 100%;
+    }
+    .cc-expand input:focus,
+    .cc-expand textarea:focus,
+    .cc-expand select:focus { border-color: var(--accent); }
+    .cc-actions {
+      display: flex; gap: 8px; justify-content: space-between;
+      align-items: center; margin-top: 10px;
+    }
+    .cc-handles {
+      margin-top: 14px; padding-top: 14px;
+      border-top: 1px solid var(--rule-soft);
+    }
+    .cc-handle-row {
+      display: flex; gap: 6px; align-items: center;
+      font-family: var(--mono); font-size: 12px;
+      color: var(--ink-soft); padding: 4px 0;
+    }
+    .cc-handle-row .chan {
+      background: var(--surface-2); padding: 2px 6px; border-radius: 4px;
+      color: var(--ink);
+    }
+
     .sub-card {
       background: var(--surface); border: 1px solid var(--rule);
       border-radius: var(--radius); padding: 20px;
@@ -2491,16 +2587,73 @@
         </div>
       </section>
 
-      <!-- Account -->
-      <section class="section">
-        <div class="account-hero">
-          <div class="avatar">MK</div>
-          <div class="account-info">
-            <div class="name">Myra Krusemark</div>
-            <div class="email">myrakrusemark@gmail.com</div>
-          </div>
-          <button class="btn ghost">Edit</button>
+      <!-- Your profile — self-edit for soft fields (display_name, pronouns,
+           timezone, language, bio, avatar, aliases). role is admin-only
+           and isn't on the /v1/me/profile endpoint's accepted fields. -->
+      <section class="section" id="profileSection">
+        <div class="section-head">
+          <h2>Your profile</h2>
+          <span class="meta" id="profileRoleBadge">member</span>
         </div>
+        <p style="font-size: 14px; color: var(--ink-soft); line-height: 1.55; margin: 0 0 14px;">
+          How Fathom refers to you and what it knows about you. Every change writes a profile delta to the lake; history stays.
+        </p>
+        <div class="profile-form">
+          <div class="pf-row">
+            <label>Display name</label>
+            <input type="text" id="pfDisplayName" placeholder="how Fathom refers to you" />
+          </div>
+          <div class="pf-row">
+            <label>Pronouns</label>
+            <input type="text" id="pfPronouns" placeholder="she/her · they/them · …" />
+          </div>
+          <div class="pf-row">
+            <label>Timezone</label>
+            <input type="text" id="pfTimezone" placeholder="America/Chicago" />
+          </div>
+          <div class="pf-row">
+            <label>Language</label>
+            <input type="text" id="pfLanguage" placeholder="en · English · …" />
+          </div>
+          <div class="pf-row">
+            <label>Aliases</label>
+            <input type="text" id="pfAliases" placeholder="comma-separated · nicknames Fathom should resolve to you" />
+          </div>
+          <div class="pf-row">
+            <label>Bio</label>
+            <textarea id="pfBio" rows="3" placeholder="who you are, what you're building, how you relate to others in this lake"></textarea>
+          </div>
+          <div class="pf-row pf-row-inline">
+            <span id="pfSavedAt" class="meta" style="font-size:12px;"></span>
+            <button class="btn" id="pfSaveBtn">Save profile</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Contacts — admin-only; lists all registered people and their
+           profile snapshots. Click a row to expand the edit pane (role,
+           soft fields, handles). -->
+      <section class="section" data-admin-only id="contactsSection">
+        <div class="section-head">
+          <h2>Contacts</h2>
+          <span class="meta">people Fathom knows</span>
+        </div>
+        <p style="font-size: 14px; color: var(--ink-soft); line-height: 1.55; margin: 0 0 14px;">
+          Each contact has a profile delta (latest-wins). Adding a contact also mints a pair code so they can bind a device.
+        </p>
+        <div id="contactsList" class="contacts-list">
+          <!-- Populated by loadContacts() -->
+        </div>
+        <div style="display:flex; gap:8px; align-items:center; margin-top:14px;">
+          <input type="text" id="newContactSlug" placeholder="slug (e.g. bob, nova)" style="flex:0 0 180px; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; color: var(--ink); font-size: 14px; font-family: var(--mono); outline: none;" />
+          <input type="text" id="newContactDisplayName" placeholder="display name" style="flex:1; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; color: var(--ink); font-size: 14px; font-family: var(--sans); outline: none;" />
+          <select id="newContactRole" style="background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; color: var(--ink); font-size: 14px;">
+            <option value="member">member</option>
+            <option value="admin">admin</option>
+          </select>
+          <button class="btn" id="newContactBtn">Add contact</button>
+        </div>
+        <div id="contactsStatus" class="meta" style="margin-top:10px; font-size:12px;"></div>
       </section>
 
       <!-- Subscription -->
@@ -4464,6 +4617,8 @@
       scrollViewToTop(viewSettings);
       syncComposer();
       loadTokens();
+      loadMyProfile();
+      if (isAdmin()) loadContacts();
     }
     function closeSettings() {
       viewSettings.hidden = true;
@@ -4533,6 +4688,252 @@
       'tokens:manage': 'Tokens',
       'chat': 'Chat',
     };
+
+    // ── Your profile (self-edit) ──────────────────
+    async function loadMyProfile() {
+      try {
+        const r = await fetch(API_BASE + '/v1/me/profile', { headers: authHeaders() });
+        if (!r.ok) return;
+        const p = await r.json();
+        document.getElementById('pfDisplayName').value = p.display_name || '';
+        document.getElementById('pfPronouns').value = p.pronouns || '';
+        document.getElementById('pfTimezone').value = p.timezone || '';
+        document.getElementById('pfLanguage').value = p.language || '';
+        document.getElementById('pfAliases').value = (p.aliases || []).join(', ');
+        document.getElementById('pfBio').value = p.bio || '';
+        const badge = document.getElementById('profileRoleBadge');
+        if (badge) badge.textContent = p.role || 'member';
+        const saved = document.getElementById('pfSavedAt');
+        if (saved && p._profile_updated_at) {
+          saved.textContent = 'last saved ' + _relativeTime(p._profile_updated_at);
+        }
+      } catch (e) {}
+    }
+
+    async function saveMyProfile() {
+      const btn = document.getElementById('pfSaveBtn');
+      btn.disabled = true;
+      const body = {
+        display_name: document.getElementById('pfDisplayName').value.trim(),
+        pronouns: document.getElementById('pfPronouns').value.trim(),
+        timezone: document.getElementById('pfTimezone').value.trim(),
+        language: document.getElementById('pfLanguage').value.trim(),
+        bio: document.getElementById('pfBio').value.trim(),
+        aliases: document.getElementById('pfAliases').value
+          .split(',').map(a => a.trim()).filter(Boolean),
+      };
+      try {
+        const r = await fetch(API_BASE + '/v1/me/profile', {
+          method: 'PATCH',
+          headers: authHeaders(),
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) throw new Error('save failed (' + r.status + ')');
+        const saved = document.getElementById('pfSavedAt');
+        if (saved) saved.textContent = 'saved just now';
+        // Refresh the sidebar account row with the new display_name.
+        if (_currentContact) {
+          const updated = await r.json();
+          _currentContact = { ..._currentContact, ...updated };
+          _hydrateAccountRow(_currentContact);
+        }
+      } catch (e) {
+        const saved = document.getElementById('pfSavedAt');
+        if (saved) saved.textContent = 'save failed — ' + e.message;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+    document.getElementById('pfSaveBtn')?.addEventListener('click', saveMyProfile);
+
+    // ── Contacts (admin view) ─────────────────────
+    async function loadContacts() {
+      const list = document.getElementById('contactsList');
+      if (!list) return;
+      try {
+        const r = await fetch(API_BASE + '/v1/contacts', { headers: authHeaders() });
+        if (!r.ok) {
+          list.innerHTML = '<div style="color: var(--ink-faint); font-size: 13px;">Could not load contacts.</div>';
+          return;
+        }
+        const contacts = await r.json();
+        if (!contacts.length) {
+          list.innerHTML = '<div style="color: var(--ink-faint); font-size: 13px;">No contacts yet.</div>';
+          return;
+        }
+        list.innerHTML = contacts.map(_contactCardHTML).join('');
+        // Bind click-to-expand + edit handlers
+        list.querySelectorAll('.contact-card').forEach(card => {
+          const slug = card.dataset.slug;
+          card.querySelector('.contact-card-head')?.addEventListener('click', () => {
+            const open = card.dataset.open === 'true';
+            card.dataset.open = open ? 'false' : 'true';
+          });
+          card.querySelector('[data-action="save"]')?.addEventListener('click', async (ev) => {
+            ev.stopPropagation();
+            await saveContact(card, slug);
+          });
+          card.querySelector('[data-action="disable"]')?.addEventListener('click', async (ev) => {
+            ev.stopPropagation();
+            if (!confirm(`Disable contact "${slug}"? This tombstones their registry row and writes a contact-deleted delta. They remain in the lake as history.`)) return;
+            await disableContact(slug);
+          });
+        });
+      } catch (e) {
+        list.innerHTML = '<div style="color: var(--danger); font-size: 13px;">Error: ' + e.message + '</div>';
+      }
+    }
+
+    function _initials(name, slug) {
+      const src = (name || slug || '?').trim();
+      const parts = src.split(/\s+/).map(w => w[0] || '');
+      return (parts.join('').slice(0, 2) || '?').toUpperCase();
+    }
+
+    function _contactCardHTML(c) {
+      const slug = c.slug;
+      const name = c.display_name || slug;
+      const role = c.role || 'member';
+      const isMe = _currentContact && _currentContact.slug === slug;
+      const aliases = (c.aliases || []).join(', ');
+      const last = c._profile_updated_at ? _relativeTime(c._profile_updated_at) : 'no profile';
+      return `
+        <div class="contact-card" data-slug="${slug}" data-open="false">
+          <div class="contact-card-head">
+            <div class="avatar-md">${_initials(name, slug)}</div>
+            <div class="cc-name">
+              <div class="cc-name-primary">${name}${isMe ? ' <span style="color:var(--accent); font-size:11px; margin-left:6px;">(you)</span>' : ''}</div>
+              <div class="cc-name-sub">${slug} · ${last}</div>
+            </div>
+            <div class="cc-role" data-role="${role}">${role}</div>
+          </div>
+          <div class="cc-expand">
+            <div class="pf-row">
+              <label>Display name</label>
+              <input type="text" data-field="display_name" value="${(c.display_name || '').replace(/"/g, '&quot;')}" />
+            </div>
+            <div class="pf-row">
+              <label>Role</label>
+              <select data-field="role">
+                <option value="member"${role === 'member' ? ' selected' : ''}>member</option>
+                <option value="admin"${role === 'admin' ? ' selected' : ''}>admin</option>
+              </select>
+            </div>
+            <div class="pf-row">
+              <label>Pronouns</label>
+              <input type="text" data-field="pronouns" value="${(c.pronouns || '').replace(/"/g, '&quot;')}" />
+            </div>
+            <div class="pf-row">
+              <label>Timezone</label>
+              <input type="text" data-field="timezone" value="${(c.timezone || '').replace(/"/g, '&quot;')}" />
+            </div>
+            <div class="pf-row">
+              <label>Language</label>
+              <input type="text" data-field="language" value="${(c.language || '').replace(/"/g, '&quot;')}" />
+            </div>
+            <div class="pf-row">
+              <label>Aliases</label>
+              <input type="text" data-field="aliases" value="${aliases.replace(/"/g, '&quot;')}" placeholder="comma-separated" />
+            </div>
+            <div class="pf-row">
+              <label>Bio</label>
+              <textarea data-field="bio" rows="3">${(c.bio || '').replace(/</g, '&lt;')}</textarea>
+            </div>
+            <div class="cc-actions">
+              <button class="btn ghost" data-action="disable" ${slug === 'myra' ? 'disabled title="Cannot disable the default admin"' : ''}>Disable</button>
+              <button class="btn" data-action="save">Save</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function saveContact(card, slug) {
+      const fields = {};
+      card.querySelectorAll('[data-field]').forEach(el => {
+        const k = el.dataset.field;
+        let v = el.value;
+        if (k === 'aliases') {
+          v = v.split(',').map(a => a.trim()).filter(Boolean);
+        } else {
+          v = v.trim();
+        }
+        fields[k] = v;
+      });
+      try {
+        const r = await fetch(API_BASE + '/v1/contacts/' + encodeURIComponent(slug), {
+          method: 'PATCH',
+          headers: authHeaders(),
+          body: JSON.stringify(fields),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          alert('Save failed: ' + (err.detail || r.status));
+          return;
+        }
+        await loadContacts();
+      } catch (e) {
+        alert('Save failed: ' + e.message);
+      }
+    }
+
+    async function disableContact(slug) {
+      try {
+        const r = await fetch(API_BASE + '/v1/contacts/' + encodeURIComponent(slug), {
+          method: 'DELETE', headers: authHeaders(),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          alert('Disable failed: ' + (err.detail || r.status));
+          return;
+        }
+        await loadContacts();
+      } catch (e) {
+        alert('Disable failed: ' + e.message);
+      }
+    }
+
+    async function createContact() {
+      const slug = document.getElementById('newContactSlug').value.trim();
+      const display_name = document.getElementById('newContactDisplayName').value.trim();
+      const role = document.getElementById('newContactRole').value;
+      const status = document.getElementById('contactsStatus');
+      if (!slug) {
+        status.textContent = 'slug required';
+        return;
+      }
+      status.textContent = 'creating…';
+      try {
+        const r = await fetch(API_BASE + '/v1/contacts', {
+          method: 'POST', headers: authHeaders(),
+          body: JSON.stringify({ slug, display_name: display_name || slug, role }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          status.textContent = 'failed — ' + (err.detail || r.status);
+          return;
+        }
+        status.textContent = 'created. Minting pair code…';
+        // Mint a pair code bound to this contact so they can bind a device.
+        const pairR = await fetch(API_BASE + '/v1/pair', {
+          method: 'POST', headers: authHeaders(),
+          body: JSON.stringify({ note: `for ${slug}`, contact_slug: slug, ttl_seconds: 3600 }),
+        });
+        if (pairR.ok) {
+          const pair = await pairR.json();
+          status.innerHTML = `created. Share this code with them (expires in 1h):<br><code style="font-family:var(--mono); background:var(--surface-2); padding:4px 8px; border-radius:4px; display:inline-block; margin-top:4px;">${pair.code}</code>`;
+        } else {
+          status.textContent = 'created (pair code mint failed; mint manually under API Keys).';
+        }
+        document.getElementById('newContactSlug').value = '';
+        document.getElementById('newContactDisplayName').value = '';
+        await loadContacts();
+      } catch (e) {
+        status.textContent = 'failed — ' + e.message;
+      }
+    }
+    document.getElementById('newContactBtn')?.addEventListener('click', createContact);
+
 
     async function loadTokens() {
       try {

@@ -32,7 +32,6 @@ from deltas.models import (
     BatchResult,
     ContactIn,
     ContactOut,
-    ContactUpdate,
     DeltaIn,
     DeltaOut,
     DimensionWeights,
@@ -1018,44 +1017,43 @@ async def list_contacts():
 
 @app.post("/contacts", response_model=ContactOut)
 async def create_contact(req: ContactIn):
+    """Register a slug. Soft fields (display_name, role, …) are written
+    separately by the caller as a `profile + contact:<slug>` delta —
+    the contacts registry just tracks that the slug exists."""
     try:
-        return await contacts_store.create(
-            slug=req.slug,
-            display_name=req.display_name,
-            role=req.role,
-            notes=req.notes,
-        )
+        return await contacts_store.create(slug=req.slug)
     except asyncpg.UniqueViolationError as e:
         raise HTTPException(status_code=409, detail=f"Contact '{req.slug}' already exists") from e
 
 
 @app.get("/contacts/{slug}", response_model=ContactOut)
-async def get_contact(slug: str):
-    c = await contacts_store.get(slug)
+async def get_contact(slug: str, include_disabled: bool = False):
+    c = await contacts_store.get(slug, include_disabled=include_disabled)
     if not c:
         raise HTTPException(status_code=404, detail="Contact not found")
     return c
 
 
-@app.patch("/contacts/{slug}", response_model=ContactOut)
-async def update_contact(slug: str, req: ContactUpdate):
-    c = await contacts_store.update(
-        slug,
-        display_name=req.display_name,
-        role=req.role,
-        notes=req.notes,
-    )
-    if not c:
-        raise HTTPException(status_code=404, detail="Contact not found")
-    return c
+@app.post("/contacts/{slug}/disable", response_model=ContactOut)
+async def disable_contact(slug: str):
+    """Soft-delete. Tombstone via disabled_at timestamp. Callers are
+    expected to also write a `contact-deleted + contact:<slug>` delta
+    for lake-side provenance."""
+    ok = await contacts_store.disable(slug)
+    if not ok:
+        existing = await contacts_store.get(slug, include_disabled=True)
+        if not existing:
+            raise HTTPException(status_code=404, detail="Contact not found")
+        return existing
+    return await contacts_store.get(slug, include_disabled=True)
 
 
-@app.delete("/contacts/{slug}")
-async def delete_contact(slug: str):
-    ok = await contacts_store.delete(slug)
+@app.post("/contacts/{slug}/reenable", response_model=ContactOut)
+async def reenable_contact(slug: str):
+    ok = await contacts_store.reenable(slug)
     if not ok:
         raise HTTPException(status_code=404, detail="Contact not found")
-    return {"deleted": slug}
+    return await contacts_store.get(slug)
 
 
 @app.get("/contacts/{slug}/handles", response_model=list[HandleOut])

@@ -37,12 +37,12 @@ CREATE INDEX IF NOT EXISTS idx_deltas_tags ON deltas USING GIN (tags);
 CREATE INDEX IF NOT EXISTS idx_deltas_expires ON deltas (expires_at)
     WHERE expires_at IS NOT NULL;
 
+-- Contacts registry — minimum hard state. All soft fields
+-- (display_name, role, pronouns, bio, …) live in profile deltas.
 CREATE TABLE IF NOT EXISTS contacts (
     slug         TEXT PRIMARY KEY,
-    display_name TEXT NOT NULL,
-    role         TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('admin', 'member')),
-    notes        TEXT NOT NULL DEFAULT '',
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    disabled_at  TIMESTAMPTZ
 );
 
 CREATE TABLE IF NOT EXISTS handles (
@@ -56,9 +56,21 @@ CREATE TABLE IF NOT EXISTS handles (
 CREATE INDEX IF NOT EXISTS idx_handles_contact ON handles (contact_slug);
 """
 
+# Schema-evolution migration. DDL_SQL above runs `CREATE TABLE IF NOT
+# EXISTS` which won't touch an already-existing contacts table — so an
+# instance that was created with the v1 shape (display_name, role,
+# notes columns) needs an explicit rewrite. This is idempotent: each
+# statement is guarded by IF NOT EXISTS / IF EXISTS.
+MIGRATIONS_SQL = """
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS disabled_at TIMESTAMPTZ;
+ALTER TABLE contacts DROP COLUMN IF EXISTS display_name;
+ALTER TABLE contacts DROP COLUMN IF EXISTS role;
+ALTER TABLE contacts DROP COLUMN IF EXISTS notes;
+"""
+
 SEED_SQL = """
-INSERT INTO contacts (slug, display_name, role, notes)
-VALUES ('myra', 'Myra', 'admin', 'Default admin. Owner of the Fathom system.')
+INSERT INTO contacts (slug)
+VALUES ('myra')
 ON CONFLICT (slug) DO NOTHING;
 """
 
@@ -105,6 +117,7 @@ async def init_pool(dsn: str | None = None) -> asyncpg.Pool:
 
     async with _pool.acquire() as conn:
         await conn.execute(DDL_SQL)
+        await conn.execute(MIGRATIONS_SQL)
 
         # Create HNSW indexes (swallow "already exists")
         for _name, ddl in HNSW_INDEXES:

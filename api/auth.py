@@ -260,10 +260,10 @@ async def resolve_contact(slug: str) -> dict | None:
     if entry and (now - entry[0]) < _CONTACT_CACHE_TTL:
         return entry[1]
 
-    from . import delta_client
+    from . import contacts as contacts_mod
 
     try:
-        contact = await delta_client.get_contact(slug)
+        contact = await contacts_mod.get(slug)
     except Exception:
         contact = None
     if contact is not None:

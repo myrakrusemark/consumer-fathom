@@ -1,9 +1,16 @@
-"""Contacts + handles registry — hard state for "who is talking to Fathom."
+"""Contacts + handles registry — minimum hard state for "who is talking
+to Fathom."
 
-Contacts are the source of truth for person identity. Handles are how a
-contact shows up across channels. See docs/contact-spec.md for the full
-model and why this lives alongside the deltas table instead of being
-derived from the lake.
+After the v2 schema change, the contacts table holds only
+`(slug, created_at, disabled_at)`. Everything that describes a person —
+display_name, role, pronouns, bio, avatar, timezone, language, aliases —
+lives in a `profile + contact:<slug>` delta in the lake, latest-wins.
+Reading a contact merges this registry row with the latest profile
+delta (the merge happens at the consumer-api layer, not here).
+
+Handles keep their uniqueness contract per (channel, identifier) and
+cascade-delete when the contact is hard-deleted. In practice deletion
+is a soft tombstone via `disabled_at`; we rarely hard-delete.
 """
 
 from __future__ import annotations
@@ -16,10 +23,8 @@ from .store import _format_ts
 def _row_to_contact(row: asyncpg.Record) -> dict:
     return {
         "slug": row["slug"],
-        "display_name": row["display_name"],
-        "role": row["role"],
-        "notes": row["notes"],
         "created_at": _format_ts(row["created_at"]),
+        "disabled_at": _format_ts(row["disabled_at"]) if row["disabled_at"] else None,
     }
 
 
@@ -36,77 +41,72 @@ class ContactsStore:
     def __init__(self, pool: asyncpg.Pool):
         self._pool = pool
 
-    # ── Contacts ─────────────────────────────────────────────────────────
+    # ── Registry (slug, created_at, disabled_at) ────────────────────────
 
-    async def create(
-        self,
-        slug: str,
-        display_name: str,
-        role: str = "member",
-        notes: str = "",
-    ) -> dict:
+    async def create(self, slug: str) -> dict:
+        """Register a slug. Raises on duplicate. All other fields come
+        from the profile delta and are written by the caller separately."""
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                INSERT INTO contacts (slug, display_name, role, notes)
-                VALUES ($1, $2, $3, $4)
+                INSERT INTO contacts (slug) VALUES ($1)
                 RETURNING *
                 """,
                 slug,
-                display_name,
-                role,
-                notes,
             )
             return _row_to_contact(row)
 
-    async def get(self, slug: str) -> dict | None:
+    async def get(self, slug: str, include_disabled: bool = False) -> dict | None:
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow("SELECT * FROM contacts WHERE slug = $1", slug)
-            return _row_to_contact(row) if row else None
+            if not row:
+                return None
+            if row["disabled_at"] and not include_disabled:
+                return None
+            return _row_to_contact(row)
 
-    async def list_all(self) -> list[dict]:
+    async def list_all(self, include_disabled: bool = False) -> list[dict]:
         async with self._pool.acquire() as conn:
-            rows = await conn.fetch("SELECT * FROM contacts ORDER BY created_at")
+            if include_disabled:
+                rows = await conn.fetch(
+                    "SELECT * FROM contacts ORDER BY created_at"
+                )
+            else:
+                rows = await conn.fetch(
+                    "SELECT * FROM contacts WHERE disabled_at IS NULL ORDER BY created_at"
+                )
             return [_row_to_contact(r) for r in rows]
 
-    async def update(
-        self,
-        slug: str,
-        *,
-        display_name: str | None = None,
-        role: str | None = None,
-        notes: str | None = None,
-    ) -> dict | None:
-        sets = []
-        vals: list = []
-        i = 1
-        if display_name is not None:
-            sets.append(f"display_name = ${i}")
-            vals.append(display_name)
-            i += 1
-        if role is not None:
-            sets.append(f"role = ${i}")
-            vals.append(role)
-            i += 1
-        if notes is not None:
-            sets.append(f"notes = ${i}")
-            vals.append(notes)
-            i += 1
-        if not sets:
-            return await self.get(slug)
-
-        vals.append(slug)
-        sql = f"UPDATE contacts SET {', '.join(sets)} WHERE slug = ${i} RETURNING *"
+    async def disable(self, slug: str) -> bool:
+        """Soft-delete. Handles stay attached; the row stays queryable
+        with include_disabled=True so the lake's provenance links don't
+        become dangling refs."""
         async with self._pool.acquire() as conn:
-            row = await conn.fetchrow(sql, *vals)
-            return _row_to_contact(row) if row else None
-
-    async def delete(self, slug: str) -> bool:
-        async with self._pool.acquire() as conn:
-            status = await conn.execute("DELETE FROM contacts WHERE slug = $1", slug)
+            status = await conn.execute(
+                "UPDATE contacts SET disabled_at = NOW() WHERE slug = $1 AND disabled_at IS NULL",
+                slug,
+            )
             return status.endswith(" 1")
 
-    # ── Handles ──────────────────────────────────────────────────────────
+    async def reenable(self, slug: str) -> bool:
+        async with self._pool.acquire() as conn:
+            status = await conn.execute(
+                "UPDATE contacts SET disabled_at = NULL WHERE slug = $1",
+                slug,
+            )
+            return status.endswith(" 1")
+
+    async def hard_delete(self, slug: str) -> bool:
+        """Remove the registry row entirely, cascading handles. Use
+        sparingly — most deletion is soft via disable(). Kept for
+        admin-initiated cleanup."""
+        async with self._pool.acquire() as conn:
+            status = await conn.execute(
+                "DELETE FROM contacts WHERE slug = $1", slug
+            )
+            return status.endswith(" 1")
+
+    # ── Handles ─────────────────────────────────────────────────────────
 
     async def add_handle(
         self, contact_slug: str, channel: str, identifier: str
@@ -157,7 +157,7 @@ class ContactsStore:
             )
             return slug
 
-    # ── Backfill ─────────────────────────────────────────────────────────
+    # ── Backfill (one-shot migration helper) ────────────────────────────
 
     async def backfill_contact_tag(
         self, contact_slug: str, filter_tags: list[str]

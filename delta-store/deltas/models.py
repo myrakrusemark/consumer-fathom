@@ -6,8 +6,6 @@ Adds plan request/response models for compositional queries.
 
 from __future__ import annotations
 
-from typing import Literal
-
 from pydantic import BaseModel, Field
 
 # ── Delta CRUD ──────────────────────────────────────────────────────────────
@@ -223,30 +221,22 @@ class PlanResponse(BaseModel):
 
 
 # ── Contacts & Handles ─────────────────────────────────────────────────────
-
-
-Role = Literal["admin", "member"]
+#
+# The contacts table is a thin registry: slug + created_at + disabled_at.
+# Everything soft (display_name, role, pronouns, bio, avatar, timezone,
+# language, aliases) lives in a `profile + contact:<slug>` delta,
+# latest-wins, and is merged on the consumer-api side. These models
+# reflect only the registry shape.
 
 
 class ContactIn(BaseModel):
     slug: str
-    display_name: str
-    role: Role = "member"
-    notes: str = ""
-
-
-class ContactUpdate(BaseModel):
-    display_name: str | None = None
-    role: Role | None = None
-    notes: str | None = None
 
 
 class ContactOut(BaseModel):
     slug: str
-    display_name: str
-    role: str
-    notes: str
     created_at: str
+    disabled_at: str | None = None
 
 
 class HandleIn(BaseModel):

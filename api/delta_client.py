@@ -262,48 +262,49 @@ async def drift(text: str, since: str | None = None) -> dict:
     return r.json()
 
 
-# ── Contacts (registry passthrough) ─────────────
+# ── Contacts registry (minimal: slug + created_at + disabled_at) ─────────
 
-async def get_contact(slug: str) -> dict | None:
-    """Fetch a contact record from delta-store by slug."""
+async def get_contact_row(slug: str, include_disabled: bool = False) -> dict | None:
+    """Fetch the thin registry row. The full contact dict lives in the
+    profile delta; consumer-api's contacts module merges the two."""
     c = await _get()
-    r = await c.get(f"/contacts/{slug}")
+    params = {"include_disabled": "true"} if include_disabled else {}
+    r = await c.get(f"/contacts/{slug}", params=params)
     if r.status_code == 404:
         return None
     r.raise_for_status()
     return r.json()
 
 
-async def list_contacts() -> list[dict]:
+async def list_contact_rows(include_disabled: bool = False) -> list[dict]:
     c = await _get()
     r = await c.get("/contacts")
     r.raise_for_status()
-    return r.json()
+    rows = r.json()
+    if include_disabled:
+        return rows
+    return [row for row in rows if not row.get("disabled_at")]
 
 
-async def create_contact(
-    slug: str, display_name: str, role: str = "member", notes: str = ""
-) -> dict:
+async def create_contact_row(slug: str) -> dict:
     c = await _get()
-    r = await c.post(
-        "/contacts",
-        json={"slug": slug, "display_name": display_name, "role": role, "notes": notes},
-    )
+    r = await c.post("/contacts", json={"slug": slug})
     r.raise_for_status()
     return r.json()
 
 
-async def update_contact(slug: str, **fields) -> dict:
+async def disable_contact_row(slug: str) -> dict:
     c = await _get()
-    r = await c.patch(f"/contacts/{slug}", json=fields)
+    r = await c.post(f"/contacts/{slug}/disable")
     r.raise_for_status()
     return r.json()
 
 
-async def delete_contact(slug: str) -> None:
+async def reenable_contact_row(slug: str) -> dict:
     c = await _get()
-    r = await c.delete(f"/contacts/{slug}")
+    r = await c.post(f"/contacts/{slug}/reenable")
     r.raise_for_status()
+    return r.json()
 
 
 async def list_handles(slug: str) -> list[dict]:
