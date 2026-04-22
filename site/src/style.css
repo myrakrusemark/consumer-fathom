@@ -22,6 +22,7 @@ html, body {
   font-size: var(--text-base);
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
 
 body {
@@ -39,82 +40,6 @@ a { color: inherit; text-decoration: none; }
 img { max-width: 100%; display: block; }
 
 .mono { font-family: var(--mono); }
-
-/* ── Top bar ───────────────────────────────────────── */
-
-.topbar {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 28px;
-  background: var(--topbar-bg);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--rule-soft);
-}
-
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4em;
-  font-family: var(--serif);
-  font-style: italic;
-  font-size: var(--text-2xl);
-  line-height: 1;
-  color: var(--ink);
-}
-.brand-mark {
-  color: var(--accent);
-  height: 0.78em;
-  width: auto;
-  vertical-align: baseline;
-}
-.brand-beta {
-  display: inline-block;
-  margin-left: 8px;
-  font-family: var(--mono);
-  font-size: 10px;
-  font-style: normal;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  vertical-align: middle;
-  line-height: 1;
-}
-
-.nav {
-  display: flex;
-  align-items: center;
-  gap: 28px;
-  font-family: var(--mono);
-  font-size: var(--text-sm);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
-  color: var(--ink-soft);
-}
-.nav a { transition: color 140ms ease; }
-.nav a:hover { color: var(--ink); }
-.nav-cta {
-  padding: 8px 14px;
-  border: 1px solid var(--accent);
-  border-radius: 8px;
-  color: var(--accent) !important;
-  background: transparent;
-  transition: background 140ms ease, color 140ms ease;
-}
-.nav-cta:hover {
-  background: var(--accent);
-  color: var(--bg-deep) !important;
-}
-
-@media (max-width: 720px) {
-  .topbar { padding: 12px 18px; }
-  .nav { gap: 14px; }
-  .nav a:not(.nav-cta) { display: none; }
-}
 
 /* ── Shared section scaffolding ────────────────────── */
 
@@ -292,9 +217,50 @@ main {
 /* ── Hero ──────────────────────────────────────────── */
 
 .hero {
+  position: relative;
   padding-top: 72px;
+  padding-bottom: 70px;
+}
+.hero-bg-video {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100vw;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 0;
+  /* Radial soft-vignette so the video doesn't end on hard seams at the
+     viewport edges. */
+  mask-image: radial-gradient(ellipse at center, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 100%);
+  -webkit-mask-image: radial-gradient(ellipse at center, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 100%);
+}
+/* Dark scrim over the left half so the hero text stays legible while the
+   video keeps its presence on the right. */
+.hero::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100vw;
+  height: 100%;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(
+    95deg,
+    rgba(13, 31, 38, 0.92) 0%,
+    rgba(13, 31, 38, 0.86) 40%,
+    rgba(13, 31, 38, 0.55) 62%,
+    rgba(13, 31, 38, 0.15) 82%,
+    rgba(13, 31, 38, 0)    95%
+  );
 }
 .hero-inner {
+  position: relative;
+  z-index: 2;
   max-width: 780px;
   margin: 0 auto;
 }
@@ -365,26 +331,21 @@ main {
 }
 
 .network-comic {
-  margin: 24px 0 0;
+  margin: 24px auto 0;
   max-width: 540px;
   border: 1px solid var(--rule);
   border-radius: var(--radius);
   overflow: hidden;
   background: #fafaf7;
 }
+.network-comic picture,
 .network-comic img {
   width: 100%;
   height: auto;
   display: block;
 }
-.network-comic figcaption {
-  font-family: var(--mono);
-  font-size: var(--text-sm);
-  letter-spacing: var(--tracking-wide);
-  color: var(--ink-faint);
-  padding: 12px 18px;
-  background: var(--surface);
-  border-top: 1px solid var(--rule);
+@media (min-width: 900px) {
+  .network-comic { max-width: 100%; }
 }
 
 /* ── Surfaces grid ─────────────────────────────────── */

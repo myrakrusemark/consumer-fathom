@@ -3,13 +3,6 @@
    specific to a documentation-flavored page: requirement list, numbered
    install steps, code blocks, location grid. */
 
-.nav-active {
-  color: var(--ink) !important;
-  text-decoration: underline;
-  text-underline-offset: 4px;
-  text-decoration-color: var(--accent);
-}
-
 /* ── Requirement list ──────────────────────────────── */
 
 .req-list {

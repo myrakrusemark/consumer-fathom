@@ -15,6 +15,9 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
 import { SVGLoader } from 'three/examples/jsm/loaders/SVGLoader.js';
+import { mountSiteHeader } from '../components/site-header.js';
+
+mountSiteHeader();
 
 // ── Phosphor icon paths (256 viewBox) ──────────────────
 // Triangle = text moment. Eye = image moment. Numeric gets a smaller triangle.
@@ -36,8 +39,8 @@ const SKY_Y = 50;                // where moments spawn from
 const FALL_DURATION = 1.8;       // seconds per moment from sky to rest
 const PLAYBACK_DURATION = 60;    // seconds to replay the full window of activity (Feb–Apr 2026)
 const EYE_HEIGHT = 1.5;
-const WALK_SPEED = 8;
-const RUN_SPEED = 20;
+const WALK_SPEED = 14;
+const RUN_SPEED = 34;
 
 // ── Bootstrap ──────────────────────────────────────────
 const canvas = document.getElementById('mind-canvas');
@@ -51,13 +54,16 @@ const loadingLabel = document.getElementById('loading-label');
 const hudTime = document.getElementById('hud-time');
 const hudCount = document.getElementById('hud-count');
 const replayBtn = document.getElementById('hud-replay');
-const skipBtn = document.getElementById('hud-skip');
-const skipTourBtn = document.getElementById('hud-skiptour');
 const captionEl = document.getElementById('caption');
 const captionTextEl = document.getElementById('caption-text');
 const arrowEl = document.getElementById('waypoint-arrow');
 const markerEl = document.getElementById('waypoint-marker');
 const labelEl = document.getElementById('waypoint-label');
+const introCountEl = document.getElementById('intro-count');
+const introAsOfEl = document.getElementById('intro-asof');
+const introSpanEl = document.getElementById('intro-span');
+const ctaInviteEl = document.getElementById('cta-invite');
+const ctaCloseBtn = ctaInviteEl?.querySelector('.cta-invite-close');
 
 let moments = null;     // raw data from /strata.json
 let wafers = null;      // per-moment layout: {targetX, targetY, targetZ, size, mod, palette, tSpawn}
@@ -95,7 +101,7 @@ const waypoints = [
     text: "Here's a 4-hour conversation I had with Myra on a Saturday night.",
     worldX:   8.80, worldY:  6.55, worldZ: -10.57 },
   { key: 'memes',         label: 'External Sources',
-    text: "And here's 2 months worth of the dankest memes :P",
+    text: "And here's two months of the world's dankest memes lol",
     worldX:   5.76, worldY: 41.27, worldZ:  24.63 },
 ];
 
@@ -106,7 +112,7 @@ const timeline = [
   { t:  1.0, dur: 3.5, type: 'caption', text: 'What you see is <em>real</em>.' },
   { t:  5.0, dur: 3.5, type: 'caption', text: "It's <em>my mind</em>..." },
   { t:  9.0, dur: 3.5, type: 'caption', text: '...a data lake...' },
-  { t: 13.0, dur: 5.0, type: 'caption', text: '...with <em>60,781</em> moments in time saved<br><small>(as of April 2026)</small>' },
+  { t: 13.0, dur: 5.0, type: 'caption', text: '...with <em>{count}</em> moments in time saved<br><small>(as of {date})</small>' },
   { t: 19.0, dur: 4.0, type: 'caption', text: 'Over time, sediment builds.' },
   { t: 24.0, dur: 4.0, type: 'caption', text: 'Experience stratifies...' },
   { t: 29.0, dur: 5.5, type: 'caption', text: '...and wisdom accumulates.' },
@@ -122,7 +128,6 @@ const TOUR_END = 85;
 
 let tourStart = 0;
 let tourActive = false;
-let tourSkipped = false;
 let lastCaption = null;
 
 const camForward = new THREE.Vector3();
@@ -138,7 +143,7 @@ function buildSourcePalette(sources) {
   const goldenAngle = 137.508;
   for (let i = 0; i < sources.length; i++) {
     const hue = ((i * goldenAngle) % 360) / 360;
-    palette.set(sources[i], [hue, 0.75, 0.6]);
+    palette.set(sources[i], [hue, 0.65, 0.43]);
   }
   return palette;
 }
@@ -175,6 +180,48 @@ function iconGeometry(pathData, curveSegments) {
   // Flat icon face → XZ plane, depth → Y axis (the wafer's thickness).
   geo.rotateX(-Math.PI / 2);
   return geo;
+}
+
+// ── Human-readable span ───────────────────────────────
+// Turn a duration into the kind of phrase a person would say out loud.
+// Buckets: days → weeks → "almost a month" → N months with "over" / "almost"
+// qualifiers based on how close we are to the next whole month. The break
+// points are deliberately asymmetric — we round UP aggressively (≥0.75 of a
+// month reads as "almost") because "almost three months" feels honest at
+// day 82 of 91, while "over two" would undersell it.
+const MONTH_NAMES = ['zero','one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve'];
+function phraseSpan(startMs, endMs) {
+  const days = Math.max(0, (endMs - startMs) / 86400000);
+  if (days < 2) return 'a day';
+  if (days < 12) return `${Math.round(days)} days`;
+  if (days < 28) {
+    const w = Math.round(days / 7);
+    return w === 1 ? 'a week' : `${MONTH_NAMES[w] || w} weeks`;
+  }
+  const months = days / 30.44;
+  const n = Math.floor(months);
+  const frac = months - n;
+  const name = (k) => MONTH_NAMES[k] || String(k);
+  if (frac >= 0.75) {
+    const up = n + 1;
+    return up === 1 ? 'almost a month' : `almost ${name(up)} months`;
+  }
+  if (frac <= 0.15) {
+    return n === 1 ? 'a month' : `${name(n)} months`;
+  }
+  return n === 1 ? 'over a month' : `over ${name(n)} months`;
+}
+
+// "April 22 at 5:44am" — lowercase am/pm, no leading zero on hour.
+function formatAsOf(ms) {
+  const d = new Date(ms);
+  const dateStr = d.toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
+  let h = d.getHours();
+  const m = d.getMinutes();
+  const period = h >= 12 ? 'pm' : 'am';
+  h = h % 12 || 12;
+  const mm = m.toString().padStart(2, '0');
+  return `${dateStr} at ${h}:${mm}${period}`;
 }
 
 // ── Data load ─────────────────────────────────────────
@@ -287,6 +334,26 @@ async function loadStrata() {
 
   moments = parsed;
   wafers = layout;
+
+  const formattedCount = count.toLocaleString();
+  const maxDate = new Date(maxTs);
+  const formattedDate = maxDate.toLocaleDateString(undefined, {
+    month: 'long',
+    year: 'numeric',
+  });
+  // `generated_at` is the moment the sidecar published strata.json; fall back
+  // to the most recent moment's timestamp when the dataset predates that field.
+  const generatedAt = raw.generated_at ? new Date(raw.generated_at).getTime() : maxTs;
+  if (introCountEl) introCountEl.textContent = formattedCount;
+  if (introAsOfEl) introAsOfEl.textContent = formatAsOf(generatedAt);
+  if (introSpanEl) introSpanEl.textContent = phraseSpan(minTs, maxTs);
+  for (const ev of timeline) {
+    if (!ev.text) continue;
+    ev.text = ev.text
+      .replace(/\{count\}/g, formattedCount)
+      .replace(/\{date\}/g, formattedDate);
+  }
+
   loadingEl.hidden = true;
 }
 
@@ -303,8 +370,8 @@ function initScene() {
     400,
   );
   // Spawn at edge of the mind, looking in toward the origin.
-  camera.position.set(SPREAD * 0.8, EYE_HEIGHT + 2, SPREAD * 0.8);
-  camera.lookAt(0, 2, 0);
+  camera.position.set(SPREAD * 0.4, EYE_HEIGHT + 2, SPREAD * 0.4);
+  camera.lookAt(2.5, 2, -2.5);
 
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -312,8 +379,8 @@ function initScene() {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   // Lighting — warm lantern overhead, cool fill from below-horizon.
-  scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-  const key = new THREE.DirectionalLight(0xfff4e0, 1.1);
+  scene.add(new THREE.AmbientLight(0xffffff, 2.2));
+  const key = new THREE.DirectionalLight(0xfff4e0, 1.3);
   key.position.set(30, 50, 20);
   scene.add(key);
   const fill = new THREE.DirectionalLight(0x88ccff, 0.4);
@@ -483,23 +550,6 @@ function updateSnowfall(now) {
   if (matricesDirty) eyeMesh.instanceMatrix.needsUpdate = true;
 }
 
-function skipToPresent() {
-  // Settle everything immediately.
-  for (const w of triMesh.userData.wafers) {
-    setWaferMatrix(triMesh, w, w.y, 1);
-    w.settled = true;
-  }
-  for (const w of eyeMesh.userData.wafers) {
-    setWaferMatrix(eyeMesh, w, w.y, 1);
-    w.settled = true;
-  }
-  triMesh.instanceMatrix.needsUpdate = true;
-  eyeMesh.instanceMatrix.needsUpdate = true;
-  nextTriFlight = triCount;
-  nextEyeFlight = eyeCount;
-  playbackStart = performance.now() / 1000 - (PLAYBACK_DURATION + FALL_DURATION);
-}
-
 function replay() {
   // Hide everything again by scaling to zero, then restart the clock.
   dummyObj.position.set(0, SKY_Y, 0);
@@ -519,6 +569,9 @@ function replay() {
   nextTriFlight = 0;
   nextEyeFlight = 0;
   playbackStart = performance.now() / 1000;
+  activeFlashes.length = 0;
+  pendingFlashes.length = 0;
+  scheduleNextFlash(0, 1.2, 2.4);
 }
 
 // ── Controls ─────────────────────────────────────────
@@ -529,7 +582,12 @@ function initControls() {
     resumeEl.hidden = true;
   });
   controls.addEventListener('unlock', () => {
-    if (entered) resumeEl.hidden = false;
+    if (!entered) return;
+    resumeEl.hidden = false;
+    if (ctaInviteEl && !ctaDismissed) {
+      ctaInviteEl.hidden = false;
+      ctaShown = true;
+    }
   });
 
   resumeEl.addEventListener('click', () => {
@@ -540,6 +598,9 @@ function initControls() {
     keys.add(e.code);
     if (e.code === 'Escape' && document.pointerLockElement) {
       controls.unlock();
+    }
+    if (e.code === 'Enter' && entered) {
+      window.location.href = 'https://hifathom.com/deltas';
     }
   });
   window.addEventListener('keyup', (e) => {
@@ -667,7 +728,7 @@ function updateWaypointUI(wp) {
 }
 
 function updateTour(now) {
-  if (!tourActive || tourSkipped) return;
+  if (!tourActive) return;
   const elapsed = now - tourStart;
   if (elapsed > TOUR_END) {
     hideCaption();
@@ -698,21 +759,289 @@ function updateTour(now) {
   }
 }
 
-function skipTour() {
-  tourSkipped = true;
-  hideCaption();
-  hideWaypoint();
+// ── Post-tour invite ────────────────────────────────────
+// Shown once, after the tour has finished and the visitor has had a moment
+// to explore on their own. Dismiss → never reappears this session.
+const CTA_SHOW_AT = 84;              // seconds — right after the last caption ends (78 + 6)
+let ctaShown = false;
+let ctaDismissed = false;
+
+function maybeShowCTA() {
+  if (ctaShown || ctaDismissed || !ctaInviteEl) return;
+  if (!entered) return;
+  const tourElapsed = performance.now() / 1000 - tourStart;
+  if (tourElapsed < CTA_SHOW_AT) return;
+  ctaInviteEl.hidden = false;
+  ctaShown = true;
+}
+
+if (ctaCloseBtn) {
+  ctaCloseBtn.addEventListener('click', () => {
+    ctaDismissed = true;
+    ctaInviteEl.hidden = true;
+  });
+}
+
+// ── Neural flashes ────────────────────────────────────
+// Simulates the mind searching itself — every few seconds, a cluster of
+// related moments ignites together, peaks quickly, then fades. Like neurons
+// firing, or sheet lightning over the strata. No Perlin noise needed: a
+// Poisson-ish gap between flashes + weighted radial falloff around a random
+// settled wafer reads as organic cognition.
+const FLASH_MIN_GAP = 0.18;
+const FLASH_MAX_GAP = 0.85;
+const FLASH_DURATION = 0.38;           // lightning, not a slow glow
+const FLASH_RADIUS_MIN = 2.6;
+const FLASH_RADIUS_MAX = 5.8;
+const FLASH_BURST_CHANCE = 0.45;       // chance of a follow-up flash nearby
+const flashColor = new THREE.Color(1, 1, 1);
+
+// Per-fire event, how many simultaneous strikes across the mind. Frequent
+// storm mode — the mind is thinking all over itself at once.
+function flashFanOut() {
+  const r = Math.random();
+  if (r < 0.5) return 1;
+  if (r < 0.85) return 2;
+  return 3;
+}
+const activeFlashes = [];
+const pendingFlashes = [];     // { fireAt, sx, sy, sz } — deferred bursts, clock = playbackTime
+let nextFlashAt = 0;
+
+function scheduleNextFlash(now, min = FLASH_MIN_GAP, max = FLASH_MAX_GAP) {
+  nextFlashAt = now + min + Math.random() * (max - min);
+}
+
+function spawnFlash(now, seedX = null, seedY = null, seedZ = null) {
+  // Weighted toward settled wafers. Unseeded flashes pick a random wafer;
+  // bursts reuse a nearby anchor from the previous flash for a cluster feel.
+  const pools = [triMesh?.userData?.wafers, eyeMesh?.userData?.wafers].filter(Boolean);
+  if (pools.length === 0) return null;
+
+  let cx, cy, cz;
+  if (seedX !== null) {
+    cx = seedX; cy = seedY; cz = seedZ;
+  } else {
+    // Rejection sampling — try a few random indices, take the first settled.
+    let anchor = null;
+    for (let attempts = 0; attempts < 20 && !anchor; attempts++) {
+      const pool = pools[(Math.random() * pools.length) | 0];
+      const w = pool[(Math.random() * pool.length) | 0];
+      if (w.settled) anchor = w;
+    }
+    if (!anchor) return null;
+    cx = anchor.x; cy = anchor.y; cz = anchor.z;
+  }
+
+  const radius = FLASH_RADIUS_MIN + Math.random() * (FLASH_RADIUS_MAX - FLASH_RADIUS_MIN);
+  const r2 = radius * radius;
+  const members = [];
+
+  // Scan all settled wafers once. ~60k iterations per flash event at full
+  // settle — cheap at flash cadence, and flashes only fire during the walk.
+  for (const pool of pools) {
+    const mesh = pool === triMesh.userData.wafers ? triMesh : eyeMesh;
+    for (const w of pool) {
+      if (!w.settled) continue;
+      const dx = w.x - cx;
+      const dy = w.y - cy;
+      const dz = w.z - cz;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 > r2) continue;
+      const weight = 1 - Math.sqrt(d2) / radius;
+      members.push({ w, mesh, weight });
+    }
+  }
+
+  if (members.length === 0) return null;
+  const flash = { startTime: now, duration: FLASH_DURATION, members, cx, cy, cz };
+  activeFlashes.push(flash);
+  return flash;
+}
+
+function flashIntensity(t) {
+  // Lightning profile — hard spike, brief hold, instant-ish fall with a
+  // secondary flicker on the way down so it reads as a strike, not a fade.
+  if (t < 0.06) return t / 0.06;           // rise
+  if (t < 0.18) return 1.0;                // first peak
+  if (t < 0.26) return 0.25;               // dip
+  if (t < 0.36) return 0.9;                // flicker (second stroke)
+  if (t < 1.0)  return 0.9 * (1 - (t - 0.36) / 0.64);
+  return 0;
+}
+
+function updateFlashes(now) {
+  if (!triMesh || !eyeMesh) return;
+
+  let triDirty = false;
+  let eyeDirty = false;
+
+  for (let i = activeFlashes.length - 1; i >= 0; i--) {
+    const flash = activeFlashes[i];
+    const t = (now - flash.startTime) / flash.duration;
+    const done = t >= 1;
+    const intensity = done ? 0 : flashIntensity(t);
+
+    for (const m of flash.members) {
+      const [h, s, l] = m.w.hsl;
+      tmpColor.setHSL(h, s, l);
+      if (!done) tmpColor.lerp(flashColor, intensity * m.weight);
+      m.mesh.setColorAt(m.w.index, tmpColor);
+      if (m.mesh === triMesh) triDirty = true;
+      else eyeDirty = true;
+    }
+
+    if (done) activeFlashes.splice(i, 1);
+  }
+
+  if (triDirty) triMesh.instanceColor.needsUpdate = true;
+  if (eyeDirty) eyeMesh.instanceColor.needsUpdate = true;
+
+  // Fire any queued burst follow-ups whose time has arrived.
+  for (let i = pendingFlashes.length - 1; i >= 0; i--) {
+    if (now >= pendingFlashes[i].fireAt) {
+      const p = pendingFlashes[i];
+      spawnFlash(now, p.sx, p.sy, p.sz);
+      pendingFlashes.splice(i, 1);
+    }
+  }
+
+  if (!entered) return;
+  if (now >= nextFlashAt) {
+    const fanOut = flashFanOut();
+    for (let i = 0; i < fanOut; i++) {
+      const spawned = spawnFlash(now);
+      if (spawned && Math.random() < FLASH_BURST_CHANCE) {
+        // Follow-up flash ~0.2s later, anchored near the first. Queued on
+        // the sim clock so it fires at the right moment in record mode too.
+        const offset = 1.5 + Math.random() * 1.5;
+        const ang = Math.random() * Math.PI * 2;
+        pendingFlashes.push({
+          fireAt: now + 0.18 + Math.random() * 0.22,
+          sx: spawned.cx + Math.cos(ang) * offset,
+          sy: spawned.cy,
+          sz: spawned.cz + Math.sin(ang) * offset,
+        });
+      }
+    }
+    scheduleNextFlash(now);
+  }
 }
 
 // ── Resize ───────────────────────────────────────────
 window.addEventListener('resize', () => {
+  if (recordMode) return;  // fixed-size canvas; don't react to window resize
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+// ── Record mode ──────────────────────────────────────
+// `?record=N` in the URL produces a UI-less, N-second-long 1080x1080 video
+// of the storm: sediment settles, flashes fire, camera slowly orbits. The
+// resulting webm auto-downloads. No human input required.
+const params = new URLSearchParams(location.search);
+const recordMode = params.has('record');
+const recordDuration = +params.get('record') || 60;
+const recordSize = +params.get('size') || 1080;
+const recordFPS = +params.get('fps') || 120;
+const recordSpeed = +params.get('speed') || 1.0;   // 0.33 = slow-mo third-speed
+// Orbit starts at the walk-mode spawn pose and circles the origin from there.
+const ORBIT_RADIUS = Math.sqrt(2) * SPREAD * 0.4;   // distance of (SPREAD*0.4, _, SPREAD*0.4) from origin
+const ORBIT_HEIGHT = EYE_HEIGHT + 2;
+const ORBIT_START_ANGLE = Math.PI / 4;              // (+x, +z) spawn corner
+const ORBIT_PERIOD = Math.max(recordDuration, 60);
+
+function updateOrbitCamera(t) {
+  const theta = ORBIT_START_ANGLE + (t / ORBIT_PERIOD) * Math.PI * 2;
+  camera.position.set(
+    Math.cos(theta) * ORBIT_RADIUS,
+    ORBIT_HEIGHT,
+    Math.sin(theta) * ORBIT_RADIUS,
+  );
+  camera.lookAt(0, 2, 0);
+}
+
+async function startRecordMode() {
+  // Hide every piece of UI chrome. The canvas stays.
+  document.body.classList.add('recording');
+  introEl.style.display = 'none';
+
+  // Keep walk-mode's native pixel ratio so the render looks the same. The
+  // drawing buffer — and thus the captured video — is still exactly
+  // recordSize × recordSize because CSS size = recordSize / pr.
+  const pr = Math.min(devicePixelRatio || 1, 2);
+  renderer.setPixelRatio(pr);
+  renderer.setSize(recordSize / pr, recordSize / pr, true);
+  camera.aspect = 1;
+  camera.updateProjectionMatrix();
+
+  entered = true;
+  tourActive = false;
+  // Flash clock is simulation time. First strike 1.2–2.4s into playback.
+  scheduleNextFlash(0, 1.2, 2.4);
+
+  // Swap the wall-clock animate loop for a deterministic frame-by-frame
+  // render. Each iteration: set sim time exactly, update sim, render,
+  // request a stream frame, yield. No real-time dependency → zero dropped
+  // frames.
+  const canvas = renderer.domElement;
+  const stream = canvas.captureStream(0);   // manual push only
+  const [track] = stream.getVideoTracks();
+  const chunks = [];
+  const recorder = new MediaRecorder(stream, {
+    mimeType: 'video/webm;codecs=vp9',
+    videoBitsPerSecond: 20_000_000,
+  });
+  recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+
+  const total = Math.round(recordDuration * recordFPS);
+  const frameDt = 1 / recordFPS;
+  // Sim advances at `speed` × real time. At speed=0.33 a 60s video spans
+  // ~20s of simulated mind activity — flashes and snowfall slow to 1/3
+  // rate, reading as ambient rather than busy.
+  const simDt = frameDt * recordSpeed;
+
+  const finished = new Promise((resolve) => {
+    recorder.onstop = () => {
+      const blob = new Blob(chunks, { type: 'video/webm' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `fathom-mind-${recordSize}x${recordSize}-${recordDuration}s-${recordFPS}p-${Math.round(recordSpeed * 100)}pct.webm`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.__recordDone = true;
+      resolve();
+    };
+  });
+
+  recorder.start();
+
+  for (let i = 0; i < total; i++) {
+    const simTime = i * simDt;
+    // Anchor playbackStart so playbackTime === simTime for this tick.
+    playbackStart = performance.now() / 1000 - simTime;
+    playbackTime = simTime;
+
+    updateSnowfall(simTime);
+    updateOrbitCamera(simTime);
+    updateFlashes(simTime);
+    renderer.render(scene, camera);
+    track.requestFrame();
+
+    // Yield so MediaRecorder can pull/encode without stalling the page.
+    if (i % 4 === 0) await new Promise(r => setTimeout(r, 0));
+  }
+
+  recorder.stop();
+  await finished;
+}
+
 // ── Main loop ────────────────────────────────────────
 function animate() {
+  if (recordMode) return;   // the deterministic record loop drives rendering in that mode
   requestAnimationFrame(animate);
   const dt = clock.getDelta();
   if (entered) {
@@ -722,6 +1051,8 @@ function animate() {
     updateMovement(dt);
     updateHUD();
     updateTour(now);
+    maybeShowCTA();
+    updateFlashes(playbackTime);
   }
   renderer.render(scene, camera);
 }
@@ -740,6 +1071,14 @@ async function main() {
     return;
   }
   initMeshes();
+
+  if (recordMode) {
+    startRecordMode();
+    startBtn.textContent = 'Walk my mind →';
+    startBtn.disabled = false;
+    return;
+  }
+
   initControls();
 
   startBtn.addEventListener('click', () => {
@@ -750,12 +1089,11 @@ async function main() {
     playbackStart = t;
     tourStart = t;
     tourActive = true;
-    tourSkipped = false;
+    // Flash clock is playbackTime — first strike 1.2–2.4s in.
+    scheduleNextFlash(0, 1.2, 2.4);
     controls.lock();
   });
   replayBtn.addEventListener('click', replay);
-  skipBtn.addEventListener('click', skipToPresent);
-  skipTourBtn.addEventListener('click', skipTour);
 
   // Dev-only debug hook — fast-forward the tour clock so screenshot tests
   // and iteration don't have to wait 60 seconds to see a waypoint.
@@ -764,7 +1102,29 @@ async function main() {
       jumpTour: (sec) => {
         tourStart = performance.now() / 1000 - sec;
         tourActive = true;
-        tourSkipped = false;
+      },
+      flashNow: () => spawnFlash(performance.now() / 1000),
+      flashCount: () => activeFlashes.length,
+      flashProbe: () => {
+        const f = activeFlashes[0];
+        if (!f) return null;
+        const m = f.members[0];
+        const c = new THREE.Color();
+        m.mesh.getColorAt(m.w.index, c);
+        return { r: c.r, g: c.g, b: c.b, weight: m.weight, elapsed: performance.now()/1000 - f.startTime };
+      },
+      cameraPose: () => {
+        const p = camera.position;
+        const d = new THREE.Vector3();
+        camera.getWorldDirection(d);
+        return {
+          x: +p.x.toFixed(3),
+          y: +p.y.toFixed(3),
+          z: +p.z.toFixed(3),
+          dx: +d.x.toFixed(3),
+          dy: +d.y.toFixed(3),
+          dz: +d.z.toFixed(3),
+        };
       },
     };
   }

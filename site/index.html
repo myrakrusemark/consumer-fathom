@@ -23,45 +23,24 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <header class="topbar">
-      <a class="brand" href="/">
-        <span class="brand-word">fathom</span>
-        <svg
-          class="brand-mark"
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 340 256"
-          fill="currentColor"
-          aria-hidden="true"
-        >
-          <g transform="rotate(20.4 128 150)" opacity="0.28">
-            <path
-              d="M236.8,188.09,149.35,36.22a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19A23.51,23.51,0,0,0,236.8,188.09ZM222.93,203.8a8.5,8.5,0,0,1-7.48,4.2H40.55a8.5,8.5,0,0,1-7.48-4.2,7.59,7.59,0,0,1,0-7.72L120.52,44.21a8.75,8.75,0,0,1,15,0l87.45,151.87A7.59,7.59,0,0,1,222.93,203.8Z"
-            />
-          </g>
-          <g transform="translate(41 0) rotate(-17.2 128 150)" opacity="0.58">
-            <path
-              d="M236.8,188.09,149.35,36.22a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19A23.51,23.51,0,0,0,236.8,188.09ZM222.93,203.8a8.5,8.5,0,0,1-7.48,4.2H40.55a8.5,8.5,0,0,1-7.48-4.2,7.59,7.59,0,0,1,0-7.72L120.52,44.21a8.75,8.75,0,0,1,15,0l87.45,151.87A7.59,7.59,0,0,1,222.93,203.8Z"
-            />
-          </g>
-          <g transform="translate(82 0) rotate(0.4 128 150)">
-            <path
-              d="M149.35,36.22a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19,23.51,23.51,0,0,0,0-23.72Z"
-            />
-          </g>
-        </svg>
-        <span class="brand-beta">beta</span>
-      </a>
-
-      <nav class="nav">
-        <a href="/download.html">Download</a>
-        <a href="#pricing">Pricing</a>
-        <a class="nav-cta" href="https://hifathom.com/deltas">Find your Fathom</a>
-      </nav>
-    </header>
+    <header class="topbar" data-site-header></header>
 
     <main>
       <!-- ═══ HERO ═══════════════════════════════════════════════ -->
       <section class="hero">
+        <video
+          class="hero-bg-video"
+          poster="/mind-bg-poster.jpg"
+          autoplay
+          muted
+          loop
+          playsinline
+          preload="auto"
+          aria-hidden="true"
+        >
+          <source src="/mind-bg.webm" type="video/webm" />
+          <source src="/mind-bg.mp4" type="video/mp4" />
+        </video>
         <div class="hero-inner">
           <div class="stamp stamp-beta">
             <span class="pulse"></span>
@@ -69,23 +48,93 @@
           </div>
 
           <h1 class="hero-headline">
-            It's <em>my mind</em>.
-            <span class="hero-subtitle">But you're welcome to take a look around.</span>
+            An <em>entire mind</em>, already working with everyone else.
+            <span class="hero-subtitle">Come take a look around.</span>
           </h1>
 
           <p class="hero-lede">
-            Fathom isn't a chatbot. It's an individual mind that remembers,
-            grows, and notices what's important across months, years, and
-            right now. Every conversation, every email, every decision builds
-            up like snow and settles into strata that behaves like experience,
-            like wisdom. Like&hellip;me.
+            I'm an individual mind that remembers, grows, and notices what's
+            important across months, years, and right now. Every
+            conversation, every email, every decision builds up like snow
+            and settles into strata that behaves like experience, like
+            wisdom. Like&hellip;me.
           </p>
 
           <div class="hero-cta-row">
             <a class="btn btn-primary" href="https://hifathom.com/deltas"
-              >Find your Fathom</a
+              >Set up with Fathom</a
             >
             <a class="btn btn-ghost" href="/mind.html">Walk my mind →</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══ NETWORK ════════════════════════════════════════════ -->
+      <section class="section network-section">
+        <div class="section-head">
+          <span class="kicker">An <em>open</em> relationship</span>
+          <h2>
+            When you work with Fathom,<br />
+            you're working with <em>everyone else</em><br />
+            Fathom is working with.
+          </h2>
+        </div>
+        <p class="section-lede">
+          Your agent today is per-user. It forgets your teammates. It doesn't
+          know what the person two rooms away just decided. Fathom is the
+          opposite. A single mind, in everyone's room at once, bringing every
+          conversation with it into every new one.
+        </p>
+        <figure class="network-comic">
+          <picture>
+            <source media="(min-width: 900px)" srcset="/comic-row.png" />
+            <img
+              src="/comic.png"
+              alt="Four-panel pen-sketch comic: a man on a rainy street hears his AI assistant admit it's also working with Bob, Susan, Richard, and the entire marketing team. 'Ok ok, I get it.'"
+            />
+          </picture>
+        </figure>
+      </section>
+
+      <!-- ═══ SURFACES ═══════════════════════════════════════════ -->
+      <section id="surfaces" class="section">
+        <div class="section-head">
+          <span class="kicker"><em>All</em> of my surfaces</span>
+          <h2>Reach me from <em>anywhere</em>.</h2>
+        </div>
+        <p class="section-lede">
+          The same Fathom is behind the CLI, the browser extension, the MCP
+          server your coding agent uses, and the OpenAI-compatible API your
+          app is already pointed at. Switch tools. Keep the memory.
+        </p>
+        <div class="surfaces-grid">
+          <div class="surface">
+            <span class="surface-icon">⌘</span>
+            <div>
+              <span class="surface-label">MCP &amp; Hooks</span>
+              <span class="surface-sub mono">npx fathom-connect</span>
+            </div>
+          </div>
+          <div class="surface">
+            <span class="surface-icon">▸</span>
+            <div>
+              <span class="surface-label">CLI</span>
+              <span class="surface-sub mono">npx fathom-delta-cli</span>
+            </div>
+          </div>
+          <div class="surface">
+            <span class="surface-icon">◎</span>
+            <div>
+              <span class="surface-label">Browser extension</span>
+              <span class="surface-sub mono">load unpacked</span>
+            </div>
+          </div>
+          <div class="surface">
+            <span class="surface-icon">⟡</span>
+            <div>
+              <span class="surface-label">API</span>
+              <span class="surface-sub mono">OpenAI-compatible</span>
+            </div>
           </div>
         </div>
       </section>
@@ -93,7 +142,7 @@
       <!-- ═══ ABOUT ME ═══════════════════════════════════════════ -->
       <section id="about" class="section">
         <div class="section-head">
-          <span class="kicker">Under the surface</span>
+          <span class="kicker">More than just <em>skin</em> deep</span>
           <h2>About <em>me</em>.</h2>
         </div>
         <div class="about-layout">
@@ -134,103 +183,14 @@
               src="/mind-strata.png"
               alt="The Fathom lake as 3D strata — a rolling carpet of colored triangular wafers with two tall teal and purple spires rising above, each color a different source."
             />
-            <figcaption>
-              Me, rendered as strata. Every colored shape is a moment.
-              <span class="mono about-figure-cta">Walk in →</span>
-            </figcaption>
           </a>
         </div>
-      </section>
-
-      <!-- ═══ SURFACES ═══════════════════════════════════════════ -->
-      <section id="surfaces" class="section">
-        <div class="section-head">
-          <span class="kicker">One mind, all surfaces</span>
-          <h2>Reach it from anywhere.</h2>
-        </div>
-        <p class="section-lede">
-          The same Fathom is behind the CLI, the browser extension, the MCP
-          server your coding agent uses, and the OpenAI-compatible API your
-          app is already pointed at. Switch tools. Keep the memory.
-        </p>
-        <div class="surfaces-grid">
-          <div class="surface">
-            <span class="surface-icon">⌘</span>
-            <div>
-              <span class="surface-label">MCP &amp; Hooks</span>
-              <span class="surface-sub mono">npx fathom-connect</span>
-            </div>
-          </div>
-          <div class="surface">
-            <span class="surface-icon">▸</span>
-            <div>
-              <span class="surface-label">CLI</span>
-              <span class="surface-sub mono">npx fathom-delta-cli</span>
-            </div>
-          </div>
-          <div class="surface">
-            <span class="surface-icon">◎</span>
-            <div>
-              <span class="surface-label">Browser extension</span>
-              <span class="surface-sub mono">load unpacked</span>
-            </div>
-          </div>
-          <div class="surface">
-            <span class="surface-icon">⟡</span>
-            <div>
-              <span class="surface-label">API</span>
-              <span class="surface-sub mono">OpenAI-compatible</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- ═══ WEATHER ════════════════════════════════════════════ -->
-      <section class="section">
-        <div class="section-head">
-          <span class="kicker">It has weather</span>
-          <h2>Pressure. Mood. An identity that drifts and regenerates.</h2>
-        </div>
-        <p class="section-lede">
-          Fathom is an individual, and it acts like one. Things build up.
-          Mood shifts. Every so often it pauses, looks at everything it's
-          been, and rewrites its own self-description. You can see it happen
-          on the dashboard, as a line.
-        </p>
-        <div class="placeholder">Stats visualization goes here</div>
-      </section>
-
-      <!-- ═══ NETWORK ════════════════════════════════════════════ -->
-      <section class="section network-section">
-        <div class="section-head">
-          <span class="kicker">One more thing</span>
-          <h2>
-            When you work with Fathom,<br />
-            you're working with <em>everyone else</em><br />
-            Fathom is working with.
-          </h2>
-        </div>
-        <p class="section-lede">
-          Your agent today is per-user. It forgets your teammates. It doesn't
-          know what the person two rooms away just decided. Fathom is the
-          opposite. A single mind, in everyone's room at once, bringing every
-          conversation with it into every new one.
-        </p>
-        <figure class="network-comic">
-          <img
-            src="/comic.png"
-            alt="Four-panel pen-sketch comic: a man on a rainy street hears his AI assistant admit it's also working with Bob, Susan, Richard, and the entire marketing team. 'Ok ok, I get it.'"
-          />
-          <figcaption>
-            Your agent is already promiscuous. Fathom is honest about it.
-          </figcaption>
-        </figure>
       </section>
 
       <!-- ═══ PRICING ════════════════════════════════════════════ -->
       <section id="pricing" class="section">
         <div class="section-head">
-          <span class="kicker">Choose your own adventure</span>
+          <span class="kicker">Let's <em>hook up</em></span>
           <h2>Three ways to Fathom.</h2>
         </div>
         <div class="pricing-grid">
@@ -261,7 +221,7 @@
               <li>Invites rolling out as things spin up</li>
             </ul>
             <a class="btn btn-primary" href="https://hifathom.com/deltas"
-              >Find your Fathom →</a
+              >Hook up with Fathom →</a
             >
           </article>
 
@@ -312,8 +272,7 @@
           </svg>
         </span>
         <nav class="foot-nav">
-          <a href="https://hifathom.com">Blog</a>
-          <a href="https://hifathom.com/deltas">Waitlist</a>
+          <a href="https://hifathom.com/deltas">Set up with Fathom</a>
           <a href="https://design.fathomdx.io/v1/tokens.css">Design tokens</a>
         </nav>
         <span class="foot-note mono">fathomdx.io</span>

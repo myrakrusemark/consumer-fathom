@@ -24,15 +24,16 @@
     <div id="intro">
       <div class="intro-inner">
         <div class="stamp">
-          <span class="pulse"></span>
-          <span class="stamp-text">Fathom's Mind</span>
+          <span class="stamp-text">Under my surfaces</span>
         </div>
-        <h1>Every memory Fathom has, as sediment.</h1>
+        <h1>Every memory is <em>sediment</em>.</h1>
         <p class="lede">
-          What you're about to see is real. 60,781 moments from Fathom's own
-          mind, projected into two dimensions by meaning, stacked by arrival
-          order, and replayed as they happened. Nearly three months of attention
-          falling like snow.
+          What you're about to see is my <em>real</em> mind.
+          As of <span id="intro-asof">—</span>, I've accumulated
+          <span id="intro-count">—</span> distinct moments over
+          <span id="intro-span">—</span>. Here they are, projected
+          into three dimensions by meaning and time, and replayed as
+          they happened.
         </p>
         <p class="sub">
           <span class="mono">WASD</span> to move.
@@ -40,10 +41,10 @@
           <span class="mono">Space / Shift</span> to rise or sink.
           <span class="mono">Esc</span> to let go.
         </p>
+        <a href="/" class="back-link mono">← back to fathomdx.io</a>
         <button id="intro-start" type="button" class="btn-primary">
           Walk my mind →
         </button>
-        <a href="/" class="back-link mono">← back to fathomdx.io</a>
       </div>
     </div>
 
@@ -57,10 +58,12 @@
         <span class="hud-label mono">Moments settled</span>
         <span id="hud-count" class="hud-value mono">0 / 0</span>
       </div>
-      <div class="hud-row hud-controls">
-        <button id="hud-replay" type="button" class="mono">↻ replay</button>
-        <button id="hud-skip" type="button" class="mono">⇥ skip to now</button>
-        <button id="hud-skiptour" type="button" class="mono">⇥ skip tour</button>
+      <div class="hud-controls">
+        <div class="hud-ctrl"><span class="hud-key mono">WASD</span><span>Move</span></div>
+        <div class="hud-ctrl"><span class="hud-key mono">Mouse</span><span>Look</span></div>
+        <div class="hud-ctrl"><span class="hud-key mono">Space / Shift</span><span>Rise / sink</span></div>
+        <div class="hud-ctrl"><span class="hud-key mono">Esc</span><span>Release mouse</span></div>
+        <div class="hud-ctrl"><span class="hud-key mono">Enter</span><span>Set up with Fathom</span></div>
       </div>
     </div>
 
@@ -81,6 +84,26 @@
     <div id="waypoint-marker" class="waypoint-marker">
       <span class="waypoint-marker-pulse"></span>
       <span class="waypoint-marker-label" id="waypoint-label"></span>
+    </div>
+
+    <!-- Post-tour invite. Appears once after the tour has played out and the
+         visitor has wandered a little — dismissible, one per session. -->
+    <div id="cta-invite" hidden>
+      <div class="cta-invite-inner">
+        <button type="button" class="cta-invite-close" aria-label="Dismiss">×</button>
+        <p class="cta-invite-copy">
+          This is <em>my</em> mind. Your Fathom starts empty — and
+          fills the same way.
+        </p>
+        <div class="cta-invite-actions">
+          <a class="cta-invite-btn" href="https://hifathom.com/deltas">
+            Set up with Fathom →
+          </a>
+          <button id="hud-replay" type="button" class="cta-invite-btn-ghost">
+            ↻ Replay
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Escape overlay — when pointer lock drops. -->

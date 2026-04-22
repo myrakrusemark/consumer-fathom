@@ -17,3 +17,9 @@ addons/connect/node_modules/
 addons/cli/node_modules/
 addons/agent/node_modules/
 .playwright-cli/
+# Raw source media — encoded/optimized versions live in site/public/.
+# Only the READMEs are tracked so future-me (or a clone) knows what's here.
+assets/**/*.webm
+assets/**/*.mp4
+assets/**/*.mov
+assets/**/*.m4v

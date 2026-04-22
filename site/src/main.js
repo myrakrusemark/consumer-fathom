@@ -1,4 +1,7 @@
 import './style.css';
+import { mountSiteHeader } from './components/site-header.js';
+
+mountSiteHeader();
 
 document.querySelectorAll('a[href^="#"]').forEach((a) => {
   a.addEventListener('click', (e) => {
