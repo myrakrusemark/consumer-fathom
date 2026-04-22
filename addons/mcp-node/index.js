@@ -71,10 +71,6 @@ function formatResponse(path, method, data) {
   if (path === "/v1/stats") {
     return `Your mind: ${data.total ?? "?"} moments, ${data.embedded ?? "?"} embedded (${data.percent ?? "?"}% coverage)`;
   }
-  if (path === "/v1/chat/completions") {
-    const choices = data.choices || [];
-    return choices.length ? choices[0].message?.content || "" : JSON.stringify(data).slice(0, 2000);
-  }
   return JSON.stringify(data, null, 2).slice(0, 2000);
 }
 

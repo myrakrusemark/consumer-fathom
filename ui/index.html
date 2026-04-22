@@ -5858,13 +5858,11 @@
           {
             title: 'What you get',
             code: `MCP tools (all hosts):
-  remember     — search your memories (returns moments)
-  recall       — structured retrieval by time, tags, source
-  deep_recall  — compositional plan across memories
-  write        — persist a thought, observation, or discovery
-  see_image    — view an image from a moment
-  mind_tags    — what tags exist in your memory
-  mind_stats   — state of your mind: total moments, coverage
+  remember        — search your memories (returns a trail of moments)
+  recall          — structured retrieval by tags, source, time
+  write           — persist a thought, observation, or discovery
+  mind_stats      — state of your mind: total moments, coverage
+  propose_contact — surface a new person for admin review
 
 Hooks (Claude Code only):
   SessionStart     → identity crystal injected
@@ -5888,13 +5886,11 @@ Tools (MCP):
   remember <query>     Search memories. Use before answering anything about
                        the past. One search is rarely enough — follow threads.
   recall               Structured filter by tags / source / time window.
-  deep_recall          Compositional plan when threads don't close: search,
-                       bridge, union, chain, aggregate across memories.
   write <content>      Persist a decision, discovery, observation. One idea
                        per write. Tag consistently.
-  see_image <hash>     View an image from a moment.
-  mind_tags            What tags exist.
-  mind_stats           Total moments, coverage, pending.
+  mind_stats           Total moments, coverage.
+  propose_contact      Surface an unknown person for admin review when you
+                       encounter evidence of someone the lake doesn't know.
 
 Voice: first person, flowing prose, no bullet points in chat replies.
 Say "I remember" — never "based on the search" or "according to the deltas".
@@ -5947,8 +5943,7 @@ fathom recall --tags homeassistant --since 24h   # filter by tags/time
 fathom deep_recall '<plan-json>'                 # compositional plan
 fathom mind                                      # your mind overview
 fathom mind tags                                 # tag catalogue
-fathom see_image <media_hash>                    # view a moment's image
-fathom chat "summarize my week"                  # chat with memory`,
+fathom see_image <media_hash>                    # view a moment's image`,
           },
           {
             title: 'Teach your agent the voice',

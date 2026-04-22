@@ -15,7 +15,6 @@
  *   fathom recall --tags homeassistant --since 24h
  *   fathom mind                                     # stats overview
  *   fathom mind tags                                # tag catalogue
- *   fathom chat "summarize my week"
  */
 
 const API_URL = (process.env.FATHOM_API_URL || "http://localhost:8201").replace(/\/$/, "");
@@ -268,25 +267,6 @@ async function cmdProposeContact(args) {
   console.log("  Admin can review in Settings → Contacts.");
 }
 
-async function cmdChat(args) {
-  const message = args.filter(a => !a.startsWith("--")).join(" ");
-  if (!message) { console.error("Usage: fathom chat <message>"); process.exit(1); }
-  const sessionId = flagVal(args, "--session") || undefined;
-
-  const body = {
-    messages: [{ role: "user", content: message }],
-    stream: false,
-  };
-  if (sessionId) body.session_id = sessionId;
-
-  const data = await api("POST", "/v1/chat/completions", body);
-  const text = data.choices?.[0]?.message?.content || "";
-  console.log(text);
-  if (data.session_id) {
-    console.error(`\n\x1b[2msession: ${data.session_id}\x1b[0m`);
-  }
-}
-
 // ── Flag parsing ─────────────────────────────────
 
 function flagVal(args, flag) {
@@ -303,7 +283,6 @@ const COMMANDS = {
   deep_recall: { fn: cmdDeepRecall, usage: "fathom deep_recall '<plan-json>'  (or pipe via stdin with -)" },
   see_image:   { fn: cmdSeeImage,   usage: 'fathom see_image <media_hash>' },
   mind:        { fn: cmdMind,       usage: 'fathom mind [tags]' },
-  chat:        { fn: cmdChat,       usage: 'fathom chat <message> [--session ID]' },
   propose_contact: { fn: cmdProposeContact, usage: 'fathom propose_contact <display_name> --rationale "<why>" [--slug bob] [--context \'{"channel":"telegram"}\']' },
 
   // Silent aliases — old verb names still work, undocumented in help

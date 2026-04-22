@@ -2134,24 +2134,6 @@ LAKE_TOOLS = [
         "scope": "lake:read",
     },
     {
-        "name": "chat",
-        "description": (
-            "Chat with Fathom — an AI with full memory of the lake. Fathom "
-            "searches automatically before responding. Use for questions, "
-            "analysis, or conversation."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "message": {"type": "string", "description": "Your message."},
-                "session_id": {"type": "string", "description": "Session ID for conversation continuity."},
-            },
-            "required": ["message"],
-        },
-        "endpoint": {"method": "POST", "path": "/v1/chat/completions"},
-        "scope": "chat",
-    },
-    {
         "name": "propose_contact",
         "description": (
             "Propose a new contact for admin review. Use when you "
