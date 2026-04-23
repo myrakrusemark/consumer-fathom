@@ -102,7 +102,7 @@ async function cmdRemember(args) {
 
 async function cmdWrite(args) {
   // Content is everything that's not a flag
-  const flags = new Set(["--tags", "--source"]);
+  const flags = new Set(["--tags", "--source", "--image"]);
   const parts = [];
   let i = 0;
   while (i < args.length) {
@@ -119,13 +119,22 @@ async function cmdWrite(args) {
     }
   }
   const content = parts.join(" ");
-  if (!content) { console.error("Usage: fathom write <content> [--tags a,b] [--source x]"); process.exit(1); }
+  if (!content) { console.error("Usage: fathom write <content> [--tags a,b] [--source x] [--image path]"); process.exit(1); }
 
   const tags = (flagVal(args, "--tags") || "").split(",").filter(Boolean);
   const source = flagVal(args, "--source") || "cli";
+  const imagePath = flagVal(args, "--image");
 
-  const data = await api("POST", "/v1/deltas", { content, tags, source });
-  console.log(`Written. ID: ${data.id || "?"}`);
+  const body = { content, tags, source };
+  if (imagePath) {
+    const fs = await import("node:fs/promises");
+    const buf = await fs.readFile(imagePath);
+    body.image_b64 = buf.toString("base64");
+  }
+
+  const data = await api("POST", "/v1/deltas", body);
+  const hashNote = data.media_hash ? ` (image: ${data.media_hash})` : "";
+  console.log(`Written. ID: ${data.id || "?"}${hashNote}`);
 }
 
 async function cmdRecall(args) {
@@ -302,7 +311,7 @@ function flagVal(args, flag) {
 
 const COMMANDS = {
   remember:    { fn: cmdRemember,   usage: 'fathom remember <query> [--limit N] [--shallow]' },
-  write:       { fn: cmdWrite,      usage: 'fathom write <content> [--tags a,b] [--source x]' },
+  write:       { fn: cmdWrite,      usage: 'fathom write <content> [--tags a,b] [--source x] [--image path/to.png]' },
   recall:      { fn: cmdRecall,     usage: 'fathom recall [--tags a,b] [--source x] [--since 24h] [--limit N]' },
   deep_recall: { fn: cmdDeepRecall, usage: "fathom deep_recall '<plan-json>'  (or pipe via stdin with -)" },
   see_image:   { fn: cmdSeeImage,   usage: 'fathom see_image <media_hash>' },

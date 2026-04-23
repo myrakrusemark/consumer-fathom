@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import re
@@ -2151,6 +2152,14 @@ LAKE_TOOLS = [
                     "description": "Tags for filtering (e.g. ['meeting', 'decision']).",
                 },
                 "source": {"type": "string", "description": "Source label.", "default": "api"},
+                "image_b64": {
+                    "type": "string",
+                    "description": "Optional base64-encoded image bytes. Creates an image-modality delta with `content` as the caption.",
+                },
+                "image_path": {
+                    "type": "string",
+                    "description": "Optional absolute path to an image file readable by the api server. Alternative to image_b64.",
+                },
             },
             "required": ["content"],
         },
@@ -2339,6 +2348,10 @@ async def proxy_write_delta(body: dict, request: Request):
        anyone but themselves.
     2. Reserved-tag scan. Authority-bearing tags must pass their gate
        (see docs/reserved-tags-spec.md + api/reserved_tags.py).
+
+    If the body carries `image_b64` or `image_path`, the delta is written
+    as an image-modality delta via `delta_client.upload_media` — content
+    becomes the caption. Same tag gates apply.
     """
     contact = getattr(request.state, "contact", None)
     caller_slug = (contact or {}).get("slug")
@@ -2364,6 +2377,33 @@ async def proxy_write_delta(body: dict, request: Request):
                 "gate": result.gate,
                 "detail": result.hint or "",
             },
+        )
+
+    # (3) Image branch — if the caller attached an image, hand off to
+    # upload_media which writes a multimodal delta (modality=image, with
+    # the image stored on disk and content kept as the caption).
+    image_path = body.get("image_path")
+    image_b64 = body.get("image_b64")
+    if image_path or image_b64:
+        if image_path:
+            try:
+                file_bytes = await asyncio.to_thread(Path(image_path).read_bytes)
+            except (FileNotFoundError, PermissionError, OSError) as e:
+                raise HTTPException(status_code=400, detail=f"image_path unreadable: {e}")
+            filename = Path(image_path).name or "upload.bin"
+        else:
+            try:
+                file_bytes = base64.b64decode(image_b64, validate=True)
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"image_b64 decode failed: {e}")
+            filename = "upload.bin"
+        return await delta_client.upload_media(
+            file_bytes=file_bytes,
+            filename=filename,
+            content=body.get("content", "") or "",
+            tags=caller_tags,
+            source=body.get("source") or "api",
+            expires_at=body.get("expires_at"),
         )
 
     c = await delta_client._get()
