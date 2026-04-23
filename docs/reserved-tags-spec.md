@@ -99,7 +99,7 @@ Adding a reserved tag is a code-level change, not a runtime change. There is no 
 Most tags stay open. Non-exhaustive list of tags that are *data*, not authority:
 
 - `fathom-chat`, `chat:<slug>` — anyone in the session can write user messages; the session is the trust unit.
-- `feed-engagement`, `engagement:*`, `card-id:*` — self-manipulation of your own feed is just "what I want."
+- `feed-engagement`, `engagement:*`, `engages:*`, `refutes:*`, `affirms:*`, `reply-to:*`, `from:*`, `kind:sediment` — the generalized engagement-as-delta vocabulary. Pointers into the lake, not authority. Writing `refutes:<id>` is saying "I disagree with this," not claiming power over it.
 - `chat-event`, `event:*` — ephemeral UI signals, TTL'd.
 - `feed-card`, `feed-story` — a contact writing cards into their own feed is writing their own feed. (Fathom-internal routines are the primary writer in practice; others are allowed.)
 - `topic:*`, `source:*`, modality tags — descriptive metadata.

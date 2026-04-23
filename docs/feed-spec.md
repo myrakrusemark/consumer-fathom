@@ -18,11 +18,11 @@ Three delta families compose the feed lifecycle:
 
 | Kind | Required tags | Optional tags | Source | Lifetime |
 |---|---|---|---|---|
-| **engagement** | `feed-engagement`, `engagement:<kind>` | `card-id:<id>`, `topic:<slug>`, `chat-from:<session>` | `consumer-api` | durable |
+| **engagement** | `feed-engagement`, `engagement:<kind>` | `engages:<id>`, `topic:<slug>`, `chat-from:<session>` | `consumer-api` | durable |
 | **crystal** | `crystal:feed-orient` | `confidence:<float>` | `consumer-api` | durable, latest-wins |
-| **card** | `feed-card`, `card-id:<id>` | `topic:<slug>`, `directive-line:<id>` | `fathom-feed` | durable |
+| **card** | `feed-card` | `topic:<slug>`, `directive-line:<id>` | `fathom-feed` | durable |
 
-The `card-id` on an engagement delta is what lets the confidence scorer trace a reaction back to the card that provoked it.
+The `engages:<id>` tag on an engagement delta points at the card that provoked it — the same pointer primitive used everywhere else in the lake (sediment cites sources via `from:<id>`, rejections via `refutes:<id>`, etc.). Confidence scoring today reads topic directly off the engagement payload, so the card join isn't actually needed — but the pointer is there for any future path that wants it.
 
 ## Engagement deltas
 
@@ -128,10 +128,9 @@ LLM call with `FEED_CRYSTAL_DIRECTIVE`. Output is the structured JSON shape abov
 After each crystal regen, Fathom is making a prediction: *the cards we generate from this crystal will get more positive engagement than negative.*
 
 For each engagement delta after the regen:
-- Look up the card via `card-id`.
-- Look up the card's `topic` and `directive-line:<id>`.
-- The crystal predicted this card was a fit — it generated it. So `engagement:more` or `engagement:chat` is a hit, `engagement:less` is a miss.
-- Confidence = `hits / (hits + misses)`, time-decayed (recent stronger than old), with Laplace smoothing for cold-start.
+- Read `topic` and `kind` directly off the engagement delta's JSON payload.
+- The crystal predicted this topic was a fit — so `engagement:more` or `engagement:chat` on a positively-weighted topic is a hit, `engagement:less` is a miss.
+- Confidence = `(hits + 1) / (hits + misses + 2)`, Laplace-smoothed. Recency decay via pressure-system half-life.
 
 Confidence is recomputed cheaply on every wake. Stored on the crystal delta as `confidence:<float>` for the stats graph.
 

@@ -968,7 +968,7 @@ async def write_feed_engagement(req: FeedEngagementRequest, request: Request):
     # as a user message and trip an inference turn on the JSON payload.
     # Use `chat-from:<slug>` instead — same retrieval ergonomics, no
     # collision with the listener's chat-trigger filter.
-    tags = ["feed-engagement", f"engagement:{kind}", f"card-id:{req.card_id}"]
+    tags = ["feed-engagement", f"engagement:{kind}", f"engages:{req.card_id}"]
     if req.topic:
         tags.append(f"topic:{req.topic}")
     if req.chat_session:
