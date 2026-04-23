@@ -232,6 +232,30 @@ async function cmdMind(args) {
   }
 }
 
+async function cmdEngage(kind, args) {
+  // Positional: target_id (first non-flag arg). Flag: --reason "...".
+  const flagged = new Set(["--reason"]);
+  const parts = [];
+  let i = 0;
+  while (i < args.length) {
+    if (flagged.has(args[i])) { i += 2; continue; }
+    parts.push(args[i]);
+    i++;
+  }
+  const targetId = (parts[0] || "").trim();
+  const reason = flagVal(args, "--reason") || "";
+  if (!targetId) {
+    console.error(`Usage: fathom ${kind.split(':')[0]} <target_id> --reason "<prose>"`);
+    process.exit(1);
+  }
+  const data = await api("POST", "/v1/engagement", {
+    target_id: targetId,
+    kind,
+    reason,
+  });
+  console.log(`${kind} written. id=${data.id || "?"}  → ${targetId}`);
+}
+
 async function cmdProposeContact(args) {
   // Parse positional display_name + optional --flags.
   const flagged = new Set(["--slug", "--candidate-slug", "--rationale", "--context"]);
@@ -283,6 +307,9 @@ const COMMANDS = {
   deep_recall: { fn: cmdDeepRecall, usage: "fathom deep_recall '<plan-json>'  (or pipe via stdin with -)" },
   see_image:   { fn: cmdSeeImage,   usage: 'fathom see_image <media_hash>' },
   mind:        { fn: cmdMind,       usage: 'fathom mind [tags]' },
+  refute:      { fn: (a) => cmdEngage("refutes",  a), usage: 'fathom refute <target_id> --reason "<why>"' },
+  affirm:      { fn: (a) => cmdEngage("affirms",  a), usage: 'fathom affirm <target_id> --reason "<why>"' },
+  "reply-to":  { fn: (a) => cmdEngage("reply-to", a), usage: 'fathom reply-to <target_id> --reason "<text>"' },
   propose_contact: { fn: cmdProposeContact, usage: 'fathom propose_contact <display_name> --rationale "<why>" [--slug bob] [--context \'{"channel":"telegram"}\']' },
 
   // Silent aliases — old verb names still work, undocumented in help

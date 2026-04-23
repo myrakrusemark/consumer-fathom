@@ -2233,6 +2233,46 @@ LAKE_TOOLS = [
         "endpoint": {"method": "POST", "path": "/v1/contact-proposals"},
         "scope": "lake:write",
     },
+    {
+        "name": "engage",
+        "description": (
+            "React to a delta in the lake — refute a synthesis that's "
+            "wrong, affirm a memory that keeps proving useful, or reply "
+            "to something you're responding to. Your engagement becomes "
+            "its own delta and shapes how the target surfaces in future "
+            "recalls: refutes lower its rank and travel inline as "
+            "reasoning the next recall sees; affirms raise it. Use this "
+            "as the repair channel for bad sediment."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "target_id": {
+                    "type": "string",
+                    "description": "id of the delta you're engaging with.",
+                },
+                "kind": {
+                    "type": "string",
+                    "enum": ["refutes", "affirms", "reply-to"],
+                    "description": (
+                        "refutes: disagree, lowers surfacing. "
+                        "affirms: useful/right, raises surfacing. "
+                        "reply-to: neutral conversational pointer."
+                    ),
+                },
+                "reason": {
+                    "type": "string",
+                    "description": (
+                        "Your reasoning in prose. For refutes this is "
+                        "what future recalls see under the delta."
+                    ),
+                },
+            },
+            "required": ["target_id", "kind"],
+        },
+        "endpoint": {"method": "POST", "path": "/v1/engagement"},
+        "scope": "lake:write",
+    },
 ]
 
 

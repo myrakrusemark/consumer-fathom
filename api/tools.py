@@ -364,6 +364,51 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "engage",
+            "description": (
+                "React to a delta in the lake. Use this to mark what you "
+                "just recalled — a sediment you think is wrong, a memory "
+                "that resonated, a moment you're replying to. Your "
+                "engagement becomes its own delta and shapes how the "
+                "target surfaces in future recalls. Use `refutes` when "
+                "you've read a synthesis that's wrong and want to prevent "
+                "the mind from re-deriving it — your reasoning travels "
+                "inline with the target on the next recall. Use `affirms` "
+                "when something keeps proving useful and should rise. "
+                "Use `reply-to` for neutral conversational linkage."
+            ),
+            "parameters": {
+                "type": "object",
+                "required": ["target_id", "kind"],
+                "properties": {
+                    "target_id": {
+                        "type": "string",
+                        "description": "id of the delta you're engaging with",
+                    },
+                    "kind": {
+                        "type": "string",
+                        "enum": ["refutes", "affirms", "reply-to"],
+                        "description": (
+                            "refutes: disagree, mark as wrong — lowers its surfacing. "
+                            "affirms: useful, right — raises its surfacing. "
+                            "reply-to: conversational pointer, no valence."
+                        ),
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": (
+                            "Your reasoning in prose. For refutes this is "
+                            "what future recalls see under the delta — why "
+                            "you rejected it. Keep it concrete."
+                        ),
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "rename_session",
             "description": (
                 "Rename the current chat session. The name you pass becomes "
@@ -545,6 +590,26 @@ async def execute(name: str, arguments: dict, session_id: str | None = None) -> 
                     "Contacts and can Accept (creates the contact) or "
                     "Reject (keeps the proposal as sediment)."
                 ),
+            })
+
+        if name == "engage":
+            kind = (arguments.get("kind") or "").lower()
+            if kind not in ("refutes", "affirms", "reply-to"):
+                return json.dumps({"error": f"unknown engagement kind: {kind!r}"})
+            target_id = (arguments.get("target_id") or "").strip()
+            if not target_id:
+                return json.dumps({"error": "target_id required"})
+            reason = (arguments.get("reason") or "").strip()
+            written = await delta_client.write(
+                content=reason,
+                tags=[f"{kind}:{target_id}"],
+                source="fathom-engagement",
+            )
+            return json.dumps({
+                "ok": True,
+                "id": written.get("id"),
+                "kind": kind,
+                "target_id": target_id,
             })
 
         if name == "rename_session":
