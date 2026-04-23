@@ -29,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 import re
 import tempfile
@@ -446,6 +447,25 @@ def _engagement_sign(kind: str) -> int:
     return 0
 
 
+def _engagement_recency_weight(engagement_ts: str | None) -> float:
+    """Exponential decay weight for an engagement based on its age.
+
+    Returns a value in (0, 1]. A fresh engagement is ~1.0; an engagement
+    one half-life old is 0.5; very old engagements asymptote to near zero.
+    Silently returns 1.0 on parse failure so a malformed timestamp doesn't
+    erase the signal.
+    """
+    if not engagement_ts:
+        return 1.0
+    try:
+        dt = datetime.fromisoformat(engagement_ts.replace("Z", "+00:00"))
+    except Exception:
+        return 1.0
+    age_seconds = max(0.0, (_now() - dt).total_seconds())
+    half_life = max(1.0, float(settings.feed_engagement_half_life_seconds))
+    return math.pow(0.5, age_seconds / half_life)
+
+
 async def score_confidence(
     contact_slug: str,
     crystal: dict | None,
@@ -456,10 +476,14 @@ async def score_confidence(
     For each engagement delta after the crystal was written:
       • Look up its topic on the engagement delta itself (no card join needed).
       • Look up topic_weights[topic] on the crystal (the crystal's prediction).
+      • Weight the contribution by recency — a week-old hit matters less
+        than one from yesterday (exponential decay on engagement age).
       • Engagement matches prediction → hit. Mismatches → miss.
       • Topic with weight ~0 is indeterminate (doesn't count either way).
 
-    Confidence = (hits + 1) / (hits + misses + 2)  -- Laplace smoothing.
+    Confidence = (hits + 1) / (hits + misses + 2)  -- Laplace smoothing,
+    where hits/misses are the recency-weighted sums (still real numbers,
+    still bounded by 0 ≤ hits + misses ≤ count of signal engagements).
 
     Returns None if there's no crystal or engagements is empty AND not loaded
     (we still return a smoothed score when loaded-but-empty so the ECG has a
@@ -472,8 +496,8 @@ async def score_confidence(
         engagements = await _fetch_engagements_since(
             contact_slug, crystal.get("created_at")
         )
-    hits = 0
-    misses = 0
+    hits = 0.0
+    misses = 0.0
     for d in engagements:
         try:
             payload = json.loads(d.get("content") or "{}")
@@ -487,10 +511,11 @@ async def score_confidence(
         weight = weights.get(topic, 0.0)
         if abs(weight) < 0.05:
             continue  # indeterminate prediction — skip
+        recency = _engagement_recency_weight(d.get("timestamp"))
         if (weight > 0 and sign > 0) or (weight < 0 and sign < 0):
-            hits += 1
+            hits += recency
         else:
-            misses += 1
+            misses += recency
     return round((hits + 1) / (hits + misses + 2), 4)
 
 

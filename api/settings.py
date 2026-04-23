@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     feed_drift_threshold: float = 0.35
     feed_confidence_floor: float = 0.55
     feed_min_signal_engagements: int = 10
+    # Engagement-confidence recency decay. A week-old hit on last week's
+    # crystal says less about today's taste than a hit from yesterday.
+    # Half-life of 3 days: 1d ≈ 0.79 weight, 3d = 0.5, 7d ≈ 0.2.
+    feed_engagement_half_life_seconds: int = 259200  # 3 days
 
     # Feed loop — per-directive-line budgets. Without a budget,
     # "until satisfied" is a runaway-cost grenade.
