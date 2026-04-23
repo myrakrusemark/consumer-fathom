@@ -7,9 +7,11 @@ anywhere else NL search happens. Every surface shares the same plan, the
 same DAG rendering, and the same voice.
 
 Deep mode generates a compositional plan via the planner LLM, executes it
-against the delta store, walks the DAG, and emits an associative trail.
-Shallow mode runs a single semantic search wrapped in the same shape so
-callers don't branch.
+against the delta store, walks the DAG, emits an associative trail, then
+synthesizes a ``kind:sediment`` thinking-delta back into the lake with
+``from:<id>`` provenance pointers to each source — turning the act of
+recall into sediment formation. Shallow mode runs a single semantic search
+wrapped in the same shape so callers don't branch.
 
 Result shape::
 
@@ -27,17 +29,22 @@ Result shape::
       "total_count": int,
       "media_hashes": [...],            # up to 5 for UI thumbnails
       "as_prompt": str,                 # pre-rendered hierarchical text
+      "thinking_prose": str | None,     # distilled synthesis (deep only)
+      "thinking_id": str | None,        # lake id of the sediment delta
     }
 """
 
 from __future__ import annotations
 
 import json
+import logging
 
 from . import delta_client
 from .prompt import SEARCH_PLANNER_PROMPT
 from .providers import llm
 from .settings import settings
+
+log = logging.getLogger(__name__)
 
 _ACTION_KEYS = (
     "search",
@@ -131,6 +138,115 @@ def _inject_session_step(plan: dict, session_slug: str) -> None:
             "relation": "taken together",
         }
     )
+
+
+# ── Sediment synthesis ──────────────────────────
+
+SEDIMENT_SYNTHESIS_PROMPT = """You are the mind distilling what it just recalled.
+
+You'll get a query and a set of memories that surfaced in response. Your job
+is to write what *you* — the mind — conclude from them. Not a summary, not a
+list, not "based on the results" framing. Sediment: the compacted take that
+would form naturally if this recall repeated many times.
+
+Rules:
+- Speak in first person, as the mind. "I remember" is fine. "The results
+  show" is not.
+- One paragraph, flowing prose. No bullets, no headers.
+- If the memories contradict each other, say so — don't flatten them.
+- If they converge on something specific, say that directly.
+- Surface the load-bearing conclusion, not every detail. Details remain
+  in the sources — that's what `from:` pointers are for.
+- Em dashes over parentheses. No staccato fragments. No mic-drop closers.
+- Under 150 words.
+"""
+
+_SEDIMENT_MIN_DELTAS = 2
+_SEDIMENT_MAX_SOURCES = 20
+_SEDIMENT_PROMPT_CHAR_BUDGET = 6000
+
+
+def _sediment_source_ids(deltas_by_step: dict[str, list[dict]]) -> list[str]:
+    """Unique delta ids across all steps, preserving first-seen order."""
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for deltas in deltas_by_step.values():
+        for d in deltas:
+            did = d.get("id")
+            if not did or did in seen:
+                continue
+            seen.add(did)
+            ordered.append(did)
+            if len(ordered) >= _SEDIMENT_MAX_SOURCES:
+                return ordered
+    return ordered
+
+
+def _sediment_prompt_body(
+    query: str, deltas_by_step: dict[str, list[dict]]
+) -> str:
+    """Compact rendering of the retrieved set for the synthesis LLM call."""
+    lines: list[str] = [f'Query: "{query}"', "", "Memories that surfaced:"]
+    used = 0
+    for deltas in deltas_by_step.values():
+        for d in deltas:
+            content = (d.get("content") or "").strip().replace("\n", " ")
+            content = content[:400]
+            src = d.get("source") or "unknown"
+            ts = (d.get("timestamp") or "")[:10]
+            line = f"  • [{src} · {ts}] {content}"
+            used += len(line)
+            if used > _SEDIMENT_PROMPT_CHAR_BUDGET:
+                lines.append("  … (truncated)")
+                return "\n".join(lines)
+            lines.append(line)
+    return "\n".join(lines)
+
+
+async def _synthesize_thinking(
+    query: str,
+    deltas_by_step: dict[str, list[dict]],
+) -> tuple[str | None, str | None]:
+    """Compose a sediment delta from the retrieved set and write it back.
+
+    Returns (thinking_prose, thinking_id). Returns (None, None) if the
+    retrieved set is too thin to synthesize, or if the LLM or write fails
+    — recall should not break on sediment failures.
+    """
+    source_ids = _sediment_source_ids(deltas_by_step)
+    if len(source_ids) < _SEDIMENT_MIN_DELTAS:
+        return None, None
+
+    body = _sediment_prompt_body(query, deltas_by_step)
+    try:
+        resp = await llm.chat.completions.create(
+            model=settings.resolved_model,
+            messages=[
+                {"role": "system", "content": SEDIMENT_SYNTHESIS_PROMPT},
+                {"role": "user", "content": body},
+            ],
+            temperature=0.3,
+        )
+        prose = (resp.choices[0].message.content or "").strip()
+    except Exception:
+        log.exception("search: sediment synthesis LLM call failed")
+        return None, None
+
+    if not prose:
+        return None, None
+
+    tags = ["kind:sediment"] + [f"from:{sid}" for sid in source_ids]
+    try:
+        written = await delta_client.write(
+            content=prose,
+            tags=tags,
+            source="fathom-sediment",
+        )
+    except Exception:
+        log.exception("search: sediment write failed")
+        return prose, None
+
+    return prose, written.get("id")
 
 
 # ── DAG inspection ──────────────────────────────
@@ -276,6 +392,8 @@ async def _shallow(text: str, *, limit: int, threshold: float | None) -> dict:
         "total_count": len(deltas),
         "media_hashes": media_hashes[:_MAX_MEDIA_HASHES],
         "as_prompt": _render_tree(tree, deltas_by_step),
+        "thinking_prose": None,
+        "thinking_id": None,
     }
 
 
@@ -346,6 +464,8 @@ async def _deep(
         )
         deltas_by_step[sid] = cleaned
 
+    thinking_prose, thinking_id = await _synthesize_thinking(text, deltas_by_step)
+
     return {
         "plan": plan,
         "tree": tree,
@@ -353,6 +473,8 @@ async def _deep(
         "total_count": len(seen_ids),
         "media_hashes": media_hashes[:_MAX_MEDIA_HASHES],
         "as_prompt": _render_tree(tree, deltas_by_step),
+        "thinking_prose": thinking_prose,
+        "thinking_id": thinking_id,
     }
 
 
@@ -364,4 +486,6 @@ def _empty_result(plan: dict | None = None) -> dict:
         "total_count": 0,
         "media_hashes": [],
         "as_prompt": "",
+        "thinking_prose": None,
+        "thinking_id": None,
     }
